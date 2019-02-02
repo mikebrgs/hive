@@ -521,6 +521,8 @@ bool ComputeTransform(AxisLightVec observations,
       << pose[3] << ", "
       << pose[4] << ", "
       << pose[5] << std::endl;
+
+
     // if (correction) {
     //   std::cout << "CORRECTION TRUE" << std::endl << std::endl;
     // } else {

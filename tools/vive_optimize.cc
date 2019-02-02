@@ -50,25 +50,25 @@ struct Model{
     // parameters[0] is sensor size
     // parameters[1] is sensor rotation
     // Tracker pose
-    std::cout << "lTt - "
-      << lTt_[0] << ", "
-      << lTt_[1] << ", "
-      << lTt_[2] << ", "
-      << lTt_[3] << ", "
-      << lTt_[4] << ", "
-      << lTt_[5] << std::endl;
-    std::cout << "tPs - "
-      << tPs_[0] << ", "
-      << tPs_[1] << ", "
-      << tPs_[2] << std::endl;
-    std::cout << "tNs - "
-      << tNs_[0] << ", "
-      << tNs_[1] << ", "
-      << tNs_[2] << std::endl;
-    std::cout << "obs - " << obs_ << std::endl;
-    std::cout << "axis - " << static_cast<int>(axis_) << std::endl;
-    std::cout << "angle - " << parameters[1][0] << std::endl;
-    std::cout << "size - " << parameters[0][0] << std::endl;
+    // std::cout << "lTt - "
+    //   << lTt_[0] << ", "
+    //   << lTt_[1] << ", "
+    //   << lTt_[2] << ", "
+    //   << lTt_[3] << ", "
+    //   << lTt_[4] << ", "
+    //   << lTt_[5] << std::endl;
+    // std::cout << "tPs - "
+    //   << tPs_[0] << ", "
+    //   << tPs_[1] << ", "
+    //   << tPs_[2] << std::endl;
+    // std::cout << "tNs - "
+    //   << tNs_[0] << ", "
+    //   << tNs_[1] << ", "
+    //   << tNs_[2] << std::endl;
+    // std::cout << "obs - " << obs_ << std::endl;
+    // std::cout << "axis - " << static_cast<int>(axis_) << std::endl;
+    // std::cout << "angle - " << parameters[1][0] << std::endl;
+    // std::cout << "size - " << parameters[0][0] << std::endl;
     Eigen::Matrix<T, 3, 1> lPt;
     lPt << T(lTt_[0]), T(lTt_[1]), T(lTt_[2]);
     Eigen::Matrix<T, 3, 1> lAAt;
@@ -138,7 +138,7 @@ struct Model{
 int main(int argc, char const *argv[])
 {
   rosbag::Bag bag;
-  bag.open("/home/mikebrgs/CurrentWork/thesis/vive1/data/oldprocessed/bag1.bag",
+  bag.open("/home/mikebrgs/CurrentWork/thesis/vive1/data/oldprocessed/bag3.bag",
     rosbag::bagmode::Read);
   rosbag::View view;
 
@@ -146,13 +146,15 @@ int main(int argc, char const *argv[])
   std::mutex mtx;
   std::string last_lh;
   LightData observations;
-  std::vector<SolvedPose> pose_vector;
+  std::vector<SolvedPose*> pose_vector;
   std::vector<double*> position_vector;
   std::vector<double*> normal_vector;
   SolvedPose ref_pose;
   Lighthouse lh;
   Extrinsics tr;
   Calibration cal;
+
+  std::vector<ceres::DynamicAutoDiffCostFunction<Model, 4>*> cost_vector;
 
   // Initializations
   ref_pose.transform[0] = 0.0;
@@ -191,7 +193,7 @@ int main(int argc, char const *argv[])
   rosbag::View view_li(bag, rosbag::TopicQuery("/loc/vive/light"));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-    std::cout << vl->lighthouse << std::endl;
+    // std::cout << vl->lighthouse << std::endl;
     observations[vl->lighthouse].axis[vl->axis].lights.clear();
     for (auto li_it = vl->samples.begin();
       li_it != vl->samples.end(); li_it++) {
@@ -206,93 +208,96 @@ int main(int argc, char const *argv[])
       observations[vl->lighthouse].axis[vl->axis].lights.push_back(light);
       // std::cout << li_it->sensor << " " << li_it->angle << std::endl;
     }
-    std::cout << std::endl;
+    // std::cout << std::endl;
     tr.size = ViveUtils::ConvertExtrinsics(cal.trackers[vl->header.frame_id],
       tr.positions);
     // If the data is available
     if (observations[vl->lighthouse].axis[0].lights.size() != 0 &&
       observations[vl->lighthouse].axis[1].lights.size() != 0) {
       // Compute pose of the tracker
-      SolvedPose pose;
-      for (size_t i = 0; i < 6; i++) pose.transform[i] = ref_pose.transform[i];
+      SolvedPose * pose = new SolvedPose();
+      for (size_t i = 0; i < 6; i++) pose->transform[i] = ref_pose.transform[i];
       pose_vector.push_back(pose);
-      ComputeTransform(observations[vl->lighthouse],
-        &pose_vector.back(),
+      if (ComputeTransform(observations[vl->lighthouse],
+        pose_vector.back(),
         &last_lh,
         &tr,
         &mtx,
-        &lh);
-      // Add cost functor
-      double position[3];
-      position[0] = cal.trackers[vl->header.frame_id].sensors[thesensor].position.x;
-      position[1] = cal.trackers[vl->header.frame_id].sensors[thesensor].position.y;
-      position[2] = cal.trackers[vl->header.frame_id].sensors[thesensor].position.z;
-      position_vector.push_back((double*)position);
-      double normal[3];
-      normal[0] = cal.trackers[vl->header.frame_id].sensors[thesensor].normal.x;
-      normal[1] = cal.trackers[vl->header.frame_id].sensors[thesensor].normal.y;
-      normal[2] = cal.trackers[vl->header.frame_id].sensors[thesensor].normal.z;
-      normal_vector.push_back((double*)normal);
-      std::cout << "tPs_out - "
-        << position_vector.back()[0] << ", "
-        << position_vector.back()[1] << ", "
-        << position_vector.back()[2] << std::endl;
-      std::cout << "tNs_out - "
-        << normal_vector.back()[0] << ", "
-        << normal_vector.back()[1] << ", "
-        << normal_vector.back()[2] << std::endl;
+        &lh)) {
+        // Add cost functor
+        double * position = new double[3];
+        position[0] = cal.trackers[vl->header.frame_id].sensors[thesensor].position.x;
+        position[1] = cal.trackers[vl->header.frame_id].sensors[thesensor].position.y;
+        position[2] = cal.trackers[vl->header.frame_id].sensors[thesensor].position.z;
+        position_vector.push_back(position);
+        double * normal = new double[3];
+        normal[0] = cal.trackers[vl->header.frame_id].sensors[thesensor].normal.x;
+        normal[1] = cal.trackers[vl->header.frame_id].sensors[thesensor].normal.y;
+        normal[2] = cal.trackers[vl->header.frame_id].sensors[thesensor].normal.z;
+        normal_vector.push_back(normal);
+        // std::cout << "tPs_out - "
+        //   << position_vector.back()[0] << ", "
+        //   << position_vector.back()[1] << ", "
+        //   << position_vector.back()[2] << std::endl;
+        // std::cout << "tNs_out - "
+        //   << normal_vector.back()[0] << ", "
+        //   << normal_vector.back()[1] << ", "
+        //   << normal_vector.back()[2] << std::endl;
 
-      for (auto li_it = observations[vl->lighthouse].axis[vl->axis].lights.begin();
-        li_it != observations[vl->lighthouse].axis[vl->axis].lights.end(); li_it++) {
-        if (li_it->sensor_id == thesensor) {
-          std::cout << "obs_out - " << li_it->length << std::endl;
-          std::cout << "axis_out - " << static_cast<int>(vl->axis) << std::endl;
-          // Model cost
-          ceres::DynamicAutoDiffCostFunction<Model, 4> * cost_model =
-            new ceres::DynamicAutoDiffCostFunction<Model, 4>(new Model(
-              pose_vector.back().transform,
-              position_vector.back(),
-              normal_vector.back(),
-              li_it->length,
-              vl->axis));
-          cost_model->AddParameterBlock(1);
-          cost_model->AddParameterBlock(1);
-          cost_model->SetNumResiduals(1);
-          problem.AddResidualBlock(cost_model, NULL, &thesize, &theangle);
-          thecounter++;
-          // problem.SetParameterBlockConstant(&theangle);
+        for (auto li_it = observations[vl->lighthouse].axis[vl->axis].lights.begin();
+          li_it != observations[vl->lighthouse].axis[vl->axis].lights.end(); li_it++) {
+          if (li_it->sensor_id == thesensor) {
+            // std::cout << "obs_out - " << li_it->length << std::endl;
+            // std::cout << "axis_out - " << static_cast<int>(vl->axis) << std::endl;
+            // Model cost
+            ceres::DynamicAutoDiffCostFunction<Model, 4> * cost_model =
+              new ceres::DynamicAutoDiffCostFunction<Model, 4>(new Model(
+                pose_vector.back()->transform,
+                position_vector.back(),
+                normal_vector.back(),
+                li_it->length,
+                vl->axis));
+            cost_vector.push_back(cost_model);
+            cost_model->AddParameterBlock(1);
+            cost_model->AddParameterBlock(1);
+            cost_model->SetNumResiduals(1);
+            problem.AddResidualBlock(cost_model, NULL, &thesize, &theangle);
+            thecounter++;
+            // problem.SetParameterBlockConstant(&theangle);
 
-          // ceres::Solver::Options options;
-          // ceres::Solver::Summary summary;
+            // ceres::Solver::Options options;
+            // ceres::Solver::Summary summary;
 
-          // options.minimizer_progress_to_stdout = false;
-          // options.linear_solver_type = ceres::DENSE_SCHUR;
-          // // options.max_solver_time_in_seconds = 1.0;
-          // // options.minimizer_type = ceres::LINE_SEARCH;
+            // options.minimizer_progress_to_stdout = false;
+            // options.linear_solver_type = ceres::DENSE_SCHUR;
+            // // options.max_solver_time_in_seconds = 1.0;
+            // // options.minimizer_type = ceres::LINE_SEARCH;
 
-          // ceres::Solve(options, &problem, &summary);
+            // ceres::Solve(options, &problem, &summary);
 
-          // std::cout << summary.FullReport() << std::endl;
-          // std::cout << "Size: " << thesize << std::endl;
-          // std::cout << "Angle: " << theangle << std::endl;
+            // std::cout << summary.FullReport() << std::endl;
+            // std::cout << "Size: " << thesize << std::endl;
+            // std::cout << "Angle: " << theangle << std::endl;
+          }
         }
       }
-
     }
 
-    if (thecounter == 1) {
+    if (thecounter == -1) {
       std::cout << "BREAKING" << std::endl << std::endl;
       break;
     }
+    std::cout << "Counter: " << thecounter << std::endl;
 
   }
 
-  problem.SetParameterBlockConstant(&theangle);
+  // problem.SetParameterBlockConstant(&theangle);
 
   ceres::Solver::Options options;
   ceres::Solver::Summary summary;
 
-  options.minimizer_progress_to_stdout = false;
+  options.minimizer_progress_to_stdout = true;
+  options.max_num_iterations = 500;
   options.linear_solver_type = ceres::DENSE_SCHUR;
   // options.max_solver_time_in_seconds = 1.0;
   // options.minimizer_type = ceres::LINE_SEARCH;
