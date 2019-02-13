@@ -193,8 +193,8 @@ struct CalibHorizontalAngle{
       //   << parameters[EXTRINSICS][3*horizontal_observations_[i].sensor_id + 2] << std::endl;
 
       T ang; // The final angle
-      T x = atan(lPs(0)/lPs(2)); // Horizontal angle
-      T y = atan(lPs(1)/lPs(2)); // Vertical angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
       T phase = parameters[LH_EXTRINSICS-1][PHASE];
       T tilt = parameters[LH_EXTRINSICS-1][TILT];
       T gib_phase = parameters[LH_EXTRINSICS-1][GIB_PHASE];
@@ -289,8 +289,8 @@ struct CalibVerticalAngle{
     // std::cout << "H3" << std::endl;
 
       T ang; // The final angle
-      T x = atan(lPs(0)/lPs(2)); // Horizontal angle
-      T y = atan(lPs(1)/lPs(2)); // Vertical angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
       T phase = parameters[LH_EXTRINSICS-1][PHASE];
       T tilt = parameters[LH_EXTRINSICS-1][TILT];
       T gib_phase = parameters[LH_EXTRINSICS-1][GIB_PHASE];

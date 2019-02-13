@@ -17,8 +17,11 @@
 #include <rosbag/bag.h>
 #include <rosbag/view.h>
 
+#include <std_msgs/Int32.h>
+#include <std_msgs/String.h>
 // ROS messages
 #include <hive/ViveLight.h>
+#include <hive/HiveData.h>
 
 // Hive includes
 #include "hive/vive_solve.h"
@@ -81,15 +84,18 @@ struct Model{
     // Sensor normal
     Eigen::Matrix<T, 3, 1> tNs;
     tNs << T(tNs_[0]), T(tNs_[1]), T(tNs_[2]);
+    tNs.normalize();
     // Sensor reference
     Eigen::Matrix<T, 3, 1> tOs;
     tOs << T(tNs_[1]), -T(tNs_[0]), T(0.0);
+    tOs.normalize();
     // Rotate reference : optimization
     Eigen::Matrix<T, 3, 3> tRs;
     tRs = Eigen::AngleAxis<T>(parameters[1][0], tNs).toRotationMatrix();
-
     Eigen::Matrix<T, 3, 1> td1 = tRs * tOs;
+    td1.normalize();
     Eigen::Matrix<T, 3, 1> td2 = td1.cross(tNs);
+    td2.normalize();
 
     Eigen::Matrix<T, 3, 1> tC1 = (parameters[0][0] / T(2)) * (td1 + td2) + tPs;
     Eigen::Matrix<T, 3, 1> tC2 = (parameters[0][0] / T(2)) * (- td1 - td2) + tPs;
@@ -109,20 +115,29 @@ struct Model{
     if (axis_ == 0) {
       // Horizontal model
       alpha1 = atan(lC1[0]/lC1[2]);
-      alpha2 = atan(lC1[0]/lC2[2]);
-      alpha3 = atan(lC1[0]/lC3[2]);
-      alpha4 = atan(lC1[0]/lC4[2]);
+      alpha2 = atan(lC2[0]/lC2[2]);
+      alpha3 = atan(lC3[0]/lC3[2]);
+      alpha4 = atan(lC4[0]/lC4[2]);
     } else {
       // Vertical Model
       alpha1 = atan(lC1[1]/lC1[2]);
-      alpha2 = atan(lC1[1]/lC2[2]);
-      alpha3 = atan(lC1[1]/lC3[2]);
-      alpha4 = atan(lC1[1]/lC4[2]);
+      alpha2 = atan(lC2[1]/lC2[2]);
+      alpha3 = atan(lC3[1]/lC3[2]);
+      alpha4 = atan(lC4[1]/lC4[2]);
     }
+
+    Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
+    // std::cout << lPs(0) << ", " << lPs(1) << ", " << lPs(2) << std::endl;
+    // std::cout << lC1(0) << ", " << lC1(1) << ", " << lC1(2) << std::endl
+    //   << lC2(0) << ", " << lC2(1) << ", " << lC2(2) << std::endl
+    //   << lC3(0) << ", " << lC3(1) << ", " << lC3(2) << std::endl
+    //   << lC4(0) << ", " << lC4(1) << ", " << lC4(2) << std::endl;
     // Chose beta
     T beta = max4(alpha1, alpha2, alpha3, alpha4)
       - min4(alpha1, alpha2, alpha3, alpha4);
     beta *= 10e3;
+
+    // std::cout << obs_ << " - " << beta << std::endl;
 
     residual[0] = (T(obs_) - beta);
     return true;
@@ -135,10 +150,13 @@ struct Model{
   uint8_t axis_;
 };
 
-int main(int argc, char const *argv[])
-{
-  rosbag::Bag bag;
-  bag.open("/home/mikebrgs/CurrentWork/thesis/vive1/data/oldprocessed/bag3.bag",
+int main(int argc, char **argv) {
+
+  ros::init(argc, argv, "hive_optimizer");
+  ros::NodeHandle nh;
+
+  rosbag::Bag rbag;
+  rbag.open("/home/mikebrgs/CurrentWork/thesis/vive1/data/bag3_repaired.bag",
     rosbag::bagmode::Read);
   rosbag::View view;
 
@@ -165,13 +183,15 @@ int main(int argc, char const *argv[])
   ref_pose.transform[5] = 0.0;
 
   uint8_t thesensor = 7;
-  double theangle = 0.0;
-  double thesize = 0.0016;
+  double theangle = 5.34614;
+  double thesize = 0.00271586;
   // double thesize = 0.0016;
   int thecounter = 0;
+  int minsample = 0;
+  int maxsample = 3;
 
   // Trackers
-  rosbag::View view_tr(bag, rosbag::TopicQuery("/loc/vive/trackers"));
+  rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
   for (auto bag_it = view_tr.begin(); bag_it != view_tr.end(); bag_it++) {
     const hive::ViveCalibrationTrackerArray::ConstPtr vt =
       bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
@@ -179,7 +199,7 @@ int main(int argc, char const *argv[])
   }
 
   // Lighthouses
-  rosbag::View view_lh(bag, rosbag::TopicQuery("/loc/vive/lighthouses"));
+  rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
   for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
     const hive::ViveCalibrationLighthouseArray::ConstPtr vl =
       bag_it->instantiate<hive::ViveCalibrationLighthouseArray>();
@@ -188,15 +208,18 @@ int main(int argc, char const *argv[])
 
   // Ceres problem
   ceres::Problem problem;
+  std::vector<ceres::ResidualBlockId> resblocks;
 
   // Light data
-  rosbag::View view_li(bag, rosbag::TopicQuery("/loc/vive/light"));
+  rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-    // std::cout << vl->lighthouse << std::endl;
+    // std::cout << vl->lighthouse << " - "
+      // << static_cast<int>(vl->axis) << std::endl;
     observations[vl->lighthouse].axis[vl->axis].lights.clear();
     for (auto li_it = vl->samples.begin();
       li_it != vl->samples.end(); li_it++) {
+      // std::cout << "Sensor " << li_it->sensor << std::endl;
       // Filling in the data structure
       observations[vl->lighthouse].lighthouse = vl->lighthouse;
       observations[vl->lighthouse].axis[vl->axis].stamp = vl->header.stamp;
@@ -206,7 +229,13 @@ int main(int argc, char const *argv[])
       light.angle = li_it->angle;
       light.length = li_it->length;
       observations[vl->lighthouse].axis[vl->axis].lights.push_back(light);
-      // std::cout << li_it->sensor << " " << li_it->angle << std::endl;
+      std::cout << vl->lighthouse << " - ";
+      if (vl->axis == HORIZONTAL) {
+          std::cout << " H - ";
+      } else {
+        std::cout << " V - ";
+      }
+       std::cout << li_it->sensor << " : " << li_it->angle << std::endl;
     }
     // std::cout << std::endl;
     tr.size = ViveUtils::ConvertExtrinsics(cal.trackers[vl->header.frame_id],
@@ -218,12 +247,17 @@ int main(int argc, char const *argv[])
       SolvedPose * pose = new SolvedPose();
       for (size_t i = 0; i < 6; i++) pose->transform[i] = ref_pose.transform[i];
       pose_vector.push_back(pose);
+      thecounter++;
+      if (thecounter <= minsample) {
+        continue;
+      }
       if (ComputeTransform(observations[vl->lighthouse],
         pose_vector.back(),
         &last_lh,
         &tr,
         &mtx,
         &lh)) {
+        // std::cout << "INSIDE" << std::endl;
         // Add cost functor
         double * position = new double[3];
         position[0] = cal.trackers[vl->header.frame_id].sensors[thesensor].position.x;
@@ -235,6 +269,12 @@ int main(int argc, char const *argv[])
         normal[1] = cal.trackers[vl->header.frame_id].sensors[thesensor].normal.y;
         normal[2] = cal.trackers[vl->header.frame_id].sensors[thesensor].normal.z;
         normal_vector.push_back(normal);
+        // for (auto s_it = cal.trackers[vl->header.frame_id].sensors.begin();
+        //   s_it != cal.trackers[vl->header.frame_id].sensors.end(); s_it++) {
+        //   std::cout << s_it->second.position.x << ", "
+        //   << s_it->second.position.y << ", "
+        //   << s_it->second.position.z << std::endl;
+        // }
         // std::cout << "tPs_out - "
         //   << position_vector.back()[0] << ", "
         //   << position_vector.back()[1] << ", "
@@ -246,7 +286,11 @@ int main(int argc, char const *argv[])
 
         for (auto li_it = observations[vl->lighthouse].axis[vl->axis].lights.begin();
           li_it != observations[vl->lighthouse].axis[vl->axis].lights.end(); li_it++) {
+          // std::cout << "Sensor " << li_it->sensor_id << std::endl;
           if (li_it->sensor_id == thesensor) {
+            // std::cout << "YES " << vl->lighthouse << " - " <<
+              // static_cast<int>(vl->axis) << " -  " << li_it->sensor_id <<
+              // " - " << li_it->angle << std::endl;
             // std::cout << "obs_out - " << li_it->length << std::endl;
             // std::cout << "axis_out - " << static_cast<int>(vl->axis) << std::endl;
             // Model cost
@@ -261,8 +305,8 @@ int main(int argc, char const *argv[])
             cost_model->AddParameterBlock(1);
             cost_model->AddParameterBlock(1);
             cost_model->SetNumResiduals(1);
-            problem.AddResidualBlock(cost_model, NULL, &thesize, &theangle);
-            thecounter++;
+            ceres::ResidualBlockId res = problem.AddResidualBlock(cost_model, NULL, &thesize, &theangle);
+            resblocks.push_back(res);
             // problem.SetParameterBlockConstant(&theangle);
 
             // ceres::Solver::Options options;
@@ -278,16 +322,20 @@ int main(int argc, char const *argv[])
             // std::cout << summary.FullReport() << std::endl;
             // std::cout << "Size: " << thesize << std::endl;
             // std::cout << "Angle: " << theangle << std::endl;
+          } else {
+            // std::cout << "NOT " << vl->lighthouse << " - "
+              // << static_cast<int>(vl->axis) << " - " << li_it->sensor_id
+              // << " - " << li_it->angle << std::endl;
           }
         }
       }
     }
 
-    if (thecounter == -1) {
-      std::cout << "BREAKING" << std::endl << std::endl;
+    if (thecounter >   maxsample) {
+      // std::cout << "BREAKING" << std::endl << std::endl;
       break;
     }
-    std::cout << "Counter: " << thecounter << std::endl;
+    // std::cout << "Counter: " << thecounter << std::endl;
 
   }
 
@@ -304,11 +352,22 @@ int main(int argc, char const *argv[])
 
   ceres::Solve(options, &problem, &summary);
 
-  std::cout << summary.FullReport() << std::endl;
+  ceres::Problem::EvaluateOptions pe_options;
+  double total_cost = 0.0;
+  std::vector<double> residuals;
+  pe_options.residual_blocks = resblocks;
+  problem.Evaluate(pe_options, &total_cost, &residuals, nullptr, nullptr);
+  std::cout << "Residuals" << std::endl;
+  for (size_t i = 0; i < residuals.size(); i++) {
+    std::cout << i << ": " << residuals[i] << std::endl;
+  }
+
+
+  // std::cout << summary.FullReport() << std::endl;
+  std::cout << "Cost: " << summary.final_cost << std::endl;
   std::cout << "Size: " << thesize << std::endl;
   std::cout << "Angle: " << theangle << std::endl;
-  exit(0);
 
-
-  bag.close();
+  rbag.close();
+  return 0;
 }

@@ -229,19 +229,23 @@ struct RayHorizontalAngle{
       Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
 
       T ang; // The final angle
-      T x = atan(lPs(0)/lPs(2)); // Horizontal angle
-      T y = atan(lPs(1)/lPs(2)); // Vertical angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
       T phase = parameters[LH_EXTRINSICS][PHASE];
       T tilt = parameters[LH_EXTRINSICS][TILT];
       T gib_phase = parameters[LH_EXTRINSICS][GIB_PHASE];
       T gib_mag = parameters[LH_EXTRINSICS][GIB_MAG];
       T curve = parameters[LH_EXTRINSICS][CURVE];
 
+
       if (correction_) {
         ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
       } else {
         ang = atan(x);
       }
+      // std::cout << "H " << horizontal_observations_[i].sensor_id << " - "
+      // << lPs(0) << ", " << lPs(1) << ", " << lPs(2)
+      // << " - " << ang << " " << horizontal_observations_[i].angle << std::endl;
       residual[i] = T(horizontal_observations_[i].angle) - ang;
       // std::cout << horizontal_observations_[i].sensor_id << ": "
       //   << ang  << " - "
@@ -282,19 +286,23 @@ struct RayVerticalAngle{
       Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
 
       T ang; // The final angle
-      T x = atan(lPs(0)/lPs(2)); // Horizontal angle
-      T y = atan(lPs(1)/lPs(2)); // Vertical angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
       T phase = parameters[LH_EXTRINSICS][PHASE];
       T tilt = parameters[LH_EXTRINSICS][TILT];
       T gib_phase = parameters[LH_EXTRINSICS][GIB_PHASE];
       T gib_mag = parameters[LH_EXTRINSICS][GIB_MAG];
       T curve = parameters[LH_EXTRINSICS][CURVE];
 
+
       if (correction_) {
         ang = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
       } else {
         ang = atan(y);
       }
+      // std::cout << "V " << vertical_observations_[i].sensor_id << " - "
+      // << lPs(0) << ", " << lPs(1) << ", " << lPs(2)
+      // << " - " << ang << " " << vertical_observations_[i].angle << std::endl;
       residual[i] = T(vertical_observations_[i].angle) - ang;
       // std::cout << vertical_observations_[i].sensor_id << ": "
       //   << ang  << " - "
@@ -520,7 +528,12 @@ bool ComputeTransform(AxisLightVec observations,
       << pose[2] << ", "
       << pose[3] << ", "
       << pose[4] << ", "
-      << pose[5] << std::endl;
+      << pose[5];
+    if (correction) {
+      std::cout << " - CORRECTED" << std::endl;
+    } else {
+      std::cout << " - NOT CORRECTED" << std::endl;
+    }
 
 
     // if (correction) {
@@ -601,8 +614,8 @@ struct BundleHorizontalAngle{
       // residual[i] = T(-horizontal_observations_[i].angle) - atan(lPs(1)/lPs(2));
 
       T ang; // The final angle
-      T x = atan(lPs(0)/lPs(2)); // Horizontal angle
-      T y = atan(lPs(1)/lPs(2)); // Vertical angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
       T phase = parameters[LH_EXTRINSICS][PHASE];
       T tilt = parameters[LH_EXTRINSICS][TILT];
       T gib_phase = parameters[LH_EXTRINSICS][GIB_PHASE];
@@ -658,8 +671,8 @@ struct BundleVerticalAngle{
       // residual[i] = T(vertical_observations_[i].angle) - atan(lPs(0)/lPs(2));
 
       T ang; // The final angle
-      T x = atan(lPs(0)/lPs(2)); // Horizontal angle
-      T y = atan(lPs(1)/lPs(2)); // Vertical angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
       T phase = parameters[LH_EXTRINSICS][PHASE];
       T tilt = parameters[LH_EXTRINSICS][TILT];
       T gib_phase = parameters[LH_EXTRINSICS][GIB_PHASE];

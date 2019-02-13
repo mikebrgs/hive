@@ -153,8 +153,6 @@ Hive::Hive(int argc, char ** argv) : calibrator_(std::bind(&Hive::CalibrationCal
   calibrator_.Reset();
   calibrator_.Initialize(calibration_);
 
-  // for (auto calibration_.environment.bodies::iterator b_it)
-
   ViveUtils::SendTransforms(calibration_);
   ready_ = true;
 

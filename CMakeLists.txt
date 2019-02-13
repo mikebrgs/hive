@@ -68,6 +68,8 @@ add_message_files(
   ViveLight.msg
   ViveLightSample.msg
   ViveMotor.msg
+# New formats
+  HiveData.msg
 )
 
 ## Generate services in the 'srv' folder
@@ -125,20 +127,29 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 add_executable(hive_server src/vive_server.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc src/vive_calibrate.cc)
+add_executable(hive_print tools/vive_print.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc src/vive_calibrate.cc)
 add_executable(hive_tool tools/vive_tool.cc)
 add_executable(hive_optimize tools/vive_optimize.cc src/vive.cc src/vive_solve.cc)
 add_executable(hive_bridge src/vive_bridge.cc)
+add_executable(hive_beta tools/vive_beta.cc src/vive.cc src/vive_solve.cc)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
 # add_dependencies(hive_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(hive_server hive_generate_messages_cpp)
+add_dependencies(hive_print hive_generate_messages_cpp)
 add_dependencies(hive_tool hive_generate_messages_cpp)
 add_dependencies(hive_optimize hive_generate_messages_cpp)
 add_dependencies(hive_bridge hive_generate_messages_cpp deepdive)
+add_dependencies(hive_beta hive_generate_messages_cpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(hive_server
+  ${catkin_LIBRARIES}
+  ${CERES_LIBRARIES}
+  ${EIGEN_LIBRARIES}
+)
+target_link_libraries(hive_print
   ${catkin_LIBRARIES}
   ${CERES_LIBRARIES}
   ${EIGEN_LIBRARIES}
@@ -155,4 +166,9 @@ target_link_libraries(hive_optimize
 target_link_libraries(hive_bridge
   ${catkin_LIBRARIES}
   ${DEEPDIVE_LIBRARIES}
+)
+target_link_libraries(hive_beta
+  ${catkin_LIBRARIES}
+  ${CERES_LIBRARIES}
+  ${EIGEN_LIBRARIES}
 )
