@@ -2,6 +2,7 @@ import sys
 import cv2
 import rospy
 import rosbag
+import random
 import numpy as np
 import matplotlib.pyplot as plt
 args = sys.argv
@@ -59,47 +60,92 @@ for topic, msg, t in bag.read_messages(topics=["/loc/vive/light", "/loc/vive/tra
                     detected_sensors.append(sensor)
             if len(detected_sensors) > 3:
                 # print("********")
-                ret, wAAt, wPt = cv2.solvePnP(trackers[msg.header.frame_id]["positions"][detected_sensors],image_points[detected_sensors],np.eye(3),None)
+                # ret, wAAt, wPt = cv2.solvePnP(trackers[msg.header.frame_id]["positions"][detected_sensors],
+                #   image_points[detected_sensors].reshape(image_points[detected_sensors].shape[0],1,2),
+                #   np.eye(3),
+                #   None,
+                #   flags = cv2.SOLVEPNP_EPNP)
+                # RANSAC style approach
+                best_error = 9e99
+                best_sensors = None
+                for index in range(0,5):
+                  saved_sensors = list()
+                  for sensor in range(0,4):
+                    sensor = random.randrange(0,len(detected_sensors))
+                    while sensor in saved_sensors:
+                      sensor = random.randrange(0,len(detected_sensors))
+                    saved_sensors.append(sensor)
+                  want_sensors = list( detected_sensors[i] for i in saved_sensors )
+                  ret, lAt, lPt = cv2.solvePnP(trackers[msg.header.frame_id]["positions"][want_sensors],
+                    image_points[want_sensors].reshape(image_points[want_sensors].shape[0],1,2),
+                    np.eye(3),
+                    None,
+                    flags = cv2.SOLVEPNP_AP3P)
+                  new_error = 0
+                  lRt = np.asmatrix(np.eye(3))
+                  cv2.Rodrigues(lAt,lRt)
+                  for sensor in detected_sensors:
+                    tPs = np.asmatrix(trackers[msg.header.frame_id]["positions"][sensor]).transpose()
+                    lPs = lRt * tPs + lPt
+                    new_error += abs(lPs[0]/lPs[2] - image_points[sensor,0])
+                    new_error += abs(lPs[1]/lPs[2] - image_points[sensor,1])
+                  if new_error < best_error:
+                    best_error = new_error
+                    best_sensors = want_sensors;
+                if best_error / 2 * 4 > 0.01:
+                  continue
+                ret, wAAt, wPt = cv2.solvePnP(trackers[msg.header.frame_id]["positions"][best_sensors],
+                  image_points[best_sensors].reshape(image_points[best_sensors].shape[0],1,2),
+                  np.eye(3),
+                  None,
+                  flags = cv2.SOLVEPNP_P3P)
                 if not msg.lighthouse in poses:
                     poses[msg.lighthouse] = (list(),list(),list(),list(),list(),list())
-                poses[msg.lighthouse][0].append(wPt[0])
-                poses[msg.lighthouse][1].append(wPt[1])
-                poses[msg.lighthouse][2].append(wPt[2])
-                poses[msg.lighthouse][3].append(wAAt[0])
-                poses[msg.lighthouse][4].append(wAAt[1])
-                poses[msg.lighthouse][5].append(wAAt[2])
+                print(str(lPt[0][0]) + ", " +
+                  str(lPt[1][0]) + ", " +
+                  str(lPt[2][0]) + " - " +
+                  # str(lAt[0][0]) + ", " +
+                  # str(lAt[1][0]) + ", " +
+                  # str(lAt[2][0]) + " - " +
+                  str(best_error))
+                poses[msg.lighthouse][0].append(lPt[0])
+                poses[msg.lighthouse][1].append(lPt[1])
+                poses[msg.lighthouse][2].append(lPt[2])
+                poses[msg.lighthouse][3].append(lAt[0])
+                poses[msg.lighthouse][4].append(lAt[1])
+                poses[msg.lighthouse][5].append(lAt[2])
 
 import matplotlib as mpl
 from mpl_toolkits.mplot3d import Axes3D
 
 lh_1 = poses.keys()[0]
-lh_2 = poses.keys()[1]
+# lh_2 = poses.keys()[1]
 
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.plot(xs = poses[lh_2][0], ys = poses[lh_2][1], zs = poses[lh_2][2])
-ax.plot(xs = poses[lh_1][0], ys = poses[lh_1][1], zs = poses[lh_1][2])
-ax.set_xlim(-1,1)
-ax.set_ylim(-1,1)
-ax.set_zlim(0,2)
+# fig = plt.figure()
+# ax = fig.add_subplot(111, projection='3d')
+# ax.plot(xs = poses[lh_2][0], ys = poses[lh_2][1], zs = poses[lh_2][2])
+# ax.plot(xs = poses[lh_1][0], ys = poses[lh_1][1], zs = poses[lh_1][2])
+# ax.set_xlim(-1,1)
+# ax.set_ylim(-1,1)
+# ax.set_zlim(0,2)
 
-# fig, axs = plt.subplots(3,2)
-# axs[0,0].plot(poses[lh_1][0])
-# axs[1,0].plot(poses[lh_1][1])
-# axs[2,0].plot(poses[lh_1][2])
+fig, axs = plt.subplots(3, 2, sharex = False, sharey= False)
+axs[0,0].plot(poses[lh_1][0])
+axs[1,0].plot(poses[lh_1][1])
+axs[2,0].plot(poses[lh_1][2])
 # axs[0,0].plot(poses[lh_2][0])
 # axs[1,0].plot(poses[lh_2][1])
 # axs[2,0].plot(poses[lh_2][2])
-# axs[0,0].set_ylim(-1,1)
-# axs[1,0].set_ylim(-1,1)
-# axs[2,0].set_ylim(0,2)
-# axs[0,1].plot(poses[lh_1][3])
-# axs[1,1].plot(poses[lh_1][4])
-# axs[2,1].plot(poses[lh_1][5])
+# axs[0,0].set_xlim([-3,3])
+axs[0,0].set_ylim([-5,5])
+axs[1,0].set_ylim([-5,5])
+axs[0,1].plot(poses[lh_1][3])
+axs[1,1].plot(poses[lh_1][4])
+axs[2,1].plot(poses[lh_1][5])
 # axs[0,1].plot(poses[lh_2][3])
 # axs[1,1].plot(poses[lh_2][4])
 # axs[2,1].plot(poses[lh_2][5])
-# axs[0,1].set_ylim(-2,2)
-# axs[1,1].set_ylim(-2,2)
-# axs[2,1].set_ylim(-2,2)
+# axs[0,1].set_xlim([-3,3])
+axs[0,1].set_ylim([-5,5])
+axs[1,1].set_ylim([-5,5])
 plt.show()

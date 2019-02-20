@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
   ros::NodeHandle nh;
 
   rosbag::Bag rbag, wbag;
-  rbag.open("/home/mikebrgs/CurrentWork/thesis/vive1/data/bag3_repaired.bag",
+  rbag.open("/home/mikebrgs/CurrentWork/thesis/vive1/catkin_ws/src/hive/data/vivebeta3.bag",
     rosbag::bagmode::Read);
   rosbag::View view;
   wbag.open("hive_data.bag",

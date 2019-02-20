@@ -156,7 +156,7 @@ int main(int argc, char **argv) {
   ros::NodeHandle nh;
 
   rosbag::Bag rbag;
-  rbag.open("/home/mikebrgs/CurrentWork/thesis/vive1/data/bag3_repaired.bag",
+  rbag.open("/home/mikebrgs/CurrentWork/thesis/vive1/catkin_ws/src/hive/data/vivebeta4.bag",
     rosbag::bagmode::Read);
   rosbag::View view;
 
@@ -182,13 +182,13 @@ int main(int argc, char **argv) {
   ref_pose.transform[4] = 0.0;
   ref_pose.transform[5] = 0.0;
 
-  uint8_t thesensor = 7;
+  uint8_t thesensor = 6;
   double theangle = 5.34614;
   double thesize = 0.00271586;
   // double thesize = 0.0016;
   int thecounter = 0;
   int minsample = 0;
-  int maxsample = 3;
+  int maxsample = 10;
 
   // Trackers
   rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
@@ -235,7 +235,7 @@ int main(int argc, char **argv) {
       } else {
         std::cout << " V - ";
       }
-       std::cout << li_it->sensor << " : " << li_it->angle << std::endl;
+       std::cout << li_it->sensor << " : " << li_it->angle << " - " << li_it->length <<  std::endl;
     }
     // std::cout << std::endl;
     tr.size = ViveUtils::ConvertExtrinsics(cal.trackers[vl->header.frame_id],
@@ -257,6 +257,12 @@ int main(int argc, char **argv) {
         &tr,
         &mtx,
         &lh)) {
+        ref_pose.transform[0] = pose->transform[0];
+        ref_pose.transform[1] = pose->transform[1];
+        ref_pose.transform[2] = pose->transform[2];
+        ref_pose.transform[3] = pose->transform[3];
+        ref_pose.transform[4] = pose->transform[4];
+        ref_pose.transform[5] = pose->transform[5];
         // std::cout << "INSIDE" << std::endl;
         // Add cost functor
         double * position = new double[3];
@@ -328,6 +334,8 @@ int main(int argc, char **argv) {
               // << " - " << li_it->angle << std::endl;
           }
         }
+      } else {
+        thecounter--;
       }
     }
 

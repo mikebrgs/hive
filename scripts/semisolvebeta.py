@@ -13,9 +13,9 @@ if len(args) < 2:
 
 bag = rosbag.Bag(args[1], "r")
 
-thesensor = 21
-theangle = 6.05619
-theside = 0.00198385
+thesensor = 6
+theangle = 4.85501
+theside = 0.00185785
 
 vpbeta = dict() # predicted
 hpbeta = dict() # predicted

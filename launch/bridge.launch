@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<launch>
+  <node name="hive_bridge" pkg="hive" type="hive_bridge" output="screen"/>
+</launch>

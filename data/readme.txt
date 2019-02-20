@@ -19,3 +19,13 @@ vivebag_2019-02-11-16-20-15.bag - same environment, but moved the tracker in cir
 vivebag_2019-02-11-16-30-50.bag - the same but not just circles
 
 vivebag_2019-02-11-16-32-48.bag - the same but now moved around the sofa instead of being always standing in the same place
+
+ENV3
+
+vivebeta1.bag - tilted the controllers up and down in the same position
+
+vivebeta2.bag - the same but sideways
+
+vivebeta3.bag - moved the tracker further aways and closer to the lighthouse
+
+vivebeta4.bag - rotated the tracker around sensor 6's normals vector
