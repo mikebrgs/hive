@@ -68,7 +68,7 @@ for topic, msg, t in bag.read_messages(topics=["/loc/vive/light", "/loc/vive/tra
                 # RANSAC style approach
                 best_error = 9e99
                 best_sensors = None
-                for index in range(0,5):
+                for index in range(0,3):
                   saved_sensors = list()
                   for sensor in range(0,4):
                     sensor = random.randrange(0,len(detected_sensors))

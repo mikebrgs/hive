@@ -35,6 +35,7 @@ import rospy
 import cv2
 
 import numpy as np
+import random
 import sys
 
 args = sys.argv
@@ -98,18 +99,45 @@ for topic, msg, t in bag.read_messages(topics=["/loc/vive/light", "/loc/vive/tra
       detected_sensors = list()
       for sensor in light_horizontal[msg.lighthouse]:
         if sensor in light_vertical[msg.lighthouse]:
-          image_points[sensor,0] = np.arctan(light_horizontal[msg.lighthouse][sensor])
-          image_points[sensor,1] = np.arctan(light_vertical[msg.lighthouse][sensor])
+          image_points[sensor,0] = light_horizontal[msg.lighthouse][sensor]
+          image_points[sensor,1] = light_vertical[msg.lighthouse][sensor]
           detected_sensors.append(sensor)
       if len(detected_sensors) > 3:
         # print("********")
-        ret, lAt, lPt = cv2.solvePnP(trackers[msg.header.frame_id]["positions"][detected_sensors],
-          image_points[detected_sensors].reshape(image_points[detected_sensors].shape[0],1,2),
+        # RANSAC style approach
+        best_error = 9e99
+        best_sensors = None
+        for index in range(0,3):
+          saved_sensors = list()
+          for sensor in range(0,4):
+            sensor = random.randrange(0,len(detected_sensors))
+            while sensor in saved_sensors:
+              sensor = random.randrange(0,len(detected_sensors))
+            saved_sensors.append(sensor)
+          want_sensors = list( detected_sensors[i] for i in saved_sensors )
+          ret, lAt, lPt = cv2.solvePnP(trackers[msg.header.frame_id]["positions"][want_sensors],
+            image_points[want_sensors].reshape(image_points[want_sensors].shape[0],1,2),
+            np.eye(3),
+            None,
+            flags = cv2.SOLVEPNP_AP3P)
+          new_error = 0
+          lRt = np.asmatrix(np.eye(3))
+          cv2.Rodrigues(lAt,lRt)
+          for sensor in detected_sensors:
+            tPs = np.asmatrix(trackers[msg.header.frame_id]["positions"][sensor]).transpose()
+            lPs = lRt * tPs + lPt
+            new_error += abs(lPs[0]/lPs[2] - image_points[sensor,0])
+            new_error += abs(lPs[1]/lPs[2] - image_points[sensor,1])
+          if new_error < best_error:
+            best_error = new_error
+            best_sensors = want_sensors;
+        if best_error / 2 * 4 > 0.01:
+          continue
+        ret, wAAt, wPt = cv2.solvePnP(trackers[msg.header.frame_id]["positions"][best_sensors],
+          image_points[best_sensors].reshape(image_points[best_sensors].shape[0],1,2),
           np.eye(3),
           None,
-          flags = cv2.SOLVEPNP_UPNP)
-        lRt = np.asmatrix(np.eye(3))
-        cv2.Rodrigues(lAt,lRt)
+          flags = cv2.SOLVEPNP_P3P)
 
         for sample in msg.samples:
           if SENSOR == sample.sensor:
@@ -141,15 +169,15 @@ def build_model():
 horizontal_model = build_model()
 vertical_model = build_model()
 
-EPOCHS = 10000
+EPOCHS = 2000
 history = horizontal_model.fit(
   input_hdata, output_hdata,
   epochs=EPOCHS, validation_split = 0.0,
-  verbose=True, batch_size=100)
+  verbose=True, batch_size=100, shuffle = True)
 history = vertical_model.fit(
   input_vdata, output_vdata,
   epochs=EPOCHS, validation_split = 0.0,
-  verbose=True, batch_size=100)
+  verbose=True, batch_size=100, shuffle = True)
 
 predicted_hdata = horizontal_model.predict(input_hdata)
 predicted_vdata = vertical_model.predict(input_vdata)
