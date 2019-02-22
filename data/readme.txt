@@ -29,3 +29,5 @@ vivebeta2.bag - the same but sideways
 vivebeta3.bag - moved the tracker further aways and closer to the lighthouse
 
 vivebeta4.bag - rotated the tracker around sensor 6's normals vector
+
+vivebeta5.bag - tried to collect a bag with all positions and orientations to train model of the beta angle

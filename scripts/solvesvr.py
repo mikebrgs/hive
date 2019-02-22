@@ -23,7 +23,7 @@ if len(args) < 2:
 
 bag = rosbag.Bag(args[1], "r")
 
-SENSOR = 7
+SENSOR = 6
 
 trackers = dict()
 light_horizontal = dict()
@@ -129,25 +129,33 @@ for topic, msg, t in bag.read_messages(topics=["/loc/vive/light", "/loc/vive/tra
               output_hdata = np.vstack((output_hdata, length))
 
 from sklearn.svm import SVR
+
+SPLIT = 0.05
+hs = np.random.choice(range(input_hdata.shape[0]), int(input_hdata.shape[0] * SPLIT), replace=False)
+vs = np.random.choice(range(input_vdata.shape[0]), int(input_vdata.shape[0] * SPLIT), replace=False)
+
+hx = list(set(range(input_hdata.shape[0])).difference(hs))
+vx = list(set(range(input_vdata.shape[0])).difference(vs))
+
 hmodel = SVR(kernel = "rbf",
-  gamma=4e-2, # Controls the degree of the RBF - change this one for more detail
+  gamma=1e-1, # Controls the degree of the RBF - change this one for more detail
   C=1e5,
   epsilon=0.005,
   verbose = True)
-hmodel.fit(input_hdata, output_hdata) 
+hmodel.fit(input_hdata[hs], output_hdata[hs]) 
 vmodel = SVR(kernel = "rbf",
-  gamma=4e-2, # Controls the degree of the RBF - change this one for more detail
+  gamma=1e-1, # Controls the degree of the RBF - change this one for more detail
   C=1e5,
   epsilon=0.005,
   verbose = True)
-vmodel.fit(input_vdata, output_vdata) 
+vmodel.fit(input_vdata[vs], output_vdata[vs]) 
 
 predicted_hdata = hmodel.predict(input_hdata)
 predicted_vdata = vmodel.predict(input_vdata)
 
 # fig, axs = plt.subplots(2, 1, sharex = False, sharey= False)
-# axs[0].scatter(predicted_hdata, output_hdata)
-# axs[1].scatter(predicted_vdata, output_vdata)
+# axs[0].scatter(predicted_hdata[hx], output_hdata[hx])
+# axs[1].scatter(predicted_vdata[vx], output_vdata[vx])
 # plt.show()
 
 fig, axs = plt.subplots(2, 1, sharex = False, sharey= False)
