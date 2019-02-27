@@ -8,15 +8,12 @@ class BagReader(object):
     self.bag = rosbag.Bag(filename,"r")
 
   def read(self, topic, handler, data):
-    for topic, msg, _ in self.bag.read_messages(topics = topic):
-      handler(msg, topic, data)
+    for t, msg, _ in self.bag.read_messages(topics = topic):
+      handler(msg, data)
     return
 
   def __del__(self):
     self.bag = None
-
-def dummy(msg, topic, data):
-  pass
 
 
 class Solver(object):
@@ -25,7 +22,7 @@ class Solver(object):
     self.light_horizontal = dict()
     self.light_vertical = dict()
 
-  def solver():
+  def handler(self, msg, data):
     return None
 
 

@@ -62,6 +62,21 @@ geometry_msgs::Vector3 array_to_ros_vector(float* array) {
   return v;
 }
 
+template <typename T> inline
+void Convert(const T from[3], geometry_msgs::Vector3 & to) {
+  to.x = from[0];
+  to.y = from[1];
+  to.z = from[2];
+}
+
+template <typename T> inline
+void Convert(const T from[4], geometry_msgs::Quaternion & to) {
+  to.w = from[0];
+  to.x = from[1];
+  to.y = from[2];
+  to.z = from[3];
+}
+
 class HiveBridge {
  public:
   HiveBridge() {
@@ -187,6 +202,13 @@ class HiveBridge {
     it->acc_scale = array_to_ros_vector(t->cal.acc_scale);
     it->gyr_bias = array_to_ros_vector(t->cal.gyr_bias);
     it->gyr_scale = array_to_ros_vector(t->cal.gyr_scale);
+    // Set the default IMU transform
+    // Convert(&t->cal.imu_transform[0], it->imu_transform.rotation);
+    // Convert(&t->cal.imu_transform[4], it->imu_transform.translation);
+    // Set the default IMU transform
+    // Convert(&t->cal.head_transform[0], it->head_transform.rotation);
+    // Convert(&t->cal.head_transform[4], it->head_transform.translation);
+
     // Republish the complete array with the new record
     pub_trackers_.publish(msg);
   }

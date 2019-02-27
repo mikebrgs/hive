@@ -5,7 +5,7 @@ import rospy
 import cv2
 import random
 
-def trackerhandler(msg, topic, data):
+def trackerhandler(msg, data):
   # data is dict
   for tracker in msg.trackers:
     data[tracker.serial] = dict()

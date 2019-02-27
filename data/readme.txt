@@ -31,3 +31,7 @@ vivebeta3.bag - moved the tracker further aways and closer to the lighthouse
 vivebeta4.bag - rotated the tracker around sensor 6's normals vector
 
 vivebeta5.bag - tried to collect a bag with all positions and orientations to train model of the beta angle
+
+vivebeta6.bag - big set of data collected with two lighthouses and moving the tracker arround the MoCap System
+
+vivebeta7.bag - smaller set of the same environment (for testing)
