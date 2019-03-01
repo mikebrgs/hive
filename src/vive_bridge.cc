@@ -203,11 +203,11 @@ class HiveBridge {
     it->gyr_bias = array_to_ros_vector(t->cal.gyr_bias);
     it->gyr_scale = array_to_ros_vector(t->cal.gyr_scale);
     // Set the default IMU transform
-    // Convert(&t->cal.imu_transform[0], it->imu_transform.rotation);
-    // Convert(&t->cal.imu_transform[4], it->imu_transform.translation);
-    // Set the default IMU transform
-    // Convert(&t->cal.head_transform[0], it->head_transform.rotation);
-    // Convert(&t->cal.head_transform[4], it->head_transform.translation);
+    Convert(&t->cal.imu_transform[0], it->imu_transform.rotation);
+    Convert(&t->cal.imu_transform[4], it->imu_transform.translation);
+    // Set the default HEAD transform
+    Convert(&t->cal.head_transform[0], it->head_transform.rotation);
+    Convert(&t->cal.head_transform[4], it->head_transform.translation);
 
     // Republish the complete array with the new record
     pub_trackers_.publish(msg);
