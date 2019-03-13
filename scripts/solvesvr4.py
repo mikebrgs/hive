@@ -7,104 +7,68 @@ import numpy as np
 from sklearn.svm import SVR
 import matplotlib.pyplot as plt
 
+def defaultprint():
+  print("Usage:")
+  print("python solveneural4.py -train [<trainfile.bag> ...]  - test [<testfile.bag> ...]")
+  print("python solveneural4.py -test [<testfile.bag> ...]")
+  sys.exit(0)
+
 def main(args):
-  trainfile = ""
-  testfile = ""
+  trainfiles = list()
+  testfiles = list()
   load = False
   save = False
-
   # Reading arguments
-  if len(args) < 3:
-    print("Usage:")
-    print("python solvesvr.py <trainfile.bag> <testfile.bag>")
-    print("python solvesvr.py -s <trainfile.bag> <testfile.bag>")
-    print("python solvesvr.py -l <testfile.bag>")
-    sys.exit(0)
-  if len(args) >= 3 and args[1] == "-l":
+  index = 0
+  while index < len(args):
+    if args[index] == "-h":
+      defaultprint()
+    if args[index] == "-s":
+      save = True
+    if args[index] == "-train":
+      index += 1
+      while (index < len(args)
+        and args[index] != "-test"
+        and args[index] != "-train"
+        and args[index] != "-test"):
+        trainfiles.append(args[index])
+        index += 1
+      index -= 1
+    if args[index] == "-test":
+      index += 1
+      while (index < len(args)
+        and args[index] != "-test"
+        and args[index] != "-train"
+        and args[index] != "-test"):
+        testfiles.append(args[index])
+        index += 1
+      index -= 1
+    index += 1
+
+  if len(testfiles) == 0:
+    defaultprint()
+
+  if len(trainfiles) == 0:
     load = True
-    testfile = args[2]
-  elif len(args) > 3 and args[1] == "-s":
-    save = True
-    trainfile = args[2]
-    testfile = args[3]
-  else:
-    load = False
-    trainfile = args[1]
-    testfile = args[2]
 
   # Reading tracker data
   hmodel = None
   vmodel = None
   if not load:
-    trackers = dict()
-    br = libsolve.BagReader(trainfile)
-    br.read("/loc/vive/trackers", libnrvsolve.trackerhandler, trackers)
-    # Reading light data
     data = [np.empty([0,4]),
       np.empty([0,1]),
       np.empty([0,4]),
       np.empty([0,1])]
-    lr = libnrvsolve.LightReader(trainfile, trackers)
-    lr.read("/loc/vive/light", data)
-
-    # # Coordinate conversion
-    # reduced_h = np.empty([0,4])
-    # reduced_v = np.empty([0,4])
-    # for i in range(0,data[0].shape[0]):
-    #   distance = np.sqrt(data[0][i,0]**2 + data[0][i,1]**2)
-    #   alpha_h = np.arctan2(data[0][i,0] , data[0][i,2])
-    #   height = data[0][i,1]
-    #   Ry = np.matrix([[np.cos(alpha_h),0.0,np.sin(alpha_h)],
-    #     [0.0, 1.0, 0.0],
-    #     [-np.sin(alpha_h),0.0,np.cos(alpha_h)]])
-    #   R = cv2.Rodrigues(data[0][i,3:6])[0]
-    #   new_R = Ry * R
-    #   trAl = cv2.Rodrigues(new_R)[0]
-    #   orientation_x = trAl[0]
-    #   orientation_y = trAl[1]
-    #   orientation_z = trAl[2]
-    #   features = np.array([distance, orientation_x, orientation_y, orientation_z])
-    #   reduced_h = np.vstack((reduced_h, features))
-
-    # for i in range(0,data[2].shape[0]):
-    #   distance = np.sqrt(data[2][i,0]**2 + data[2][i,1]**2)
-    #   alpha_v = np.arctan2(data[2][i,1] , data[2][i,2])
-    #   height = data[2][i,0]
-    #   Ry = np.matrix([[np.cos(alpha_v),0.0,np.sin(alpha_v)],
-    #     [0.0, 1.0, 0.0],
-    #     [-np.sin(alpha_v),0.0,np.cos(alpha_v)]])
-    #   R = cv2.Rodrigues(data[2][i,3:6])[0]
-    #   new_R = Ry * R
-    #   trAl = cv2.Rodrigues(new_R)[0]
-    #   orientation_x = trAl[0]
-    #   orientation_y = trAl[1]
-    #   orientation_z = trAl[2]
-    #   features = np.array([distance, orientation_x, orientation_y, orientation_z])
-    #   reduced_v = np.vstack((reduced_v, features))
-
-    # # Plot
-    # fig, axs = plt.subplots(6, 3, sharex = False, sharey= False)
-    # axs[0,0].plot(data[0][:,0])
-    # axs[1,0].plot(data[0][:,1])
-    # axs[2,0].plot(data[0][:,2])
-    # axs[3,0].plot(data[0][:,3])
-    # axs[4,0].plot(data[0][:,4])
-    # axs[5,0].plot(data[0][:,5])
-
-    # axs[0,1].plot(reduced_h[:,0])
-    # axs[3,1].plot(reduced_h[:,1])
-    # axs[4,1].plot(reduced_h[:,2])
-    # axs[5,1].plot(reduced_h[:,3])
-
-    # axs[0,2].plot(reduced_v[:,0])
-    # axs[3,2].plot(reduced_v[:,1])
-    # axs[4,2].plot(reduced_v[:,2])
-    # axs[5,2].plot(reduced_v[:,3])
-    # plt.show()
-
+    for trainfile in trainfiles:
+      trackers = dict()
+      br = libsolve.BagReader(trainfile)
+      br.read("/loc/vive/trackers", libnrvsolve.trackerhandler, trackers)
+      # Reading light data
+      lr = libnrvsolve.LightReader(trainfile, trackers)
+      lr.read("/loc/vive/light", data)
 
     # Undersampling
-    SPLIT = 0.5
+    SPLIT = 0.05
     h_idx = np.random.choice(range(data[0].shape[0]),
       int(data[0].shape[0] * SPLIT),
       replace=False)
@@ -142,51 +106,17 @@ def main(args):
     vmodel = models[1]
 
   # Reading Testing data
-  trackers = dict()
-  br = libsolve.BagReader(testfile)
-  br.read("/loc/vive/trackers", libnrvsolve.trackerhandler, trackers)
-  # Reading light data
   data = [np.empty([0,4]),
     np.empty([0,1]),
     np.empty([0,4]),
     np.empty([0,1])]
-  lr = libnrvsolve.LightReader(testfile, trackers)
-  lr.read("/loc/vive/light", data)
-
-  # # Coordinate conversion
-  # reduced_h = np.empty([0,4])
-  # reduced_v = np.empty([0,4])
-  # for i in range(0,data[0].shape[0]):
-  #   distance = np.sqrt(data[0][i,0]**2 + data[0][i,1]**2)
-  #   alpha_h = np.arctan2(data[0][i,0] , data[0][i,2])
-  #   height = data[0][i,1]
-  #   Ry = np.matrix([[np.cos(alpha_h),0.0,np.sin(alpha_h)],
-  #     [0.0, 1.0, 0.0],
-  #     [-np.sin(alpha_h),0.0,np.cos(alpha_h)]])
-  #   R = cv2.Rodrigues(data[0][i,3:6])[0]
-  #   new_R = Ry * R
-  #   trAl = cv2.Rodrigues(new_R)[0]
-  #   orientation_x = trAl[0]
-  #   orientation_y = trAl[1]
-  #   orientation_z = trAl[2]
-  #   features = np.array([distance, orientation_x, orientation_y, orientation_z])
-  #   reduced_h = np.vstack((reduced_h, features))
-
-  # for i in range(0,data[2].shape[0]):
-  #   distance = np.sqrt(data[2][i,0]**2 + data[2][i,1]**2)
-  #   alpha_h = np.arctan2(data[2][i,1] , data[2][i,2])
-  #   height = data[2][i,0]
-  #   Ry = np.matrix([[np.cos(alpha_h),0.0,np.sin(alpha_h)],
-  #     [0.0, 1.0, 0.0],
-  #     [-np.sin(alpha_h),0.0,np.cos(alpha_h)]])
-  #   R = cv2.Rodrigues(data[2][i,3:6])[0]
-  #   new_R = Ry * R
-  #   trAl = cv2.Rodrigues(new_R)[0]
-  #   orientation_x = trAl[0]
-  #   orientation_y = trAl[1]
-  #   orientation_z = trAl[2]
-  #   features = np.array([distance, orientation_x, orientation_y, orientation_z])
-  #   reduced_v = np.vstack((reduced_v, features))
+  for testfile in testfiles:
+    trackers = dict()
+    br = libsolve.BagReader(testfile)
+    br.read("/loc/vive/trackers", libnrvsolve.trackerhandler, trackers)
+    # Reading light data
+    lr = libnrvsolve.LightReader(testfile, trackers)
+    lr.read("/loc/vive/light", data)
 
   # Predict with test data
   predicted_hdata = hmodel.predict(data[0])
