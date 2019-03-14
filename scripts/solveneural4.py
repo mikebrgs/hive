@@ -14,9 +14,9 @@ from tensorflow.keras import layers
 def build_model():
   model = keras.Sequential([
     layers.Dense(4, activation=tf.nn.sigmoid, input_shape=(4,)),
-    layers.Dense(4, activation=tf.nn.sigmoid),
-    layers.Dense(4, activation=tf.nn.sigmoid),
-    layers.Dense(4, activation=tf.nn.sigmoid),
+    layers.Dense(16, activation=tf.nn.sigmoid),
+    layers.Dense(16, activation=tf.nn.sigmoid),
+    layers.Dense(16, activation=tf.nn.sigmoid),
     layers.Dense(1)
   ])
 
@@ -89,7 +89,7 @@ def main(args):
       lr.read("/loc/vive/light", data)
 
     # Undersampling
-    SPLIT = 0.5
+    SPLIT = 0.1
     h_idx = np.random.choice(range(data[0].shape[0]),
       int(data[0].shape[0] * SPLIT),
       replace=False)
@@ -104,10 +104,10 @@ def main(args):
     EPOCHS = 2000
     hmodel.fit(data[0][h_idx], data[1][h_idx],
       epochs=EPOCHS, validation_split = 0.0,
-      verbose=True, batch_size=100, shuffle = True)
+      verbose=True, batch_size=50, shuffle = True)
     vmodel.fit(data[2][v_idx], data[3][v_idx],
       epochs=EPOCHS, validation_split = 0.0,
-      verbose=True, batch_size=100, shuffle = True)
+      verbose=True, batch_size=50, shuffle = True)
     models = (hmodel,vmodel)
 
     # Saving the data
@@ -152,6 +152,9 @@ def main(args):
   hist, bin_edges = np.histogram(predicted_vdata - data[3], bins = 20)
   axs[1,1].bar(bin_edges[:-1], hist, width = bin_edges[0] - bin_edges[1])
   plt.show()
+  # print("Horizontal Error: " + str(np.mean(np.absolute(predicted_hdata - data[1]))))
+  # print("Vertical Error: " + str(np.mean(np.absolute(predicted_vdata - data[3]))))
+
 
 if __name__ == '__main__':
   main(sys.argv)

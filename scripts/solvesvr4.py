@@ -68,7 +68,7 @@ def main(args):
       lr.read("/loc/vive/light", data)
 
     # Undersampling
-    SPLIT = 0.05
+    SPLIT = 0.1
     h_idx = np.random.choice(range(data[0].shape[0]),
       int(data[0].shape[0] * SPLIT),
       replace=False)
@@ -123,16 +123,19 @@ def main(args):
   predicted_vdata = vmodel.predict(data[2])
 
   # Plot
-  fig, axs = plt.subplots(2, 2, sharex = False, sharey= False)
-  axs[0,0].plot(predicted_hdata)
-  axs[0,0].plot(data[1])
-  axs[0,1].plot(predicted_vdata)
-  axs[0,1].plot(data[3])
-  hist, bin_edges = np.histogram(predicted_hdata - data[1], bins = 20)
-  axs[1,0].bar(bin_edges[:-1], hist, width = bin_edges[0] - bin_edges[1])
-  hist, bin_edges = np.histogram(predicted_vdata - data[3], bins = 20)
-  axs[1,1].bar(bin_edges[:-1], hist, width = bin_edges[0] - bin_edges[1])
-  plt.show()
+  # fig, axs = plt.subplots(2, 2, sharex = False, sharey= False)
+  # axs[0,0].plot(predicted_hdata)
+  # axs[0,0].plot(data[1])
+  # axs[0,1].plot(predicted_vdata)
+  # axs[0,1].plot(data[3])
+  # hist, bin_edges = np.histogram(predicted_hdata - data[1], bins = 20)
+  # axs[1,0].bar(bin_edges[:-1], hist, width = bin_edges[0] - bin_edges[1])
+  # hist, bin_edges = np.histogram(predicted_vdata - data[3], bins = 20)
+  # axs[1,1].bar(bin_edges[:-1], hist, width = bin_edges[0] - bin_edges[1])
+  # plt.show()
+
+  print("Horizontal Error: " + str(np.mean(np.absolute(predicted_hdata - data[1]))))
+  print("Vertical Error: " + str(np.mean(np.absolute(predicted_vdata - data[3]))))
 
   pass
 
