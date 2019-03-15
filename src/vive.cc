@@ -325,11 +325,9 @@ bool Calibration::GetLighthouses(hive::ViveCalibrationLighthouseArray * msg) {
 }
 
 bool Calibration::SetTrackers(hive::ViveCalibrationTrackerArray const& msg) {
-  std::cout << "0" << std::endl;
   for (std::vector<hive::ViveCalibrationTracker>::const_iterator tr_it = msg.trackers.begin();
     tr_it != msg.trackers.end(); tr_it++) {
     // trackers[tr_it->serial].frame = tr_it->serial;
-    std::cout << "1" << std::endl;
     trackers[tr_it->serial].serial = tr_it->serial;
 
     // Acc bias
@@ -352,7 +350,6 @@ bool Calibration::SetTrackers(hive::ViveCalibrationTrackerArray const& msg) {
     trackers[tr_it->serial].gyr_scale.y = tr_it->gyr_scale.y;
     trackers[tr_it->serial].gyr_scale.z = tr_it->gyr_scale.z;
 
-    std::cout << "2" << std::endl;
     for (std::vector<hive::ViveExtrinsics>::const_iterator ss_it = tr_it->extrinsics.begin();
       ss_it != tr_it->extrinsics.end(); ss_it++) {
       // Sensor positions
@@ -365,7 +362,7 @@ bool Calibration::SetTrackers(hive::ViveCalibrationTrackerArray const& msg) {
       trackers[tr_it->serial].sensors[ss_it->id].normal.z = ss_it->normal.z;
     }
   }
-  std::cout << "3" << std::endl;
+
   return true;
 }
 
