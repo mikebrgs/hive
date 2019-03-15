@@ -7,7 +7,7 @@ gamma = 0
 
 position = np.array([0.0, 0.0, 0.0])
 normal = np.array([0.0, 0.0, 1.0])
-reference = np.array([0.0, 0.0, 1.0])
+reference = np.array([0.0, 1.0, 0.0])
 
 def randompose():
   Z = np.random.rand() * 5
@@ -84,7 +84,7 @@ def horizontalbetafrompose(pose):
 
 def reduceverticalpose(pose):
   distance = np.sqrt(pose[1]**2 + pose[2]**2)
-  alpha_v = np.arctan2(pose[0],pose[2])
+  alpha_v = np.arctan2(pose[1],pose[2])
   height = pose[0]
   Rx = np.matrix([[1.0,0.0,0.0],
     [0.0,np.cos(-alpha_v),-np.sin(-alpha_v)],
@@ -100,7 +100,7 @@ def reduceverticalpose(pose):
 
 def reducehorizontalpose(pose):
   distance = np.sqrt(pose[0]**2 + pose[2]**2)
-  alpha_v = np.arctan2(pose[1], pose[2])
+  alpha_h = np.arctan2(pose[0], pose[2])
   height = pose[1]
   Ry = np.matrix([[np.cos(alpha_h),0.0,np.sin(alpha_h)],
     [0.0, 1.0, 0.0],

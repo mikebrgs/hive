@@ -15,15 +15,15 @@ from tensorflow.keras import layers
 def build_model():
   model = keras.Sequential([
     layers.Dense(4, activation=tf.nn.sigmoid, input_shape=(4,)),
-    layers.Dense(16, activation=tf.nn.sigmoid),
-    layers.Dense(16, activation=tf.nn.sigmoid),
-    layers.Dense(16, activation=tf.nn.sigmoid),
-    layers.Dense(16, activation=tf.nn.sigmoid),
-    layers.Dense(16, activation=tf.nn.sigmoid),
+    layers.Dense(32, activation=tf.nn.sigmoid),
+    layers.Dense(32, activation=tf.nn.sigmoid),
+    layers.Dense(32, activation=tf.nn.sigmoid),
+    layers.Dense(32, activation=tf.nn.sigmoid),
+    layers.Dense(32, activation=tf.nn.sigmoid),
     layers.Dense(1)
   ])
 
-  optimizer = tf.keras.optimizers.SGD(0.001)
+  optimizer = tf.keras.optimizers.RMSprop(0.001)
 
   model.compile(loss='mse',
                 optimizer=optimizer,
@@ -36,7 +36,7 @@ def defaultprint():
   # print("python solveneural4.py -test [<testfile.bag> ...]")
   sys.exit(0)
 
-SAMPLES_TRAIN = 10000
+SAMPLES_TRAIN = 5000
 SAMPLES_TEST = 1000
 
 def main(args):
@@ -46,13 +46,10 @@ def main(args):
     np.empty([0,1])]
   for _ in range(SAMPLES_TRAIN):
     pose = libvive.randompose()
-    features = libvive.reduceverticalpose(pose)
-    beta = libvive.verticalbetafrompose(pose)
+    features = libvive.reducehorizontalpose(pose)
+    beta = libvive.horizontalbetafrompose(pose)
     data[0] = np.vstack((data[0],features))
     data[1] = np.vstack((data[1],np.array(beta)))
-
-  for _ in range(SAMPLES_TRAIN):
-    pose = libvive.randompose()
     features = libvive.reduceverticalpose(pose)
     beta = libvive.verticalbetafrompose(pose)
     data[2] = np.vstack((data[2],features))
@@ -65,26 +62,24 @@ def main(args):
 
   EPOCHS = 2000
   hmodel.fit(data[0], data[1],
-    epochs=EPOCHS, validation_split = 0.1,
-    verbose=True, batch_size=50, shuffle = True)
+    epochs=EPOCHS, validation_split = 0.0,
+    verbose=True, batch_size= 50, shuffle = True)
   vmodel.fit(data[2], data[3],
-    epochs=EPOCHS, validation_split = 0.1,
-    verbose=True, batch_size=50, shuffle = True)
+    epochs=EPOCHS, validation_split = 0.0,
+    verbose=True, batch_size= 50, shuffle = True)
   models = (hmodel,vmodel)
 
   data = [np.empty([0,4]),
     np.empty([0,1]),
     np.empty([0,4]),
     np.empty([0,1])]
-  for _ in range(SAMPLES_TEST):
-    pose = libvive.randompose()
-    features = libvive.reduceverticalpose(pose)
-    beta = libvive.verticalbetafrompose(pose)
+  for index in range(SAMPLES_TEST):
+    # pose = libvive.randompose()
+    pose = np.array([0.0, 0.0, np.cos(3.14 * 4 * float(index) / float(SAMPLES_TEST)) + 1.5, 0.0, 0.0, 0.0])
+    features = libvive.reducehorizontalpose(pose)
+    beta = libvive.horizontalbetafrompose(pose)
     data[0] = np.vstack((data[0],features))
     data[1] = np.vstack((data[1],np.array(beta)))
-
-  for _ in range(SAMPLES_TEST):
-    pose = libvive.randompose()
     features = libvive.reduceverticalpose(pose)
     beta = libvive.verticalbetafrompose(pose)
     data[2] = np.vstack((data[2],features))
@@ -101,8 +96,10 @@ def main(args):
   fig, axs = plt.subplots(2, 2, sharex = False, sharey= False)
   axs[0,0].plot(predicted_hdata)
   axs[0,0].plot(data[1])
+  axs[0,0].legend(['Predicted','Real'])
   axs[0,1].plot(predicted_vdata)
   axs[0,1].plot(data[3])
+  axs[0,1].legend(['Predicted','Real'])
   hist, bin_edges = np.histogram(predicted_hdata - data[1], bins = 20)
   axs[1,0].bar(bin_edges[:-1], hist, width = bin_edges[0] - bin_edges[1])
   hist, bin_edges = np.histogram(predicted_vdata - data[3], bins = 20)
