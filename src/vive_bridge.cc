@@ -205,7 +205,7 @@ class HiveBridge {
     // Set the default IMU transform
     // Convert(&t->cal.imu_transform[0], it->imu_transform.rotation);
     // Convert(&t->cal.imu_transform[4], it->imu_transform.translation);
-    // Set the default IMU transform
+    // Set the default HEAD transform
     // Convert(&t->cal.head_transform[0], it->head_transform.rotation);
     // Convert(&t->cal.head_transform[4], it->head_transform.translation);
 

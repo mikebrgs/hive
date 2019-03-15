@@ -362,6 +362,7 @@ bool Calibration::SetTrackers(hive::ViveCalibrationTrackerArray const& msg) {
       trackers[tr_it->serial].sensors[ss_it->id].normal.z = ss_it->normal.z;
     }
   }
+
   return true;
 }
 
