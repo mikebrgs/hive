@@ -49,7 +49,7 @@ def verticalbetafrompose(pose):
   beta_list = [beta1, beta2, beta3, beta4]
   beta = max(beta_list) - min(beta_list)
 
-  return beta
+  return beta * 10e3
 
 def horizontalbetafrompose(pose):
   lRt = np.asmatrix(cv2.Rodrigues(pose[3:6])[0])
@@ -80,15 +80,15 @@ def horizontalbetafrompose(pose):
   beta_list = [beta1, beta2, beta3, beta4]
   beta = max(beta_list) - min(beta_list)
 
-  return beta
+  return beta * 10e3
 
 def reduceverticalpose(pose):
   distance = np.sqrt(pose[1]**2 + pose[2]**2)
   alpha_v = np.arctan2(pose[0],pose[2])
   height = pose[0]
   Rx = np.matrix([[1.0,0.0,0.0],
-    [0.0,np.cos(alpha_v),-np.sin(alpha_v)],
-    [0.0,np.sin(alpha_v),np.cos(alpha_v)]])
+    [0.0,np.cos(-alpha_v),-np.sin(-alpha_v)],
+    [0.0,np.sin(-alpha_v),np.cos(-alpha_v)]])
   R = cv2.Rodrigues(pose[3:6])[0]
   new_R = Rx * R
   trAl = cv2.Rodrigues(new_R)[0]

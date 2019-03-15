@@ -110,20 +110,6 @@ def main(args):
       verbose=True, batch_size=50, shuffle = True)
     models = (hmodel,vmodel)
 
-    # Saving the data
-    if save:
-      dumpfile = open("tmp/svr_models4.bin", "wb")
-      pickle.dump(models, dumpfile)
-      dumpfile.close()
-  else:
-    # Saving the data
-    loadfile = open("tmp/svr_models4.bin", "rb")
-    models = pickle.load(loadfile)
-    loadfile.close()
-
-    hmodel = models[0]
-    vmodel = models[1]
-
   # Reading Testing data
   data = [np.empty([0,4]),
     np.empty([0,1]),
