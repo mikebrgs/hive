@@ -7,6 +7,7 @@
 
 // Ceres and logging
 #include <ceres/ceres.h>
+#include <ceres/rotation.h>
 
 // Eigen C++ includes
 #include <Eigen/Dense>
@@ -28,26 +29,342 @@
 #include <hive/vive_general.h>
 #include "hive/vive.h"
 
+struct LightVecStamped {
+  LightVec lights;
+  ros::Time stamp;
+};
+
+struct AxisLightVec {
+  std::string lighthouse;
+  // axis - observation
+  std::map<uint8_t, LightVecStamped> axis;
+};
+
+// Lighthouse - both observations
+typedef std::map<std::string, AxisLightVec> LightData;
+
+struct Extrinsics {
+  double positions[3 * TRACKER_SENSORS_NUMBER];
+  double normals[3 * TRACKER_SENSORS_NUMBER];
+  double radius;
+  size_t size;
+};
+
+struct SolvedPose {
+  double transform[6];
+  std::string lighthouse;
+  bool valid;
+  ros::Time stamp;
+};
+
 namespace base{
   double start_pose[6] = {0, 0, 1, 0, 0, 0};
 }
 
 class BaseSolve {
 public:
-  BaseSolve();
-  ~BaseSolve();
-  bool Initialize(Environment const& environment,
+  BaseSolve(Environment const& environment,
     Tracker const& tracker);
+  ~BaseSolve();
+  // bool Initialize(Environment const& environment,
+    // Tracker const& tracker);
   void ProcessLight(const hive::ViveLight::ConstPtr& msg);
   bool GetTransform(geometry_msgs::TransformStamped &msg);
+private:
+  std::map<std::string, SolvedPose> poses_;
+  SolvedPose tracker_pose_;
+  Environment environment_;
+  LightData observations_;
+  Extrinsics extrinsics_;
+  std::mutex * solveMutex_;
+  Tracker tracker_;
 };
 
-BaseSolve::BaseSolve() {
-  // Do nothing
+BaseSolve::BaseSolve(Environment const& environment,
+  Tracker const& tracker) {
+  for (std::map<uint8_t, Sensor>::const_iterator sn_it = tracker.sensors.begin();
+    sn_it != tracker.sensors.end(); sn_it++) {
+    if (unsigned(sn_it->first) >= TRACKER_SENSORS_NUMBER
+      || unsigned(sn_it->first) < 0) {
+      ROS_FATAL("Sensor ID is invalid.");
+      return;
+    }
+    extrinsics_.positions[3 * unsigned(sn_it->first)]     = sn_it->second.position.x;
+    extrinsics_.positions[3 * unsigned(sn_it->first) + 1] = sn_it->second.position.y;
+    extrinsics_.positions[3 * unsigned(sn_it->first) + 2] = sn_it->second.position.z;
+    extrinsics_.normals[3 * unsigned(sn_it->first)]       = sn_it->second.normal.x;
+    extrinsics_.normals[3 * unsigned(sn_it->first) + 1]   = sn_it->second.normal.y;
+    extrinsics_.normals[3 * unsigned(sn_it->first) + 2]   = sn_it->second.normal.z;
+  }
+  extrinsics_.size = tracker.sensors.size();
+  extrinsics_.radius = 0.005;
+  tracker_ = tracker;
+  environment_ = environment;
+  for (size_t i = 0; i < 6; i++) tracker_pose_.transform[i] = base::start_pose[i];
 }
 
 BaseSolve::~BaseSolve() {
   // Do nothing
+}
+
+// bool BaseSolve::Initialize(Environment const& environment,
+//   Tracker const& tracker) {
+//   for (std::map<uint8_t, Sensor>::const_iterator sn_it = tracker.sensors.begin();
+//     sn_it != tracker.sensors.end(); sn_it++) {
+//     if (unsigned(sn_it->first) >= TRACKER_SENSORS_NUMBER
+//       || unsigned(sn_it->first) < 0) {
+//       ROS_FATAL("Sensor ID is invalid.");
+//       return false;
+//     }
+//     extrinsics_.positions[3 * unsigned(sn_it->first)]     = sn_it->second.position.x;
+//     extrinsics_.positions[3 * unsigned(sn_it->first) + 1] = sn_it->second.position.y;
+//     extrinsics_.positions[3 * unsigned(sn_it->first) + 2] = sn_it->second.position.z;
+//     extrinsics_.normals[3 * unsigned(sn_it->first)]       = sn_it->second.normal.x;
+//     extrinsics_.normals[3 * unsigned(sn_it->first) + 1]   = sn_it->second.normal.y;
+//     extrinsics_.normals[3 * unsigned(sn_it->first) + 2]   = sn_it->second.normal.z;
+//   }
+//   extrinsics_.size = tracker.sensors.size();
+//   extrinsics_.radius = 0.005;
+//   tracker_ = tracker;
+//   environment_ = environment;
+//   for (size_t i = 0; i < 6; i++) tracker_pose_.transform[i] = base::start_pose[i];
+//   return true;
+// }
+
+struct BundleHorizontalAngle{
+  explicit BundleHorizontalAngle(LightVec horizontal_observations, bool correction) :
+  horizontal_observations_(horizontal_observations), correction_(correction) {}
+
+  template <typename T> bool operator()(const T* const * parameters, T * residual) const {
+    // Rotation matrix from the tracker's frame to the vive frame
+    Eigen::Matrix<T, 3, 3> vRt;
+    ceres::AngleAxisToRotationMatrix(&parameters[POSE][3], vRt.data());
+    // Position of the tracker in the vive frame
+    Eigen::Matrix<T, 3, 1> vPt;
+    vPt << parameters[POSE][0], parameters[POSE][1], parameters[POSE][2];
+    // Position of the sensor in the tracker's frame
+    Eigen::Matrix<T, 3, 1> tPs;
+    // Orientation of the lighthouse in the vive frame
+    Eigen::Matrix<T, 3, 3> vRl;
+    ceres::AngleAxisToRotationMatrix(&parameters[LIGHTHOUSE][3], vRl.data());
+    Eigen::Matrix<T, 3, 3> lRv = vRl.transpose();
+    // Position of the lighthouse in the vive frame
+    Eigen::Matrix<T, 3, 1> vPl;
+    vPl << parameters[LIGHTHOUSE][0], parameters[LIGHTHOUSE][1], parameters[LIGHTHOUSE][2];
+    Eigen::Matrix<T, 3, 1> lPv = - lRv * vPl;
+
+    // Create residuals
+    for (size_t i = 0; i < horizontal_observations_.size(); i++) {
+      // Position of the photodiode
+      tPs << parameters[EXTRINSICS][3*horizontal_observations_[i].sensor_id + 0],
+      parameters[EXTRINSICS][3*horizontal_observations_[i].sensor_id + 1],
+      parameters[EXTRINSICS][3*horizontal_observations_[i].sensor_id + 2];
+      Eigen::Matrix<T, 3, 1> lPs = lRv * vRt * tPs + (lRv * vPt + lPv);
+
+      T ang; // The final angle
+      T x = (lPs(0)/lPs(2)); // Vertical angle
+      ang = atan(x);
+
+      residual[i] = T(horizontal_observations_[i].angle) - ang;
+    }
+
+    return true;
+  }
+
+ private:
+  LightVec horizontal_observations_;
+  bool correction_;
+};
+
+struct BundleVerticalAngle{
+  explicit BundleVerticalAngle(LightVec vertical_observations, bool correction) :
+  vertical_observations_(vertical_observations), correction_(correction) {}
+
+  template <typename T> bool operator()(const T* const * parameters, T * residual) const {
+    // Rotation matrix from the tracker's frame to the vive frame
+    Eigen::Matrix<T, 3, 3> vRt;
+    ceres::AngleAxisToRotationMatrix(&parameters[POSE][3], vRt.data());
+    // Position of the tracker in the vive frame
+    Eigen::Matrix<T, 3, 1> vPt;
+    vPt << parameters[POSE][0], parameters[POSE][1], parameters[POSE][2];
+    // Position of the sensor in the tracker's frame
+    Eigen::Matrix<T, 3, 1> tPs;
+    // Orientation of the lighthouse in the vive frame
+    Eigen::Matrix<T, 3, 3> vRl;
+    ceres::AngleAxisToRotationMatrix(&parameters[LIGHTHOUSE][3], vRl.data());
+    Eigen::Matrix<T, 3, 3> lRv = vRl.transpose();
+    // Position of the lighthouse in the vive frame
+    Eigen::Matrix<T, 3, 1> vPl;
+    vPl << parameters[LIGHTHOUSE][0], parameters[LIGHTHOUSE][1], parameters[LIGHTHOUSE][2];
+    Eigen::Matrix<T, 3, 1> lPv = - lRv * vPl;
+
+    // Create residuals
+    for (size_t i = 0; i < vertical_observations_.size(); i++) {
+      // Position of the photodiode
+      tPs << parameters[EXTRINSICS][3*vertical_observations_[i].sensor_id + 0],
+      parameters[EXTRINSICS][3*vertical_observations_[i].sensor_id + 1],
+      parameters[EXTRINSICS][3*vertical_observations_[i].sensor_id + 2];
+      Eigen::Matrix<T, 3, 1> lPs = lRv * vRt * tPs + (lRv * vPt + lPv);
+
+      T ang; // The final angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
+      ang = atan(y);
+
+      residual[i] = T(vertical_observations_[i].angle) - ang;
+    }
+
+    return true;
+  }
+
+ private:
+  LightVec vertical_observations_;
+  bool correction_;
+};
+
+bool ComputeTransformBundle(LightData observations,
+  SolvedPose * pose_tracker,
+  Extrinsics * extrinsics,
+  Environment * environment,
+  std::mutex * solveMutex) {
+
+  solveMutex->lock();
+  ceres::Problem problem;
+  double pose[6];// = {0.017356, -0.00947887, 1.53151, -0.799895, 2.22509, -0.436057};
+  std::map<std::string, double[6]> lighthouses_pose;
+
+  for (int i = 0; i < 6; i++) {
+    pose[i] = pose_tracker->transform[i];
+  }
+
+  solveMutex->unlock();
+  size_t n_sensors = 0, counter = 0;
+  for (LightData::iterator ld_it = observations.begin();
+    ld_it != observations.end(); ld_it++) {
+    // Get lighthouse to angle axis
+    bool lighthouse = false;
+    bool correction = false;
+    if (environment->lighthouses.find(ld_it->first) == environment->lighthouses.end())
+      continue;
+
+    Eigen::AngleAxisd tmp_AA = Eigen::AngleAxisd(
+      Eigen::Quaterniond(
+        environment->lighthouses[ld_it->first].rotation.w,
+        environment->lighthouses[ld_it->first].rotation.x,
+        environment->lighthouses[ld_it->first].rotation.y,
+        environment->lighthouses[ld_it->first].rotation.z).toRotationMatrix());
+    lighthouses_pose[ld_it->first][0] = environment->lighthouses[ld_it->first].translation.x;
+    lighthouses_pose[ld_it->first][1] = environment->lighthouses[ld_it->first].translation.y;
+    lighthouses_pose[ld_it->first][2] = environment->lighthouses[ld_it->first].translation.z;
+    lighthouses_pose[ld_it->first][3] = tmp_AA.axis()(0) * tmp_AA.angle();
+    lighthouses_pose[ld_it->first][4] = tmp_AA.axis()(1) * tmp_AA.angle();
+    lighthouses_pose[ld_it->first][5] = tmp_AA.axis()(2) * tmp_AA.angle();
+    // Filling the solve with the data
+    if (ld_it->second.axis[HORIZONTAL].lights.size() != 0) {
+      n_sensors += ld_it->second.axis[HORIZONTAL].lights.size();
+      ceres::DynamicAutoDiffCostFunction<BundleHorizontalAngle, 4> * horizontal_cost =
+      new ceres::DynamicAutoDiffCostFunction<BundleHorizontalAngle, 4>
+      (new BundleHorizontalAngle(ld_it->second.axis[HORIZONTAL].lights, correction));
+      horizontal_cost->AddParameterBlock(6);
+      horizontal_cost->AddParameterBlock(3 * extrinsics->size);
+      horizontal_cost->AddParameterBlock(6);
+      horizontal_cost->AddParameterBlock(1);
+      horizontal_cost->SetNumResiduals(ld_it->second.axis[HORIZONTAL].lights.size());
+
+      problem.AddResidualBlock(horizontal_cost,
+        NULL,
+        pose,
+        extrinsics->positions,
+        lighthouses_pose[ld_it->first],
+        &(extrinsics->radius));
+
+      lighthouse = lighthouse || true;
+    }
+    if (ld_it->second.axis[VERTICAL].lights.size() != 0) {
+      n_sensors += ld_it->second.axis[VERTICAL].lights.size();
+      ceres::DynamicAutoDiffCostFunction<BundleVerticalAngle, 4> * vertical_cost =
+      new ceres::DynamicAutoDiffCostFunction<BundleVerticalAngle, 4>
+      (new BundleVerticalAngle(ld_it->second.axis[VERTICAL].lights, correction));
+      vertical_cost->AddParameterBlock(6);
+      vertical_cost->AddParameterBlock(3 * extrinsics->size);
+      vertical_cost->AddParameterBlock(6);
+      vertical_cost->AddParameterBlock(1);
+      vertical_cost->SetNumResiduals(ld_it->second.axis[VERTICAL].lights.size());
+
+      problem.AddResidualBlock(vertical_cost,
+        NULL,
+        pose,
+        extrinsics->positions,
+        lighthouses_pose[ld_it->first],
+        &(extrinsics->radius));
+
+      lighthouse = lighthouse || true;
+    }
+    if (lighthouse) {
+      problem.SetParameterBlockConstant(lighthouses_pose[ld_it->first]);
+      counter++;
+    }
+  }
+  // Exit in case no lighthouses are available
+  if (counter == 0) {
+    return false;
+  }
+  problem.SetParameterBlockConstant(extrinsics->positions);
+  problem.SetParameterBlockConstant(&(extrinsics->radius));
+
+  ceres::Solver::Options options;
+  ceres::Solver::Summary summary;
+
+  options.minimizer_progress_to_stdout = false;
+  options.linear_solver_type = ceres::DENSE_SCHUR;
+
+  ceres::Solve(options, &problem, &summary);
+
+  solveMutex->lock();
+  std::cout << std::setprecision(4) << "CTB: " 
+    << std::setprecision(4) << summary.final_cost << " - "
+    << std::setprecision(4) << pose[0] << ", "
+    << std::setprecision(4) << pose[1] << ", "
+    << std::setprecision(4) << pose[2] << ", "
+    << std::setprecision(4) << pose[3] << ", "
+    << std::setprecision(4) << pose[4] << ", "
+    << std::setprecision(4) << pose[5] << std::endl << std::endl;
+  solveMutex->unlock();
+
+
+  // Check if valid
+  double pose_norm = sqrt(pose[0]*pose[0] + pose[1]*pose[1] + pose[2]*pose[2]);
+  if (summary.final_cost > 1e-5* static_cast<double>(unsigned(n_sensors))
+    || pose_norm > 20
+    || pose[2] <= 0 ) {
+    return false;
+  }
+
+  double angle_norm = sqrt(pose[3]*pose[3] + pose[4]*pose[4] + pose[5]*pose[5]);
+  // Change the axis angle to an acceptable interval
+  while (angle_norm > M_PI) {
+    pose[3] = pose[3] / angle_norm * (angle_norm - 2 * M_PI);
+    pose[4] = pose[4] / angle_norm * (angle_norm - 2 * M_PI);
+    pose[5] = pose[5] / angle_norm * (angle_norm - 2 * M_PI);
+    angle_norm = sqrt(pose[3]*pose[3] + pose[4]*pose[4] + pose[5]*pose[5]);
+  }
+  // Change the axis angle to an acceptable interval
+  while (angle_norm < - M_PI) {
+    pose[3] = pose[3] / angle_norm * (angle_norm + 2 * M_PI);
+    pose[4] = pose[4] / angle_norm * (angle_norm + 2 * M_PI);
+    pose[5] = pose[5] / angle_norm * (angle_norm + 2 * M_PI);
+    angle_norm = sqrt(pose[3]*pose[3] + pose[4]*pose[4] + pose[5]*pose[5]);
+  }
+
+  // Save the solved pose
+  solveMutex->lock();
+  for (int i = 0; i < 6; i++) {
+    pose_tracker->transform[i] = pose[i];
+  }
+  pose_tracker->valid = true;
+  pose_tracker->stamp = ros::Time::now();
+  solveMutex->unlock();
+
+  return true;
 }
 
 void BaseSolve::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
@@ -55,63 +372,62 @@ void BaseSolve::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
     return;
   }
 
-  // // Check if this is a new lighthouse
-  // if (poses_.find(msg->lighthouse) == poses_.end()) {
-  //   // Set structures
-  //   observations_[msg->lighthouse].lighthouse = msg->lighthouse;
-  // }
+  // Check if this is a new lighthouse
+  if (poses_.find(msg->lighthouse) == poses_.end()) {
+    // Set structures
+    observations_[msg->lighthouse].lighthouse = msg->lighthouse;
+  }
 
-  // // Clear the axis with old data - should only do this if the new data is good
-  // observations_[msg->lighthouse].axis[msg->axis].lights.clear();
+  // Clear the axis with old data - should only do this if the new data is good
+  observations_[msg->lighthouse].axis[msg->axis].lights.clear();
 
-  // // Iterate all sweep data
-  // // std::cout << msg->lighthouse << "-" << static_cast<int>(msg->axis) << " ";
-  // for (std::vector<hive::ViveLightSample>::const_iterator li_it = msg->samples.begin();
-  //   li_it != msg->samples.end(); li_it++) {
-  //   // Detect non-sense data
-  //   if (li_it->sensor == -1
-  //     || li_it->angle > M_PI/3
-  //     || li_it->angle < -M_PI/3) {
-  //     continue;
-  //   }
+  // Iterate all sweep data
+  // std::cout << msg->lighthouse << "-" << static_cast<int>(msg->axis) << " ";
+  for (std::vector<hive::ViveLightSample>::const_iterator li_it = msg->samples.begin();
+    li_it != msg->samples.end(); li_it++) {
+    // Detect non-sense data
+    if (li_it->sensor == -1
+      || li_it->angle > M_PI/3
+      || li_it->angle < -M_PI/3) {
+      continue;
+    }
 
-  //   // New Light
-  //   Light light;
-  //   light.sensor_id = li_it->sensor;
-  //   light.angle = li_it->angle;
-  //   light.timecode = li_it->timecode;
-  //   light.length = li_it->length;
+    // New Light
+    Light light;
+    light.sensor_id = li_it->sensor;
+    light.angle = li_it->angle;
+    light.timecode = li_it->timecode;
+    light.length = li_it->length;
 
-  //   // std::cout << li_it->sensor << ":" << li_it->angle << " ";
+    // std::cout << li_it->sensor << ":" << li_it->angle << " ";
 
-  //   // Add data to the axis
-  //   observations_[msg->lighthouse].axis[msg->axis].lights.push_back(light);
-  //   observations_[msg->lighthouse].axis[msg->axis].stamp = msg->header.stamp;
-  // }
-  // // std::cout << std::endl;
+    // Add data to the axis
+    observations_[msg->lighthouse].axis[msg->axis].lights.push_back(light);
+    observations_[msg->lighthouse].axis[msg->axis].stamp = msg->header.stamp;
+  }
+  // std::cout << std::endl;
 
-  // // Remove old data
-  // for (LightData::iterator lh_it = observations_.begin();
-  //   lh_it != observations_.end(); lh_it++) {
-  //   for (std::map<uint8_t, LightVecStamped>::iterator ax_it = lh_it->second.axis.begin();
-  //     ax_it != lh_it->second.axis.end(); ax_it++) {
-  //     ros::Duration elapsed = ax_it->second.stamp - msg->header.stamp;
-  //     if (elapsed.toNSec() >= 50e6)
-  //       ax_it->second.lights.clear();
-  //   }
-  // }
+  // Remove old data
+  for (LightData::iterator lh_it = observations_.begin();
+    lh_it != observations_.end(); lh_it++) {
+    for (std::map<uint8_t, LightVecStamped>::iterator ax_it = lh_it->second.axis.begin();
+      ax_it != lh_it->second.axis.end(); ax_it++) {
+      ros::Duration elapsed = ax_it->second.stamp - msg->header.stamp;
+      if (elapsed.toNSec() >= 50e6)
+        ax_it->second.lights.clear();
+    }
+  }
 
   // ros::Duration elapsed = observations_[msg->lighthouse].axis[VERTICAL].stamp -
   //   observations_[msg->lighthouse].axis[HORIZONTAL].stamp;
-  // if (observations_[msg->lighthouse].axis[HORIZONTAL].lights.size() > 3
-  //   && observations_[msg->lighthouse].axis[VERTICAL].lights.size() > 3) {
-  //   ComputeTransformBundle(observations_,
-  //     &tracker_pose_,
-  //     &extrinsics_,
-  //     &environment_,
-  //     solveMutex_,
-  //     &lh_extrinsics_);
-  // }
+  if (observations_[msg->lighthouse].axis[HORIZONTAL].lights.size() > 3
+    && observations_[msg->lighthouse].axis[VERTICAL].lights.size() > 3) {
+    ComputeTransformBundle(observations_,
+      &tracker_pose_,
+      &extrinsics_,
+      &environment_,
+      solveMutex_);
+  }
   return;
 }
 
@@ -146,16 +462,6 @@ int main(int argc, char ** argv)
     ROS_INFO("Read calibration file.");
   }
 
-
-  // Trackers
-  rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
-  for (auto bag_it = view_tr.begin(); bag_it != view_tr.end(); bag_it++) {
-    const hive::ViveCalibrationTrackerArray::ConstPtr vt =
-      bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
-    cal.SetTrackers(*vt);
-  }
-  ROS_INFO("Trackers' setup complete.");
-
   // Lighthouses
   rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
   for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
@@ -164,6 +470,16 @@ int main(int argc, char ** argv)
     cal.SetLighthouses(*vl);
   }
   ROS_INFO("Lighthouses' setup complete.");
+
+  // Trackers
+  rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
+  for (auto bag_it = view_tr.begin(); bag_it != view_tr.end(); bag_it++) {
+    const hive::ViveCalibrationTrackerArray::ConstPtr vt =
+      bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
+    cal.SetTrackers(*vt);
+    // TODO set up solver.
+  }
+  ROS_INFO("Trackers' setup complete.");
 
   // Light data
   rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));

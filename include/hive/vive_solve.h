@@ -50,6 +50,7 @@
 
 // Internal types
 
+// Vector of samples
 struct LightVecStamped {
   LightVec lights;
   ros::Time stamp;
@@ -57,9 +58,11 @@ struct LightVecStamped {
 
 struct AxisLightVec {
   std::string lighthouse;
+  // axis - observation
   std::map<uint8_t, LightVecStamped> axis;
 };
 
+// Lighthouse - both observations
 typedef std::map<std::string, AxisLightVec> LightData;
 
 struct Extrinsics {
