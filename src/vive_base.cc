@@ -18,14 +18,13 @@
 #include <rosbag/bag.h>
 #include <rosbag/view.h>
 
-// #include <std_msgs/Int32.h>
-// #include <std_msgs/String.h>
 // ROS messages
 #include <hive/ViveLight.h>
-#include <hive/HiveData.h>
+#include <sensor_msgs/Imu.h>
+#include <geometry_msgs/TransformStamped.h>
+
 
 // Hive includes
-// #include "hive/vive_solve.h" // - Create new solve
 #include <hive/vive_general.h>
 #include "hive/vive.h"
 
@@ -63,8 +62,9 @@ namespace base{
 
 class BaseSolve {
 public:
-  BaseSolve(Environment const& environment,
-    Tracker const& tracker);
+  BaseSolve();
+  BaseSolve(Environment environment,
+    Tracker tracker);
   ~BaseSolve();
   // bool Initialize(Environment const& environment,
     // Tracker const& tracker);
@@ -76,12 +76,15 @@ private:
   Environment environment_;
   LightData observations_;
   Extrinsics extrinsics_;
-  std::mutex * solveMutex_;
   Tracker tracker_;
 };
 
-BaseSolve::BaseSolve(Environment const& environment,
-  Tracker const& tracker) {
+BaseSolve::BaseSolve() {
+  // do nothing
+}
+
+BaseSolve::BaseSolve(Environment environment,
+  Tracker tracker) {
   for (std::map<uint8_t, Sensor>::const_iterator sn_it = tracker.sensors.begin();
     sn_it != tracker.sensors.end(); sn_it++) {
     if (unsigned(sn_it->first) >= TRACKER_SENSORS_NUMBER
@@ -107,29 +110,36 @@ BaseSolve::~BaseSolve() {
   // Do nothing
 }
 
-// bool BaseSolve::Initialize(Environment const& environment,
-//   Tracker const& tracker) {
-//   for (std::map<uint8_t, Sensor>::const_iterator sn_it = tracker.sensors.begin();
-//     sn_it != tracker.sensors.end(); sn_it++) {
-//     if (unsigned(sn_it->first) >= TRACKER_SENSORS_NUMBER
-//       || unsigned(sn_it->first) < 0) {
-//       ROS_FATAL("Sensor ID is invalid.");
-//       return false;
-//     }
-//     extrinsics_.positions[3 * unsigned(sn_it->first)]     = sn_it->second.position.x;
-//     extrinsics_.positions[3 * unsigned(sn_it->first) + 1] = sn_it->second.position.y;
-//     extrinsics_.positions[3 * unsigned(sn_it->first) + 2] = sn_it->second.position.z;
-//     extrinsics_.normals[3 * unsigned(sn_it->first)]       = sn_it->second.normal.x;
-//     extrinsics_.normals[3 * unsigned(sn_it->first) + 1]   = sn_it->second.normal.y;
-//     extrinsics_.normals[3 * unsigned(sn_it->first) + 2]   = sn_it->second.normal.z;
-//   }
-//   extrinsics_.size = tracker.sensors.size();
-//   extrinsics_.radius = 0.005;
-//   tracker_ = tracker;
-//   environment_ = environment;
-//   for (size_t i = 0; i < 6; i++) tracker_pose_.transform[i] = base::start_pose[i];
-//   return true;
-// }
+bool BaseSolve::GetTransform(geometry_msgs::TransformStamped &msg) {
+  // Filling the translation data
+  if (!tracker_pose_.valid) {
+    return false;
+  }
+  msg.transform.translation.x = tracker_pose_.transform[0];
+  msg.transform.translation.y = tracker_pose_.transform[1];
+  msg.transform.translation.z = tracker_pose_.transform[2];
+  // Axis Angle convertion to quaternion
+  Eigen::Vector3d axis_angle_vec = Eigen::Vector3d(
+    tracker_pose_.transform[3],
+    tracker_pose_.transform[4],
+    tracker_pose_.transform[5]);
+  double angle = axis_angle_vec.norm();
+  axis_angle_vec.normalize();
+  Eigen::AngleAxisd axis_angle = Eigen::AngleAxisd(angle, axis_angle_vec);
+  Eigen::Quaterniond quaternion_vec = Eigen::Quaterniond(axis_angle);
+  // Filling the orietation data
+  msg.transform.rotation.x = quaternion_vec.x();
+  msg.transform.rotation.y = quaternion_vec.y();
+  msg.transform.rotation.z = quaternion_vec.z();
+  msg.transform.rotation.w = quaternion_vec.w();
+  // Setting the frames
+  msg.child_frame_id = tracker_.serial;
+  msg.header.frame_id = environment_.vive.child_frame;
+  msg.header.stamp = ros::Time::now();
+  // Prevent repeated use of the same pose
+  tracker_pose_.valid = false;
+  return true;
+}
 
 struct BundleHorizontalAngle{
   explicit BundleHorizontalAngle(LightVec horizontal_observations, bool correction) :
@@ -224,10 +234,8 @@ struct BundleVerticalAngle{
 bool ComputeTransformBundle(LightData observations,
   SolvedPose * pose_tracker,
   Extrinsics * extrinsics,
-  Environment * environment,
-  std::mutex * solveMutex) {
+  Environment * environment) {
 
-  solveMutex->lock();
   ceres::Problem problem;
   double pose[6];// = {0.017356, -0.00947887, 1.53151, -0.799895, 2.22509, -0.436057};
   std::map<std::string, double[6]> lighthouses_pose;
@@ -236,7 +244,6 @@ bool ComputeTransformBundle(LightData observations,
     pose[i] = pose_tracker->transform[i];
   }
 
-  solveMutex->unlock();
   size_t n_sensors = 0, counter = 0;
   for (LightData::iterator ld_it = observations.begin();
     ld_it != observations.end(); ld_it++) {
@@ -319,16 +326,14 @@ bool ComputeTransformBundle(LightData observations,
 
   ceres::Solve(options, &problem, &summary);
 
-  solveMutex->lock();
-  std::cout << std::setprecision(4) << "CTB: " 
-    << std::setprecision(4) << summary.final_cost << " - "
-    << std::setprecision(4) << pose[0] << ", "
-    << std::setprecision(4) << pose[1] << ", "
-    << std::setprecision(4) << pose[2] << ", "
-    << std::setprecision(4) << pose[3] << ", "
-    << std::setprecision(4) << pose[4] << ", "
-    << std::setprecision(4) << pose[5] << std::endl << std::endl;
-  solveMutex->unlock();
+  std::cout << std::setprecision(6) << "CTB: " 
+    << std::setprecision(6) << summary.final_cost << " - "
+    << std::setprecision(6) << pose[0] << ", "
+    << std::setprecision(6) << pose[1] << ", "
+    << std::setprecision(6) << pose[2] << ", "
+    << std::setprecision(6) << pose[3] << ", "
+    << std::setprecision(6) << pose[4] << ", "
+    << std::setprecision(6) << pose[5] << std::endl << std::endl;
 
 
   // Check if valid
@@ -356,13 +361,11 @@ bool ComputeTransformBundle(LightData observations,
   }
 
   // Save the solved pose
-  solveMutex->lock();
   for (int i = 0; i < 6; i++) {
     pose_tracker->transform[i] = pose[i];
   }
   pose_tracker->valid = true;
   pose_tracker->stamp = ros::Time::now();
-  solveMutex->unlock();
 
   return true;
 }
@@ -425,8 +428,7 @@ void BaseSolve::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
     ComputeTransformBundle(observations_,
       &tracker_pose_,
       &extrinsics_,
-      &environment_,
-      solveMutex_);
+      &environment_);
   }
   return;
 }
@@ -445,14 +447,17 @@ int main(int argc, char ** argv)
   ros::NodeHandle nh;
 
   // Read bag with data
-  if (argc < 2) {
-    std::cout << "Usage: ... hive_base name_of_the_bag.bag"
-      << std::endl;
+  if (argc < 3) {
+    std::cout << "Usage: ... hive_base name_of_read_bag.bag "
+      << "name_of_write_bag.bag" << std::endl;
+    return -1;
   }
-  rosbag::Bag rbag;
+  rosbag::Bag rbag, wbag;
   rosbag::View view;
-  std::string bag_name(argv[1]);
-  rbag.open(bag_name);
+  std::string read_bag(argv[1]);
+  rbag.open(read_bag, rosbag::bagmode::Read);
+  std::string write_bag(argv[2]);
+  wbag.open(write_bag, rosbag::bagmode::Write);
 
   // Get current calibration
   if (!ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE, &cal)) {
@@ -479,14 +484,26 @@ int main(int argc, char ** argv)
     cal.SetTrackers(*vt);
     // TODO set up solver.
   }
+  for (auto tr_it = cal.trackers.begin();
+    tr_it != cal.trackers.end(); tr_it++) {
+    solver[tr_it->first] = BaseSolve(cal.environment,
+      tr_it->second);
+  }
   ROS_INFO("Trackers' setup complete.");
 
   // Light data
   rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
-    hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-    // do something
+    const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
+    solver[vl->header.frame_id].ProcessLight(vl);
+    geometry_msgs::TransformStamped msg;
+    if (solver[vl->header.frame_id].GetTransform(msg)) {
+      wbag.write("/tf", ros::Time::now(), msg);
+    }
   }
+
+  rbag.close();
+  wbag.close();
 
   ros::shutdown();
   return 0;
