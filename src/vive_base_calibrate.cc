@@ -842,14 +842,14 @@ int main(int argc, char ** argv)
   BaseCalibrate calibrator(calibration);
 
   // Light data
-  size_t counter = 0;
+  // size_t counter = 0;
   rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
     calibrator.AddLight(vl);
-    counter++;
-    if (counter == 10)
-      break;
+    // counter++;
+    // if (counter == 10)
+    //   break;
   }
   rbag.close();
 
