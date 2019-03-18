@@ -151,6 +151,41 @@ bool ViveUtils::SendTransforms(Calibration const& calibration_data) {
   return true;
 }
 
+typedef std::vector<geometry_msgs::TransformStamped> TFVector;
+
+TFVector ViveUtils::GetTransforms(Calibration & calibration_data) {
+  // Broadcaster of all the trasnforms read from the config file
+  TFVector tfs;
+  geometry_msgs::TransformStamped world_tf;
+  world_tf.header.stamp = ros::Time::now();
+  world_tf.header.frame_id = calibration_data.environment.vive.parent_frame;
+  world_tf.child_frame_id = calibration_data.environment.vive.child_frame;
+  world_tf.transform.translation.x = calibration_data.environment.vive.translation.x;
+  world_tf.transform.translation.y = calibration_data.environment.vive.translation.y;
+  world_tf.transform.translation.z = calibration_data.environment.vive.translation.z;
+  world_tf.transform.rotation.w = calibration_data.environment.vive.rotation.w;
+  world_tf.transform.rotation.x = calibration_data.environment.vive.rotation.x;
+  world_tf.transform.rotation.y = calibration_data.environment.vive.rotation.y;
+  world_tf.transform.rotation.z = calibration_data.environment.vive.rotation.z;
+  tfs.push_back(world_tf);
+  for (std::map<std::string, Transform>::const_iterator lh_it = calibration_data.environment.lighthouses.begin();
+    lh_it != calibration_data.environment.lighthouses.end(); lh_it++) {
+    geometry_msgs::TransformStamped lighthouse_tf;
+    lighthouse_tf.header.stamp = ros::Time::now();
+    lighthouse_tf.header.frame_id = lh_it->second.parent_frame;
+    lighthouse_tf.child_frame_id = lh_it->second.child_frame;
+    lighthouse_tf.transform.translation.x = lh_it->second.translation.x;
+    lighthouse_tf.transform.translation.y = lh_it->second.translation.y;
+    lighthouse_tf.transform.translation.z = lh_it->second.translation.z;
+    lighthouse_tf.transform.rotation.w = lh_it->second.rotation.w;
+    lighthouse_tf.transform.rotation.x = lh_it->second.rotation.x;
+    lighthouse_tf.transform.rotation.y = lh_it->second.rotation.y;
+    lighthouse_tf.transform.rotation.z = lh_it->second.rotation.z;
+    tfs.push_back(lighthouse_tf);
+  }
+  return tfs;
+}
+
 size_t ViveUtils::ConvertExtrinsics(Tracker const& tracker, double * extrinsics) {
   for (std::map<uint8_t, Sensor>::const_iterator sn_it = tracker.sensors.begin();
     sn_it != tracker.sensors.end(); sn_it++) {

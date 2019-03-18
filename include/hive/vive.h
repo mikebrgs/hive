@@ -157,6 +157,8 @@ typedef std::pair<Eigen::Vector3d, Eigen::Quaterniond> PoseVQ;
 typedef std::pair<Eigen::Vector3d, Eigen::AngleAxisd> PoseVA;
 typedef std::pair<Eigen::Vector3d, Eigen::Vector4d> PoseVV;
 
+typedef std::vector<geometry_msgs::TransformStamped> TFVector;
+
 class Calibration {
  public:
   // Sets the enviroment structure from a calibration message.
@@ -193,6 +195,7 @@ class Calibration {
   Environment environment;
 };
 
+
 class ViveUtils {
  public:
   // Write to config file the calibration class
@@ -203,12 +206,16 @@ class ViveUtils {
   static bool ReadConfig(std::string file_name,
     Calibration * calibration);
 
+
   // Broadcast all static trasnforms
   static bool SendTransforms(Calibration const& calibration_data);
 
   // Get double array from tracker struct - double array previously initialized
   static size_t ConvertExtrinsics(Tracker const& tracker,
     double * extrinsics);
+
+  // Get static transforms in std vector
+  static TFVector GetTransforms(Calibration & calibration_data);
 };
 
 class JsonParser {

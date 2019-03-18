@@ -428,6 +428,11 @@ int main(int argc, char ** argv)
     }
   }
 
+  TFVector tfs = ViveUtils::GetTransforms(cal);
+  for (auto tf_it = tfs.begin(); tf_it != tfs.end(); tf_it++) {
+    wbag.write("/tf_static", ros::Time::now(), *tf_it);
+  }
+
   rbag.close();
   if (write_bag)
     wbag.close();

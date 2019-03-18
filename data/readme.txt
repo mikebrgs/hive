@@ -1,3 +1,31 @@
+TR_NASA
+ENV_NASA
+
+data1.bag - one tracker, two lighthouses, static on the center of granite table
+data2.bag - one tracker, two lighthouses, static on dock
+data3.bag - one tracker, two lighthouses, static for 30 secs, move for 60 secs guided manuall
+y, static for 30 secs
+
+data4.bag - two trackers, two lighthouses, static on center of granite table
+data5.bag - two trackers, two lighthouses, static on dock
+data6.bag - two trackers, two lighthouses, static for 30 secs, move for 60 secs guided manually, static for 30 secs
+
+data7.bag - two trackers, one lighthouse, static on center of granite table
+data8.bag - two trackers, one lighthouse, static on dock
+data9.bag - two trackers, one lighthouse, static for 30 secs, move for 60 secs guided manually, static for 30 secs
+
+data10.bag - one tracker, one lighthouse, static on center of granite table
+data11.bag - one tracker, one lighthouse, static on dock
+data12.bag - one tracker, one lighthouse, static for 30 secs, move for 30 secs guided manually, static for 30 secs
+
+data13.bag - one tracker, two lighthouses, static on ceneter of granite table, light ON
+data14.bag - one tracker, two lighthouses, static on ceneter of granite table, light OFF
+data15.bag - one tracker, two lighthouses, static for 10 secs, move for 60 secs guided manually, static for 30 secs, light ON
+data16.bag - one tracker, two lighthouses, static for 10 secs, move for 60 secs guided manually, static for 30 secs, light OFF
+
+data20.bag - one tracker, two lighthouses, moving back and forth
+
+
 TR1
 ENV1
 
