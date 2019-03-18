@@ -17,5 +17,5 @@
 
 #define HIVE_CONFIG_FILE               "hive_environment.json"
 #define HIVE_CALIBRATION_FILE          "calibration.bin"
-
+#define HIVE_BASE_CALIBRATION_FILE     "basecalibration.bin"
 #endif

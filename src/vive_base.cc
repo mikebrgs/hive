@@ -1,83 +1,4 @@
-// C standard includes
-#include <stdlib.h>
-
-// C++ standard includes
-#include <iostream>
-#include <mutex>
-
-// Ceres and logging
-#include <ceres/ceres.h>
-#include <ceres/rotation.h>
-
-// Eigen C++ includes
-#include <Eigen/Dense>
-#include <Eigen/Geometry>
-
-// ROS includes
-#include <ros/ros.h>
-#include <rosbag/bag.h>
-#include <rosbag/view.h>
-
-// ROS messages
-#include <hive/ViveLight.h>
-#include <sensor_msgs/Imu.h>
-#include <geometry_msgs/TransformStamped.h>
-
-
-// Hive includes
-#include <hive/vive_general.h>
-#include "hive/vive.h"
-
-struct LightVecStamped {
-  LightVec lights;
-  ros::Time stamp;
-};
-
-struct AxisLightVec {
-  std::string lighthouse;
-  // axis - observation
-  std::map<uint8_t, LightVecStamped> axis;
-};
-
-// Lighthouse - both observations
-typedef std::map<std::string, AxisLightVec> LightData;
-
-struct Extrinsics {
-  double positions[3 * TRACKER_SENSORS_NUMBER];
-  double normals[3 * TRACKER_SENSORS_NUMBER];
-  double radius;
-  size_t size;
-};
-
-struct SolvedPose {
-  double transform[6];
-  std::string lighthouse;
-  bool valid;
-  ros::Time stamp;
-};
-
-namespace base{
-  double start_pose[6] = {0, 0, 1, 0, 0, 0};
-}
-
-class BaseSolve {
-public:
-  BaseSolve();
-  BaseSolve(Environment environment,
-    Tracker tracker);
-  ~BaseSolve();
-  // bool Initialize(Environment const& environment,
-    // Tracker const& tracker);
-  void ProcessLight(const hive::ViveLight::ConstPtr& msg);
-  bool GetTransform(geometry_msgs::TransformStamped &msg);
-private:
-  std::map<std::string, SolvedPose> poses_;
-  SolvedPose tracker_pose_;
-  Environment environment_;
-  LightData observations_;
-  Extrinsics extrinsics_;
-  Tracker tracker_;
-};
+#include <hive/vive_base.h>
 
 BaseSolve::BaseSolve() {
   // do nothing
@@ -142,8 +63,8 @@ bool BaseSolve::GetTransform(geometry_msgs::TransformStamped &msg) {
 }
 
 struct BundleHorizontalAngle{
-  explicit BundleHorizontalAngle(LightVec horizontal_observations, bool correction) :
-  horizontal_observations_(horizontal_observations), correction_(correction) {}
+  explicit BundleHorizontalAngle(LightVec horizontal_observations) :
+  horizontal_observations_(horizontal_observations) {}
 
   template <typename T> bool operator()(const T* const * parameters, T * residual) const {
     // Rotation matrix from the tracker's frame to the vive frame
@@ -183,12 +104,11 @@ struct BundleHorizontalAngle{
 
  private:
   LightVec horizontal_observations_;
-  bool correction_;
 };
 
 struct BundleVerticalAngle{
-  explicit BundleVerticalAngle(LightVec vertical_observations, bool correction) :
-  vertical_observations_(vertical_observations), correction_(correction) {}
+  explicit BundleVerticalAngle(LightVec vertical_observations) :
+  vertical_observations_(vertical_observations) {}
 
   template <typename T> bool operator()(const T* const * parameters, T * residual) const {
     // Rotation matrix from the tracker's frame to the vive frame
@@ -228,7 +148,6 @@ struct BundleVerticalAngle{
 
  private:
   LightVec vertical_observations_;
-  bool correction_;
 };
 
 bool ComputeTransformBundle(LightData observations,
@@ -270,7 +189,7 @@ bool ComputeTransformBundle(LightData observations,
       n_sensors += ld_it->second.axis[HORIZONTAL].lights.size();
       ceres::DynamicAutoDiffCostFunction<BundleHorizontalAngle, 4> * horizontal_cost =
       new ceres::DynamicAutoDiffCostFunction<BundleHorizontalAngle, 4>
-      (new BundleHorizontalAngle(ld_it->second.axis[HORIZONTAL].lights, correction));
+      (new BundleHorizontalAngle(ld_it->second.axis[HORIZONTAL].lights));
       horizontal_cost->AddParameterBlock(6);
       horizontal_cost->AddParameterBlock(3 * extrinsics->size);
       horizontal_cost->AddParameterBlock(6);
@@ -290,7 +209,7 @@ bool ComputeTransformBundle(LightData observations,
       n_sensors += ld_it->second.axis[VERTICAL].lights.size();
       ceres::DynamicAutoDiffCostFunction<BundleVerticalAngle, 4> * vertical_cost =
       new ceres::DynamicAutoDiffCostFunction<BundleVerticalAngle, 4>
-      (new BundleVerticalAngle(ld_it->second.axis[VERTICAL].lights, correction));
+      (new BundleVerticalAngle(ld_it->second.axis[VERTICAL].lights));
       vertical_cost->AddParameterBlock(6);
       vertical_cost->AddParameterBlock(3 * extrinsics->size);
       vertical_cost->AddParameterBlock(6);
@@ -326,23 +245,24 @@ bool ComputeTransformBundle(LightData observations,
 
   ceres::Solve(options, &problem, &summary);
 
-  std::cout << std::setprecision(6) << "CTB: " 
-    << std::setprecision(6) << summary.final_cost << " - "
-    << std::setprecision(6) << pose[0] << ", "
-    << std::setprecision(6) << pose[1] << ", "
-    << std::setprecision(6) << pose[2] << ", "
-    << std::setprecision(6) << pose[3] << ", "
-    << std::setprecision(6) << pose[4] << ", "
-    << std::setprecision(6) << pose[5] << std::endl << std::endl;
-
+  std::cout << std::setprecision(4) << "CTB: " 
+    << std::setprecision(4) << summary.final_cost << " - "
+    << std::setprecision(4) << pose[0] << ", "
+    << std::setprecision(4) << pose[1] << ", "
+    << std::setprecision(4) << pose[2] << ", "
+    << std::setprecision(4) << pose[3] << ", "
+    << std::setprecision(4) << pose[4] << ", "
+    << std::setprecision(4) << pose[5];
 
   // Check if valid
   double pose_norm = sqrt(pose[0]*pose[0] + pose[1]*pose[1] + pose[2]*pose[2]);
   if (summary.final_cost > 1e-5* static_cast<double>(unsigned(n_sensors))
     || pose_norm > 20
     || pose[2] <= 0 ) {
+    std::cout << " - INVALID" << std::endl;
     return false;
   }
+  std::cout << " - VALID" << std::endl;
 
   double angle_norm = sqrt(pose[3]*pose[3] + pose[4]*pose[4] + pose[5]*pose[5]);
   // Change the axis angle to an acceptable interval
@@ -365,7 +285,7 @@ bool ComputeTransformBundle(LightData observations,
     pose_tracker->transform[i] = pose[i];
   }
   pose_tracker->valid = true;
-  pose_tracker->stamp = ros::Time::now();
+  // pose_tracker->stamp = ros::Time::now();
 
   return true;
 }
@@ -385,7 +305,6 @@ void BaseSolve::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   observations_[msg->lighthouse].axis[msg->axis].lights.clear();
 
   // Iterate all sweep data
-  // std::cout << msg->lighthouse << "-" << static_cast<int>(msg->axis) << " ";
   for (std::vector<hive::ViveLightSample>::const_iterator li_it = msg->samples.begin();
     li_it != msg->samples.end(); li_it++) {
     // Detect non-sense data
@@ -402,13 +321,10 @@ void BaseSolve::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
     light.timecode = li_it->timecode;
     light.length = li_it->length;
 
-    // std::cout << li_it->sensor << ":" << li_it->angle << " ";
-
     // Add data to the axis
     observations_[msg->lighthouse].axis[msg->axis].lights.push_back(light);
     observations_[msg->lighthouse].axis[msg->axis].stamp = msg->header.stamp;
   }
-  // std::cout << std::endl;
 
   // Remove old data
   for (LightData::iterator lh_it = observations_.begin();
@@ -421,10 +337,10 @@ void BaseSolve::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
     }
   }
 
-  // ros::Duration elapsed = observations_[msg->lighthouse].axis[VERTICAL].stamp -
-  //   observations_[msg->lighthouse].axis[HORIZONTAL].stamp;
   if (observations_[msg->lighthouse].axis[HORIZONTAL].lights.size() > 3
     && observations_[msg->lighthouse].axis[VERTICAL].lights.size() > 3) {
+    // Set the timestamp to be the sames as the measurement
+    tracker_pose_.stamp = msg->header.stamp;
     ComputeTransformBundle(observations_,
       &tracker_pose_,
       &extrinsics_,
@@ -442,25 +358,33 @@ int main(int argc, char ** argv)
   Calibration cal;
   BaseMap solver;
 
+  rosbag::Bag rbag, wbag;
+  rosbag::View view;
 
   ros::init(argc, argv, "hive_baseline_solver");
   ros::NodeHandle nh;
 
+
   // Read bag with data
-  if (argc < 3) {
+  bool write_bag;
+  if (argc == 2) {
+    write_bag = false;
+  }
+  else if (argc >= 3) {
+    std::string write_bag(argv[2]);
+    wbag.open(write_bag, rosbag::bagmode::Write);
+    write_bag = true;
+  } else {
     std::cout << "Usage: ... hive_base name_of_read_bag.bag "
       << "name_of_write_bag.bag" << std::endl;
     return -1;
   }
-  rosbag::Bag rbag, wbag;
-  rosbag::View view;
+
   std::string read_bag(argv[1]);
   rbag.open(read_bag, rosbag::bagmode::Read);
-  std::string write_bag(argv[2]);
-  wbag.open(write_bag, rosbag::bagmode::Write);
 
   // Get current calibration
-  if (!ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE, &cal)) {
+  if (!ViveUtils::ReadConfig(HIVE_BASE_CALIBRATION_FILE, &cal)) {
     ROS_FATAL("Can't find calibration file.");
     return -1;
   } else {
@@ -497,13 +421,16 @@ int main(int argc, char ** argv)
     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
     solver[vl->header.frame_id].ProcessLight(vl);
     geometry_msgs::TransformStamped msg;
-    if (solver[vl->header.frame_id].GetTransform(msg)) {
+    // Save the computed poses
+    if (write_bag &&
+      solver[vl->header.frame_id].GetTransform(msg)) {
       wbag.write("/tf", ros::Time::now(), msg);
     }
   }
 
   rbag.close();
-  wbag.close();
+  if (write_bag)
+    wbag.close();
 
   ros::shutdown();
   return 0;

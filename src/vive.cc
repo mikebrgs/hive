@@ -465,8 +465,9 @@ bool JsonParser::GetCalibration(Calibration * calibration) {
   }
   // Body
   if (document_->HasMember("body")) {
-    if (document_->HasMember("frame") && (*document_)["frame"].IsString()) {
-      std::string body_name = (*document_)["frame"].GetString();
+    // if ((*document_)["body"].HasMember("frame") && (*document_)["body"]["frame"].IsString()) {
+      // std::cout << "In body" << std::endl;
+      std::string body_name = (*document_)["body"]["frame"].GetString();
       calibration->environment.offset.child_frame = body_name;
       for (rapidjson::SizeType i = 0; i < (*document_)["body"]["parents"].Size(); i++) {
         std::string device_name = (*document_)["body"]["parents"][i]["frame"].GetString();
@@ -491,9 +492,12 @@ bool JsonParser::GetCalibration(Calibration * calibration) {
         body_transform.rotation.z = body_transform.rotation.z / norm;
         // Save the transforms
         calibration->environment.bodies[device_name] = body_transform;
-      }
+      // }
     }
+  } else {
+    std::cout << "No Body" << std::endl;
   }
+  std::cout << "Bodies: " << calibration->environment.bodies.size() << std::endl;
   // Vive
   if (document_->HasMember("vive")) {
     calibration->environment.vive.child_frame = "vive";
