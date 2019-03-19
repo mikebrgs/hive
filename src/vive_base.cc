@@ -349,9 +349,6 @@ void BaseSolve::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   return;
 }
 
-
-typedef std::map<std::string, BaseSolve> BaseMap;
-
 int main(int argc, char ** argv)
 {
   // Data

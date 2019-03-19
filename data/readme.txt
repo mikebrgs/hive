@@ -14,16 +14,19 @@ data7.bag - two trackers, one lighthouse, static on center of granite table
 data8.bag - two trackers, one lighthouse, static on dock
 data9.bag - two trackers, one lighthouse, static for 30 secs, move for 60 secs guided manually, static for 30 secs
 
+The following 3 bags do not converge with the regular calibration
 data10.bag - one tracker, one lighthouse, static on center of granite table
 data11.bag - one tracker, one lighthouse, static on dock
 data12.bag - one tracker, one lighthouse, static for 30 secs, move for 30 secs guided manually, static for 30 secs
 
-data13.bag - one tracker, two lighthouses, static on ceneter of granite table, light ON
-data14.bag - one tracker, two lighthouses, static on ceneter of granite table, light OFF
+data13.bag - one tracker, two lighthouses, static on center of granite table, light ON
+
+14, 15 and 16 do not exist
+data14.bag - one tracker, two lighthouses, static on center of granite table, light OFF
 data15.bag - one tracker, two lighthouses, static for 10 secs, move for 60 secs guided manually, static for 30 secs, light ON
 data16.bag - one tracker, two lighthouses, static for 10 secs, move for 60 secs guided manually, static for 30 secs, light OFF
 
-data20.bag - one tracker, two lighthouses, moving back and forth
+data20.bag - one tracker, two lighthouses, moving back and forward
 
 
 TR1

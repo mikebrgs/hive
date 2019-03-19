@@ -31,6 +31,9 @@
 #include <hive/vive_general.h>
 #include "hive/vive.h"
 
+namespace base{
+  double start_pose[6] = {0, 0, 1, 0, 0, 0};
+}
 struct LightVecStamped {
   LightVec lights;
   ros::Time stamp;
@@ -59,9 +62,6 @@ struct SolvedPose {
   ros::Time stamp;
 };
 
-namespace base{
-  double start_pose[6] = {0, 0, 1, 0, 0, 0};
-}
 
 class BaseSolve {
 public:
@@ -81,5 +81,7 @@ private:
   Extrinsics extrinsics_;
   Tracker tracker_;
 };
+
+typedef std::map<std::string, BaseSolve> BaseMap;
 
 #endif
