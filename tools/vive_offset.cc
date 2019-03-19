@@ -6,27 +6,27 @@
 */
 
 // ROS includes
-// #include <ros/ros.h>
-// #include <rosbag/bag.h>
-// #include <rosbag/view.h>
+#include <ros/ros.h>
+#include <rosbag/bag.h>
+#include <rosbag/view.h>
 
 // Standard C includes
-// #include <stdlib.h>
-// #include <stdio.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 // Standard C++ includes
-// #include <iostream>
-// #include <string>
+#include <iostream>
+#include <string>
 
 // Hive includes
 #include <hive/vive.h>
-#include <hive/vive_base.h>
-// #include <hive/vive_general.h>
+// #include <hive/vive_base.h> // TODO Can't import because it has a main
+#include <hive/vive_general.h>
 
 // ROS msgs
-// #include <geometry_msgs/TransformStamped.h>
-// #include <hive/ViveLight.h>
-// #include <sensor_msgs/Imu.h>
+#include <geometry_msgs/TransformStamped.h>
+#include <hive/ViveLight.h>
+#include <sensor_msgs/Imu.h>
 
 class HiveOffset
 {
@@ -38,7 +38,7 @@ private:
   std::string bagname_;
   std::vector<geometry_msgs::TransformStamped> otv_;
   Calibration cal_;
-  BaseMap solver_;
+  // BaseMap solver_;
 };
 
 HiveOffset::HiveOffset(int argc, char ** argv) {
@@ -86,8 +86,8 @@ void HiveOffset::Spin() {
   }
   for (auto tr_it = cal_.trackers.begin();
     tr_it != cal_.trackers.end(); tr_it++) {
-    solver_[tr_it->first] = BaseSolve(cal_.environment,
-      tr_it->second);
+    // solver_[tr_it->first] = BaseSolve(cal_.environment,
+    //   tr_it->second);
   }
   ROS_INFO("Trackers' setup complete.");
 
@@ -95,7 +95,7 @@ void HiveOffset::Spin() {
   rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-    solver_[vl->header.frame_id].ProcessLight(vl);
+    // solver_[vl->header.frame_id].ProcessLight(vl);
     geometry_msgs::TransformStamped msg;
   }
 
@@ -110,7 +110,7 @@ int main(int argc, char ** argv)
 
   // Read bag with data
   if (argc <= 2) {
-    std::cout << "Usage: ... hive_base name_of_read_bag.bag "
+    std::cout << "Usage: ... hive_offset name_of_read_bag.bag "
       << "name_of_write_bag.bag" << std::endl;
     return -1;
   }

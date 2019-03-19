@@ -1,27 +1,12 @@
-/* Copyright (c) 2017, United States Government, as represented by the
- * Administrator of the National Aeronautics and Space Administration.
- * 
- * All rights reserved.
- * 
- * The Astrobee platform is licensed under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with the
- * License. You may obtain a copy of the License at
- * 
- *     http://www.apache.org/licenses/LICENSE-2.0
- * 
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations
- * under the License.
- */
+#ifndef VIVE_BASE_CALIBRATE_H
+#define VIVE_BASE_CALIBRATE_H
 
 // Includes
 #include <ros/ros.h>
 
 // Hive imports
 #include <hive/vive.h>
-#include <hive/vive_base.h>
+#include <hive/vive_base_solve.h>
 
 // Incoming measurements
 #include <geometry_msgs/TransformStamped.h>
@@ -42,10 +27,6 @@
 #include <thread>
 #include <mutex>
 #include <string>
-
-namespace calibrate {
-  double start_pose[6] = {0, 0, 1, 0, 0, 0};
-}
 
 typedef std::map<std::string, PoseVM> PoseTrackers;
 typedef std::map<std::string, PoseTrackers> PoseMap;
@@ -88,3 +69,5 @@ class BaseCalibrate {
   DataPairMap data_pair_map_;   // Input data
   Calibration calibration_;     // Structure that saves all the data
 };
+
+#endif // VIVE_BASE_CALIBRATE_H

@@ -1,5 +1,5 @@
-#ifndef HIVE_VIVE_BASE_H_
-#define HIVE_VIVE_BASE_H_
+#ifndef HIVE_VIVE_BASE_SOLVE_H_
+#define HIVE_VIVE_BASE_SOLVE_H_
 
 // C standard includes
 #include <stdlib.h>
@@ -29,11 +29,13 @@
 
 // Hive includes
 #include <hive/vive_general.h>
+#include <hive/vive_solver.h>
 #include "hive/vive.h"
 
-namespace base{
-  double start_pose[6] = {0, 0, 1, 0, 0, 0};
-}
+// namespace base{
+//   double start_pose[6] = {0, 0, 1, 0, 0, 0};
+// }
+
 struct LightVecStamped {
   LightVec lights;
   ros::Time stamp;
@@ -63,7 +65,7 @@ struct SolvedPose {
 };
 
 
-class BaseSolve {
+class BaseSolve : public Solver {
 public:
   BaseSolve();
   BaseSolve(Environment environment,
@@ -84,4 +86,4 @@ private:
 
 typedef std::map<std::string, BaseSolve> BaseMap;
 
-#endif
+#endif // VIVE_BASE_SOLVE_H_

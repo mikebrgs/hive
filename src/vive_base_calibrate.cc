@@ -1,5 +1,9 @@
 #include <hive/vive_base_calibrate.h>
 
+namespace base_calibrate {
+  double start_pose[6] = {0, 0, 1, 0, 0, 0};
+}
+
 // Constructor just sets the callback function
 BaseCalibrate::BaseCalibrate(Calibration & calibration) {
   calibration_ = calibration;
@@ -440,7 +444,7 @@ bool GetLhTransformsInTr(PoseMap * poses,
         counter++;
         SolvedPose solvedpose;
 
-        for (size_t i = 0; i < 6; i++) solvedpose.transform[i] = calibrate::start_pose[i];
+        for (size_t i = 0; i < 6; i++) solvedpose.transform[i] = base_calibrate::start_pose[i];
         std::string auxstring;
         Lighthouse lh_extrinsics;
         if (calibration.lighthouses.find(sw_it->lighthouse) != calibration.lighthouses.end()) {

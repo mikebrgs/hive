@@ -127,20 +127,20 @@ include_directories(
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
 add_executable(hive_server src/vive_server.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc src/vive_calibrate.cc)
-add_executable(hive_base src/vive_base.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc)
+add_executable(hive_base_solve src/vive_base_solve.cc src/vive_base.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc)
 add_executable(hive_base_calibrate src/vive_base_calibrate.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc)
 add_executable(hive_print tools/vive_print.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc src/vive_calibrate.cc)
 add_executable(hive_tool tools/vive_tool.cc)
 add_executable(hive_optimize tools/vive_optimize.cc src/vive.cc src/vive_solve.cc)
 add_executable(hive_bridge src/vive_bridge.cc)
 add_executable(hive_beta tools/vive_beta.cc src/vive.cc src/vive_solve.cc)
-add_executable(hive_offset tools/vive_offset.cc)
+add_executable(hive_offset tools/vive_offset.cc src/vive.cc src/vive_base.cc)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
 # add_dependencies(hive_server ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_dependencies(hive_server hive_generate_messages_cpp)
-add_dependencies(hive_base hive_generate_messages_cpp)
+add_dependencies(hive_base_solve hive_generate_messages_cpp)
 add_dependencies(hive_base_calibrate hive_generate_messages_cpp)
 add_dependencies(hive_print hive_generate_messages_cpp)
 add_dependencies(hive_tool hive_generate_messages_cpp)
@@ -155,7 +155,7 @@ target_link_libraries(hive_server
   ${CERES_LIBRARIES}
   ${EIGEN_LIBRARIES}
 )
-target_link_libraries(hive_base
+target_link_libraries(hive_base_solve
   ${catkin_LIBRARIES}
   ${CERES_LIBRARIES}
   ${EIGEN_LIBRARIES}
