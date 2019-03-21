@@ -1,7 +1,18 @@
 #ifndef HIVE_VIVE_SOLVER_H_
 #define HIVE_VIVE_SOLVER_H_
 
+// ROS includes
+#include <ros/ros.h>
+#include <rosbag/bag.h>
+#include <rosbag/view.h>
+
+// Hive imports
 #include <hive/vive.h>
+
+// ROS message imports
+#include <hive/ViveLight.h>
+#include <sensor_msgs/Imu.h>
+
 
 class Solver {
 public:

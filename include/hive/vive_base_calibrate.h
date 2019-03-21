@@ -6,7 +6,7 @@
 
 // Hive imports
 #include <hive/vive.h>
-#include <hive/vive_base_solve.h>
+#include <hive/vive_base.h>
 
 // Incoming measurements
 #include <geometry_msgs/TransformStamped.h>

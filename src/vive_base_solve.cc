@@ -5,7 +5,7 @@
  *
 */
 
-#include <hive/vive_base_solve.h>
+#include <hive/vive_base.h>
 
 int main(int argc, char ** argv)
 {

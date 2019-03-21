@@ -32,15 +32,8 @@ uint32_t thesensor = 6;
 
 void LightCallback(const hive::ViveLight::ConstPtr& msg) {
   // Check the current state of the system
-  for (auto s_it = msg->samples.begin();
-    s_it != msg->samples.end(); s_it++) {
-    if (s_it->sensor == thesensor) {
-      if (msg->axis == HORIZONTAL)
-        std::cout << s_it->length << std::endl;
-      if (msg->axis == VERTICAL)
-        std::cout << "\t\t" << s_it->length << std::endl;
-    }
-  }
+  std::cout << msg->lighthouse << std::endl;
+  return;
 }
 
 int main(int argc, char ** argv)

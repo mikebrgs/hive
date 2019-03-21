@@ -5,7 +5,7 @@
  *
 */
 
-#include <hive/vive_base_solve.h>
+#include <hive/vive_base.h>
 
 namespace base{
   double start_pose[6] = {0, 0, 1, 0, 0, 0};

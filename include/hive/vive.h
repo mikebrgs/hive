@@ -80,6 +80,12 @@ struct Transform {
   geometry_msgs::Quaternion rotation;
 };
 
+struct TransformStamped {
+  Transform transform;
+  ros::Time stamp;
+};
+
+
 struct Sensor {
   geometry_msgs::Point position;
   geometry_msgs::Vector3 normal;
