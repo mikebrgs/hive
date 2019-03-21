@@ -41,6 +41,77 @@
 typedef geometry_msgs::TransformStamped TF;
 typedef std::vector<TF> TFs;
 
+// We will use here quaternions
+// First parameter is transform from vive to optitrack
+// Second parameter is transform from tracker to arrow
+struct PoseCostFunctor{
+  explicit PoseCostFunctor(TF vive, TF optitrack) :
+    vive_(vive), optitrack_(optitrack) {}
+  template <typename T> bool operator()(const T* const * parameters,
+  T * residual) const {
+    // Pose of the tracker in the Vive frame at instant t
+    Eigen::Matrix<T, 3, 1> vPt;
+    Eigen::Matrix<T, 3, 3> vRt;
+    // Pose of the arrow in the optitrack frame at instant t+/-1
+    Eigen::Matrix<T, 3, 1> oPa;
+    Eigen::Matrix<T, 3, 3> oRa;
+    // Transform from vive frame to optitrack frame
+    Eigen::Matrix<T, 3, 1> oPv;
+    Eigen::Matrix<T, 3, 3> oRv;
+    // Transform from tracker frame to arrow frame
+    Eigen::Matrix<T, 3, 1> aPt;
+    Eigen::Matrix<T, 3, 3> aRt;
+
+    vPt << vive_.transform.translation.x
+        << vive_.transform.translation.y
+        << vive_.transform.translation.z;
+    vRt << Eigen::Quaternion<T>(vive_.transform.rotation.w,
+        vive_.transform.rotation.x,
+        vive_.transform.rotation.y,
+        vive_.transform.rotation.z).toRotationMatrix();
+    oPa << optitrack_.transform.translation.x
+        << optitrack_.transform.translation.y
+        << optitrack_.transform.translation.z;
+    oRa << Eigen::Quaternion<T>(optitrack_.transform.rotation.w,
+        optitrack_.transform.rotation.x,
+        optitrack_.transform.rotation.y,
+        optitrack_.transform.rotation.z).toRotationMatrix();
+    oPv << parameters[0][0]
+        << parameters[0][1]
+        << parameters[0][2];
+    oRv << Eigen::Quaternion<T>(parameters[0][3],
+      parameters[0][4],
+      parameters[0][5],
+      parameters[0][6]).toRotationMatrix();
+    aPt << parameters[1][0]
+        << parameters[1][1]
+        << parameters[1][2];
+    aRt << Eigen::Quaternion<T>(parameters[1][3],
+      parameters[1][4],
+      parameters[1][5],
+      parameters[1][6]).toRotationMatrix();
+
+    // Convert Vive to OptiTrack
+    Eigen::Matrix<T, 3, 1> tPa = -aRt.transpose() * aPt;
+    Eigen::Matrix<T, 3, 3> tRa = aRt.transpose();
+
+    Eigen::Matrix<T, 3, 1> _vPa = vRt * tPa + vPt;
+    Eigen::Matrix<T, 3, 3> _vRa = vRt * tRa;
+
+    Eigen::Matrix<T, 3, 1> _oPa = oRv * _vPa + oPv;
+    Eigen::Matrix<T, 3, 3> _oRa = oRv * _vRa;
+
+    residual[0] = _oPa(0) - oPa(0);
+    residual[1] = _oPa(1) - oPa(1);
+    residual[2] = _oPa(2) - oPa(2);
+
+    return true;
+  }
+ private:
+  TF vive_;
+  TF optitrack_;
+};
+
 TFs ComputeOffset(TFs optitrack, TFs vive) {
   TF oTv; // Transform from vive to optitrack
   TF aTt; // Transform from tracker to optitrack's arrow
@@ -56,7 +127,7 @@ TFs ComputeOffset(TFs optitrack, TFs vive) {
 
   ceres::Solve(options, &problem, &summary);
 
-  std::cout summary.
+  std::cout << summary.FullReport() << std::endl;
 
   TFs Ts;
   Ts.push_back(oTv);
