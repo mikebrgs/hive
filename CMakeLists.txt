@@ -54,6 +54,7 @@ find_package(catkin REQUIRED COMPONENTS
 find_package (Eigen3 REQUIRED NO_MODULE)
 find_package(Ceres REQUIRED)
 find_package(gflags REQUIRED)
+find_package(VISP REQUIRED)
 
 ## Generate messages in the 'msg' folder
 add_message_files(
@@ -116,6 +117,7 @@ include_directories(
   ${EIGEN3_INCLUDE_DIR}
   ${CERES_INCLUDE_DIRS}
   ${DEEPDIVE_INCLUDE_DIRS}
+  ${VISP_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -192,4 +194,5 @@ target_link_libraries(hive_offset
   ${catkin_LIBRARIES}
   ${CERES_LIBRARIES}
   ${EIGEN_LIBRARIES}
+  ${VISP_LIBRARIES}
 )
