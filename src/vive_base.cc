@@ -67,7 +67,7 @@ bool BaseSolve::GetTransform(geometry_msgs::TransformStamped &msg) {
   // Setting the frames
   msg.child_frame_id = tracker_.serial;
   msg.header.frame_id = environment_.vive.child_frame;
-  msg.header.stamp = ros::Time::now();
+  msg.header.stamp = tracker_pose_.stamp;
   // Prevent repeated use of the same pose
   tracker_pose_.valid = false;
   return true;
