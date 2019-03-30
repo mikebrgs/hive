@@ -137,41 +137,42 @@ struct PoseCostFunctor{
   TF optitrack_;
 };
 
-TFs RefineOffsets(TFs optitrack, TFs vive, TFs offset) {
+TFs RefineOffset(TFs optitrack, TFs vive, TFs offset) {
+  // Format conversion for ceres
+  // TF aTt = offset[0]; // Transform from tracker to optitrack's arrow
+  vpTranslationVector aPt(offset[0].transform.translation.x,
+    offset[0].transform.translation.y,
+    offset[0].transform.translation.z);
+  vpQuaternionVector aQt(offset[0].transform.rotation.x,
+    offset[0].transform.rotation.y,
+    offset[0].transform.rotation.z,
+    offset[0].transform.rotation.w);
+  // TF oTv = offset[1]; // Transform from vive to optitrack
+  vpTranslationVector oPv(offset[1].transform.translation.x,
+    offset[1].transform.translation.y,
+    offset[1].transform.translation.z);
+  vpThetaUVector aAt(aQt);
+  vpQuaternionVector oQv(offset[1].transform.rotation.x,
+    offset[1].transform.rotation.y,
+    offset[1].transform.rotation.z,
+    offset[1].transform.rotation.w);
+  vpThetaUVector oAv(oQv);
 
-  TF aTt = offset[0]; // Transform from tracker to optitrack's arrow
-  TF oTv = offset[1]; // Transform from vive to optitrack
-
-
-  // TODO Continue here
-  vpTranslationVector tPa;
-  vpThetaUVector tRa;
-  tMa.inverse().extract(tPa);
-  tMa.inverse().extract(tRa);
-
-  double tTa[6] = {
-    tPa[0],
-    tPa[1],
-    tPa[2],
-    tRa[0],
-    tRa[1],
-    tRa[2],
+  double aTt[6] = {
+    aPt[0], aPt[1], aPt[2],
+    aAt[0], aAt[1], aAt[2]
+  };
+  double oTv[6] = {
+    oPv[0], oPv[1], oPv[2],
+    oAv[0], oAv[1], oAv[2]
   };
 
-  double vTo[6] = {
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-  };
-
+  // Ceres problem
   ceres::Problem problem;
-
   ceres::Solver::Options options;
   ceres::Solver::Summary summary;
 
+  // Solver's options
   options.minimizer_progress_to_stdout = true;
   options.max_num_iterations = 50;
   // options.parameter_tolerance = 1e-40;
@@ -188,72 +189,69 @@ TFs RefineOffsets(TFs optitrack, TFs vive, TFs offset) {
 
   // Different notation
   std::cout << "oTv: "
-            << vTo[0] << ", "
-            << vTo[1] << ", "
-            << vTo[2] << ", "
-            << vTo[3] << ", "
-            << vTo[4] << ", "
-            << vTo[5] << std::endl;
+            << oTv[0] << ", "
+            << oTv[1] << ", "
+            << oTv[2] << ", "
+            << oTv[3] << ", "
+            << oTv[4] << ", "
+            << oTv[5] << std::endl;
   std::cout << "aTt: "
-            << tTa[0] << ", "
-            << tTa[1] << ", "
-            << tTa[2] << ", "
-            << tTa[3] << ", "
-            << tTa[4] << ", "
-            << tTa[5] << std::endl;
+            << aTt[0] << ", "
+            << aTt[1] << ", "
+            << aTt[2] << ", "
+            << aTt[3] << ", "
+            << aTt[4] << ", "
+            << aTt[5] << std::endl;
 
   while(v_it != vive.end()) {
     ceres::CostFunction * cost_prev =
       new ceres::AutoDiffCostFunction<PoseCostFunctor, 4, 6, 6>
       (new PoseCostFunctor(*v_it, *o_it));
-    problem.AddResidualBlock(cost_prev, NULL, vTo, tTa);
+    problem.AddResidualBlock(cost_prev, NULL, oTv, aTt);
     v_it++;
     o_it++;
   }
 
-  // while (v_it->header.stamp.toSec() < o_it->header.stamp.toSec()
-  //   && v_it != vive.end()) {
-  //   v_it++;
-  // }
-  // for ( ;v_it != vive.end(); v_it++) {
-  //   while(o_it < v_it && o_it == optitrack.end()) {
-  //     o_pit = o_it;
-  //     o_it++;
-  //   }
-  //   if (o_it == optitrack.end()) break;
-  //   // New residual block for posterior pose
-  //   ceres::CostFunction * cost_prev =
-  //     new ceres::AutoDiffCostFunction<PoseCostFunctor, 3, 7, 7>
-  //     (new PoseCostFunctor(*v_it, *o_pit));
-  //   problem.AddResidualBlock(cost_prev, NULL, oTv_, aTt_);
-  //   // New residual block for posterior pose
-  //   ceres::CostFunction * cost_next =
-  //     new ceres::AutoDiffCostFunction<PoseCostFunctor, 3, 7, 7>
-  //     (new PoseCostFunctor(*v_it, *o_it));
-  //   problem.AddResidualBlock(cost_next, NULL, oTv_, aTt_);
-  // }
-
   ceres::Solve(options, &problem, &summary);
 
   std::cout << summary.FullReport() << std::endl;
-
   std::cout << "oTv: "
-            << vTo[0] << ", "
-            << vTo[1] << ", "
-            << vTo[2] << ", "
-            << vTo[3] << ", "
-            << vTo[4] << ", "
-            << vTo[5] << std::endl;
+            << oTv[0] << ", "
+            << oTv[1] << ", "
+            << oTv[2] << ", "
+            << oTv[3] << ", "
+            << oTv[4] << ", "
+            << oTv[5] << std::endl;
   std::cout << "aTt: "
-            << tTa[0] << ", "
-            << tTa[1] << ", "
-            << tTa[2] << ", "
-            << tTa[3] << ", "
-            << tTa[4] << ", "
-            << tTa[5] << std::endl;
+            << aTt[0] << ", "
+            << aTt[1] << ", "
+            << aTt[2] << ", "
+            << aTt[3] << ", "
+            << aTt[4] << ", "
+            << aTt[5] << std::endl;
 
-  offset.clear();
-  // TODO Replace transforms
+  // aTt - Transform from tracker to optitrack's arrow
+  aQt = vpQuaternionVector(
+    vpThetaUVector(aTt[3], aTt[4], aTt[5]));
+  offset[0].transform.translation.x = aTt[0];
+  offset[0].transform.translation.y = aTt[1];
+  offset[0].transform.translation.z = aTt[2];
+  offset[0].transform.rotation.w = aQt.w();
+  offset[0].transform.rotation.x = aQt.x();
+  offset[0].transform.rotation.y = aQt.y();
+  offset[0].transform.rotation.z = aQt.z();
+
+  // oTv - Transform from vive to optitrack
+  oQv = vpQuaternionVector(
+    vpThetaUVector(oTv[3], oTv[4], oTv[5]));
+  offset[1].transform.translation.x = oTv[0];
+  offset[1].transform.translation.y = oTv[1];
+  offset[1].transform.translation.z = oTv[2];
+  offset[1].transform.rotation.w = oQv.w();
+  offset[1].transform.rotation.x = oQv.x();
+  offset[1].transform.rotation.y = oQv.y();
+  offset[1].transform.rotation.z = oQv.z();
+
   return offset;
 }
 
@@ -329,8 +327,8 @@ TFs EstimateOffset(TFs optitrack, TFs vive) {
   // Changing the format for oTv
   vpTranslationVector oPv;
   vpQuaternionVector oQv;
-  oMv.inverse().extract(oPv);
-  oMv.inverse().extract(oQv);
+  vMo.inverse().extract(oPv);
+  vMo.inverse().extract(oQv);
   oTv.transform.translation.x = oPv[0];
   oTv.transform.translation.y = oPv[1];
   oTv.transform.translation.z = oPv[2];
@@ -338,7 +336,6 @@ TFs EstimateOffset(TFs optitrack, TFs vive) {
   oTv.transform.rotation.x = oQv.x();
   oTv.transform.rotation.y = oQv.y();
   oTv.transform.rotation.z = oQv.z();
-
 
   Ts.push_back(aTt);
   Ts.push_back(oTv);
@@ -474,15 +471,10 @@ void HiveOffset::Spin() {
     }
   }
 
-
+  // Estimating the offset
   TFs offset;
   offset = EstimateOffset(opti_v, vive_v);
-  // offset = RefineOffsets(opti_v, vive_v, offset);
-
-
-  // Eigen::Quaterniond Q(0.1,10.0,0.0,0.0);
-  // Q.normalize();
-  // std::cout << Q.toRotationMatrix() << std::endl;
+  offset = RefineOffset(opti_v, vive_v, offset);
 
   rbag.close();
   return;
