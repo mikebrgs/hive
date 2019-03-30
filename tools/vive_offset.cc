@@ -260,8 +260,8 @@ TFs EstimateOffset(TFs optitrack, TFs vive) {
   std::vector<vpHomogeneousMatrix> tMvVec;
   std::vector<vpHomogeneousMatrix> aMoVec; // reference to end effector - optitrack to arrow
   std::vector<vpHomogeneousMatrix> oMaVec;
-  vpHomogeneousMatrix tMa; // end effector to camera - arrow to tracker
-  vpHomogeneousMatrix vMo; // TODO Check this one
+  // vpHomogeneousMatrix tMa; // end effector to camera - arrow to tracker
+  // vpHomogeneousMatrix vMo; // TODO Check this one
 
   // Tracker in Vive's frame
   for (auto msg_it = vive.begin();
@@ -275,7 +275,7 @@ TFs EstimateOffset(TFs optitrack, TFs vive) {
       msg_it->transform.rotation.z,
       msg_it->transform.rotation.w);
     vMt.buildFrom(vtt, vrt);
-    // vMt.push_back(vMt); // To compute the big offset
+    vMtVec.push_back(vMt); // To compute the big offset
     tMvVec.push_back(vMt.inverse()); // To compute the small offset
 }
 
@@ -291,20 +291,24 @@ TFs EstimateOffset(TFs optitrack, TFs vive) {
       msg_it->transform.rotation.z,
       msg_it->transform.rotation.w);
     oMa.buildFrom(ota, ora);
-    // aMo.push_back(oMa.inverse()); // To compute the big offset
+    aMoVec.push_back(oMa.inverse()); // To compute the big offset
     oMaVec.push_back(oMa); // To compute the small offset
 }
 
   int status;
 
-  status = vpHandEyeCalibration::calibrate(tMvVec, oMaVec, tMa); // To compute the small offset
-  std::cout << "tMa: ";
-  tMa.print(); // end effector to camera - arrow to tracker
+  vpHomogeneousMatrix aMt;
+  status = vpHandEyeCalibration::calibrate(tMvVec, oMaVec, aMt); // To compute the small offset
+  // tMa = aMt.inverse();
+  std::cout << "aMt: ";
+  aMt.print(); // end effector to camera - arrow to tracker
   std::cout << std::endl << "Status: " <<  status << std::endl;
   // TODO check this
-  status = vpHandEyeCalibration::calibrate(tMvVec, oMaVec, vMo); // To compute the small offset
-  std::cout << "vMo: ";
-  vMo.print(); // end effector to camera - arrow to tracker
+  vpHomogeneousMatrix oMv;
+  status = vpHandEyeCalibration::calibrate(vMtVec, aMoVec, oMv); // To compute the small offset
+  // vMo = oMv.inverse();
+  std::cout << "oMv: ";
+  oMv.print(); // end effector to camera - arrow to tracker
   std::cout << std::endl << "Status: " <<  status << std::endl;
 
   TFs Ts;
@@ -314,8 +318,8 @@ TFs EstimateOffset(TFs optitrack, TFs vive) {
   // Changing the format for aTt
   vpTranslationVector aPt;
   vpQuaternionVector aQt;
-  tMa.inverse().extract(aPt);
-  tMa.inverse().extract(aQt);
+  aMt.extract(aPt);
+  aMt.extract(aQt);
   aTt.transform.translation.x = aPt[0];
   aTt.transform.translation.y = aPt[1];
   aTt.transform.translation.z = aPt[2];
@@ -327,8 +331,8 @@ TFs EstimateOffset(TFs optitrack, TFs vive) {
   // Changing the format for oTv
   vpTranslationVector oPv;
   vpQuaternionVector oQv;
-  vMo.inverse().extract(oPv);
-  vMo.inverse().extract(oQv);
+  oMv.extract(oPv);
+  oMv.extract(oQv);
   oTv.transform.translation.x = oPv[0];
   oTv.transform.translation.y = oPv[1];
   oTv.transform.translation.z = oPv[2];
@@ -447,9 +451,6 @@ void HiveOffset::Spin() {
       vive_v.back().transform.translation.z << std::endl;
     }
   }
-  vive_v.erase(vive_v.begin());
-  vive_v.erase(vive_v.begin());
-  vive_v.pop_back();
 
   std::cout << "***" << std::endl;
 
@@ -474,7 +475,7 @@ void HiveOffset::Spin() {
   // Estimating the offset
   TFs offset;
   offset = EstimateOffset(opti_v, vive_v);
-  offset = RefineOffset(opti_v, vive_v, offset);
+  // offset = RefineOffset(opti_v, vive_v, offset);
 
   rbag.close();
   return;
