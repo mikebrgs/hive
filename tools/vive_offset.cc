@@ -138,6 +138,35 @@ struct PoseCostFunctor{
 };
 
 TFs RefineOffsets(TFs optitrack, TFs vive, TFs offset) {
+
+  TF aTt = offset[0]; // Transform from tracker to optitrack's arrow
+  TF oTv = offset[1]; // Transform from vive to optitrack
+
+
+  // TODO Continue here
+  vpTranslationVector tPa;
+  vpThetaUVector tRa;
+  tMa.inverse().extract(tPa);
+  tMa.inverse().extract(tRa);
+
+  double tTa[6] = {
+    tPa[0],
+    tPa[1],
+    tPa[2],
+    tRa[0],
+    tRa[1],
+    tRa[2],
+  };
+
+  double vTo[6] = {
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+  };
+
   ceres::Problem problem;
 
   ceres::Solver::Options options;
@@ -229,30 +258,12 @@ TFs RefineOffsets(TFs optitrack, TFs vive, TFs offset) {
 }
 
 TFs EstimateOffset(TFs optitrack, TFs vive) {
-  // TF oTv; // Transform from vive to optitrack
-  // TF aTt; // Transform from tracker to optitrack's arrow
-
-
-  /*VISP TESTING*/
-  // vpHomogeneousMatrix oMv;
-  // vpHomogeneousMatrix aMt;
-  // vpTranslationVector otv(0.3, 0.2, 0.1);
-  // vpThetaUVector orv;
-  // orv[0] = vpMath::rad(5);  // 10 deg
-  // orv[1] = vpMath::rad(10); // -10 deg
-  // orv[2] = vpMath::rad(-10);  // 25 deg
-  // oMv.buildFrom(otv,orv);
-
-  // vpTranslationVector att(0.1, 0.2, 0.3);
-  // vpThetaUVector art;
-  // art[0] = vpMath::rad(10);  // 10 deg
-  // art[1] = vpMath::rad(-2); // -10 deg
-  // art[2] = vpMath::rad(-1);  // 25 deg
-  // aMt.buildFrom(att,art);
-
-  std::vector<vpHomogeneousMatrix> cMo; // camera to object - tracker to vive
-  std::vector<vpHomogeneousMatrix> rMe; // reference to end effector - optitrack to arrow
-  vpHomogeneousMatrix eMc; // end effector to camera - arrow to tracker
+  std::vector<vpHomogeneousMatrix> vMtVec; // camera to object - tracker to vive
+  std::vector<vpHomogeneousMatrix> tMvVec;
+  std::vector<vpHomogeneousMatrix> aMoVec; // reference to end effector - optitrack to arrow
+  std::vector<vpHomogeneousMatrix> oMaVec;
+  vpHomogeneousMatrix tMa; // end effector to camera - arrow to tracker
+  vpHomogeneousMatrix vMo; // TODO Check this one
 
   // Tracker in Vive's frame
   for (auto msg_it = vive.begin();
@@ -266,8 +277,8 @@ TFs EstimateOffset(TFs optitrack, TFs vive) {
       msg_it->transform.rotation.z,
       msg_it->transform.rotation.w);
     vMt.buildFrom(vtt, vrt);
-    // cMo.push_back(vMt);
-    cMo.push_back(vMt.inverse());
+    // vMt.push_back(vMt); // To compute the big offset
+    tMvVec.push_back(vMt.inverse()); // To compute the small offset
 }
 
   // Arrow in Optitrack's frame
@@ -282,127 +293,55 @@ TFs EstimateOffset(TFs optitrack, TFs vive) {
       msg_it->transform.rotation.z,
       msg_it->transform.rotation.w);
     oMa.buildFrom(ota, ora);
-    // rMe.push_back(oMa.inverse());
-    rMe.push_back(oMa);
+    // aMo.push_back(oMa.inverse()); // To compute the big offset
+    oMaVec.push_back(oMa); // To compute the small offset
 }
 
-  // for (int i = 0; i < 6; i++) {
-  //   // p1 - tracker in the vive frame / tracker to vive
-  //   // vive <=> object (static)
-  //   // tracker <=> camera
-  //   // p2 - arrow in the optitrack frame / arrow to optitrack
-  //   // optitrack <=> reference
-  //   // arrow <=> end-effector
+  int status;
 
-  //   vpHomogeneousMatrix vMt;
-  //   if (i==0) {
-  //     vpTranslationVector vtt(0, 0.1, 0.5);
-  //     vpThetaUVector vrt;
-  //     vrt[0] = vpMath::rad(0);  // 10 deg
-  //     vrt[1] = vpMath::rad(25); // -10 deg
-  //     vrt[2] = vpMath::rad(0);  // 25 deg
-  //     vMt.buildFrom(vtt, vrt);
-  //   } else if (i == 1) {
-  //     vpTranslationVector vtt(0, 0.5, 0.0);
-  //     vpThetaUVector vrt;
-  //     vrt[0] = vpMath::rad(0);  // 10 deg
-  //     vrt[1] = vpMath::rad(0); // -10 deg
-  //     vrt[2] = vpMath::rad(-10);  // 25 deg
-  //     vMt.buildFrom(vtt, vrt);
-  //   } else if (i == 2) {
-  //     vpTranslationVector vtt(-0.3, -0.2, 0.0);
-  //     vpThetaUVector vrt;
-  //     vrt[0] = vpMath::rad(0);  // 10 deg
-  //     vrt[1] = vpMath::rad(0); // -10 deg
-  //     vrt[2] = vpMath::rad(0);  // 25 deg
-  //     vMt.buildFrom(vtt, vrt);
-  //   } else if (i == 3) {
-  //     vpTranslationVector vtt(0.7, 0.1, 0.5);
-  //     vpThetaUVector vrt;
-  //     vrt[0] = vpMath::rad(10);  // 10 deg
-  //     vrt[1] = vpMath::rad(0); // -10 deg
-  //     vrt[2] = vpMath::rad(0);  // 25 deg
-  //     vMt.buildFrom(vtt, vrt);
-  //   } else if (i == 4) {
-  //     vpTranslationVector vtt(-0.2, 0.1, -0.4);
-  //     vpThetaUVector vrt;
-  //     vrt[0] = vpMath::rad(-10);  // 10 deg
-  //     vrt[1] = vpMath::rad(25); // -10 deg
-  //     vrt[2] = vpMath::rad(0);  // 25 deg
-  //     vMt.buildFrom(vtt, vrt);
-  //   } else if (i == 5) {
-  //     vpTranslationVector vtt(0.1, 0, 0.5);
-  //     vpThetaUVector vrt;
-  //     vrt[0] = vpMath::rad(-20);  // 10 deg
-  //     vrt[1] = vpMath::rad(0); // -10 deg
-  //     vrt[2] = vpMath::rad(5);  // 25 deg
-  //     vMt.buildFrom(vtt, vrt);
-  //   }
-  //   vpHomogeneousMatrix oMa = oMv * vMt * aMt.inverse();
-  //   cMo.push_back(vMt);
-  //   rMe.push_back(oMa.inverse());
-
-  //   // cMo.push_back(vMt.inverse());
-  //   // rMe.push_back(oMa);
-
-
-  //   std::cout << "vMt; ";
-  //   vMt.print();
-  //   std::cout << std::endl;
-
-  //   std::cout << "oMv; ";
-  //   oMv.print();
-  //   std::cout << std::endl;
-
-  //   std::cout << "aMt; ";
-  //   aMt.print();
-  //   std::cout << std::endl;
-
-  //   std::cout << "oMa; ";
-  //   oMa.print();
-  //   std::cout << std::endl;
-
-  // }
-
-  int status = vpHandEyeCalibration::calibrate(cMo, rMe, eMc);
-
-  std::cout << "eMc: ";
-  eMc.print(); // end effector to camera - arrow to tracker
+  status = vpHandEyeCalibration::calibrate(tMvVec, oMaVec, tMa); // To compute the small offset
+  std::cout << "tMa: ";
+  tMa.print(); // end effector to camera - arrow to tracker
+  std::cout << std::endl << "Status: " <<  status << std::endl;
+  // TODO check this
+  status = vpHandEyeCalibration::calibrate(tMvVec, oMaVec, vMo); // To compute the small offset
+  std::cout << "vMo: ";
+  vMo.print(); // end effector to camera - arrow to tracker
   std::cout << std::endl << "Status: " <<  status << std::endl;
 
-  vpHomogeneousMatrix tMa = eMc;
-
-  vpTranslationVector tPa;
-  vpThetaUVector tRa;
-  tMa.inverse().extract(tPa);
-  tMa.inverse().extract(tRa);
-
-  double tTa[6] = {
-    tPa[0],
-    tPa[1],
-    tPa[2],
-    tRa[0],
-    tRa[1],
-    tRa[2],
-  };
-
-  double vTo[6] = {
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-  };
-  /*VISP TESTING*/
-
-
   TFs Ts;
-  TF msg_oTv, msg_aTt;
-  msg_oTv.transform.translation.x = oTv.
+  TF aTt; // Transform from tracker to optitrack's arrow
+  TF oTv; // Transform from vive to optitrack
 
-  Ts.push_back(oTv);
+  // Changing the format for aTt
+  vpTranslationVector aPt;
+  vpQuaternionVector aQt;
+  tMa.inverse().extract(aPt);
+  tMa.inverse().extract(aQt);
+  aTt.transform.translation.x = aPt[0];
+  aTt.transform.translation.y = aPt[1];
+  aTt.transform.translation.z = aPt[2];
+  aTt.transform.rotation.w = aQt.w();
+  aTt.transform.rotation.x = aQt.x();
+  aTt.transform.rotation.y = aQt.y();
+  aTt.transform.rotation.z = aQt.z();
+
+  // Changing the format for oTv
+  vpTranslationVector oPv;
+  vpQuaternionVector oQv;
+  oMv.inverse().extract(oPv);
+  oMv.inverse().extract(oQv);
+  oTv.transform.translation.x = oPv[0];
+  oTv.transform.translation.y = oPv[1];
+  oTv.transform.translation.z = oPv[2];
+  oTv.transform.rotation.w = oQv.w();
+  oTv.transform.rotation.x = oQv.x();
+  oTv.transform.rotation.y = oQv.y();
+  oTv.transform.rotation.z = oQv.z();
+
+
   Ts.push_back(aTt);
+  Ts.push_back(oTv);
   return Ts;
 }
 
@@ -538,7 +477,7 @@ void HiveOffset::Spin() {
 
   TFs offset;
   offset = EstimateOffset(opti_v, vive_v);
-
+  // offset = RefineOffsets(opti_v, vive_v, offset);
 
 
   // Eigen::Quaterniond Q(0.1,10.0,0.0,0.0);
