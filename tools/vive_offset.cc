@@ -42,6 +42,8 @@
 #include <geometry_msgs/TransformStamped.h>
 #include <tf2_msgs/TFMessage.h>
 
+#define INFUNCTIONRESIDUALS 4
+
 typedef geometry_msgs::TransformStamped TF;
 typedef std::vector<TF> TFs;
 
@@ -81,19 +83,11 @@ struct PoseCostFunctor{
     oPv << o_v[0],
         o_v[1],
         o_v[2];
-    // oRv << Eigen::Quaternion<T>(o_v[3],
-    //     o_v[4],
-    //     o_v[5],
-    //     o_v[6]).normalized().toRotationMatrix();
     ceres::AngleAxisToRotationMatrix(&o_v[3], oRv.data());
     aPt << a_t[0],
         a_t[1],
         a_t[2];
     ceres::AngleAxisToRotationMatrix(&a_t[3], aRt.data());
-    // aRt << Eigen::Quaternion<T>(a_t[3],
-    //     a_t[4],
-    //     a_t[5],
-    //     a_t[6]).normalized().toRotationMatrix();
 
     // Convert Vive to OptiTrack
     Eigen::Matrix<T, 3, 1> tPa = -aRt.transpose() * aPt;
@@ -116,10 +110,16 @@ struct PoseCostFunctor{
     residual[1] = (_oPa(1) - oPa(1)) / (T(0.01) + delta);
     residual[2] = (_oPa(2) - oPa(2)) / (T(0.01) + delta);
 
-    residual[3] = T(M_PI / 2) - ((_oRa * oRa.transpose()).trace() - T(1))
-    - ((_oRa * oRa.transpose()).trace() - T(1)) *
-    ((_oRa * oRa.transpose()).trace() - T(1))*
-    ((_oRa * oRa.transpose()).trace() - T(1)) / T(6.0);
+    T aa[3];
+    Eigen::Matrix<T, 3, 3> R = _oRa * oRa.transpose();
+    ceres::RotationMatrixToAngleAxis(R.data(), aa);
+    residual[3] = aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2];
+
+    // residual[3] = T(M_PI / 2) - ((_oRa * oRa.transpose()).trace() - T(1))
+    // - ((_oRa * oRa.transpose()).trace() - T(1)) *
+    // ((_oRa * oRa.transpose()).trace() - T(1))*
+    // ((_oRa * oRa.transpose()).trace() - T(1)) / T(6.0);
+
     // residual[3] = T(1.0) - (oQa.w() * _oQa.w() +
     //   oQa.x() * _oQa.x() +
     //   oQa.y() * _oQa.y() +
@@ -147,11 +147,11 @@ TFs RefineOffset(TFs optitrack, TFs vive, TFs offset) {
     offset[0].transform.rotation.y,
     offset[0].transform.rotation.z,
     offset[0].transform.rotation.w);
+  vpThetaUVector aAt(aQt);
   // TF oTv = offset[1]; // Transform from vive to optitrack
   vpTranslationVector oPv(offset[1].transform.translation.x,
     offset[1].transform.translation.y,
     offset[1].transform.translation.z);
-  vpThetaUVector aAt(aQt);
   vpQuaternionVector oQv(offset[1].transform.rotation.x,
     offset[1].transform.rotation.y,
     offset[1].transform.rotation.z,
@@ -174,7 +174,7 @@ TFs RefineOffset(TFs optitrack, TFs vive, TFs offset) {
 
   // Solver's options
   options.minimizer_progress_to_stdout = true;
-  options.max_num_iterations = 50;
+  options.max_num_iterations = 200;
   // options.parameter_tolerance = 1e-40;
   // options.gradient_tolerance = 1e-40;
   // options.function_tolerance = 1e-40;
@@ -183,9 +183,9 @@ TFs RefineOffset(TFs optitrack, TFs vive, TFs offset) {
   // options.trust_region_strategy_type = ceres::DOGLEG;
   // options.dogleg_type = ceres::SUBSPACE_DOGLEG;
 
-  auto o_it = optitrack.begin();
-  auto o_pit = o_it;
-  auto v_it = vive.begin();
+  // auto o_it = optitrack.begin();
+  // auto o_pit = o_it;
+  // auto v_it = vive.begin();
 
   // Different notation
   std::cout << "oTv: "
@@ -203,18 +203,31 @@ TFs RefineOffset(TFs optitrack, TFs vive, TFs offset) {
             << aTt[4] << ", "
             << aTt[5] << std::endl;
 
-  while(v_it != vive.end()) {
-    ceres::CostFunction * cost_prev =
-      new ceres::AutoDiffCostFunction<PoseCostFunctor, 4, 6, 6>
+  auto v_it = vive.begin();
+  auto o_it = optitrack.begin();
+  size_t counter = 0;
+  while (v_it != vive.end() && o_it != optitrack.end()) {
+    ceres::CostFunction * thecost =
+      new ceres::AutoDiffCostFunction<PoseCostFunctor, INFUNCTIONRESIDUALS, 6, 6>
       (new PoseCostFunctor(*v_it, *o_it));
-    problem.AddResidualBlock(cost_prev, NULL, oTv, aTt);
+    problem.AddResidualBlock(thecost, NULL, oTv, aTt);
     v_it++;
     o_it++;
+    counter++;
   }
+
+  // while(v_it != vive.end()) {
+  //   ceres::CostFunction * cost_prev =
+  //     new ceres::AutoDiffCostFunction<PoseCostFunctor, 4, 6, 6>
+  //     (new PoseCostFunctor(*v_it, *o_it));
+  //   problem.AddResidualBlock(cost_prev, NULL, oTv, aTt);
+  //   v_it++;
+  //   o_it++;
+  // }
 
   ceres::Solve(options, &problem, &summary);
 
-  std::cout << summary.FullReport() << std::endl;
+  std::cout << summary.BriefReport() << std::endl;
   std::cout << "oTv: "
             << oTv[0] << ", "
             << oTv[1] << ", "
@@ -299,14 +312,12 @@ TFs EstimateOffset(TFs optitrack, TFs vive) {
 
   vpHomogeneousMatrix aMt;
   status = vpHandEyeCalibration::calibrate(tMvVec, oMaVec, aMt); // To compute the small offset
-  // tMa = aMt.inverse();
   std::cout << "aMt: ";
   aMt.print(); // end effector to camera - arrow to tracker
   std::cout << std::endl << "Status: " <<  status << std::endl;
-  // TODO check this
+
   vpHomogeneousMatrix oMv;
   status = vpHandEyeCalibration::calibrate(vMtVec, aMoVec, oMv); // To compute the small offset
-  // vMo = oMv.inverse();
   std::cout << "oMv: ";
   oMv.print(); // end effector to camera - arrow to tracker
   std::cout << std::endl << "Status: " <<  status << std::endl;
@@ -344,6 +355,45 @@ TFs EstimateOffset(TFs optitrack, TFs vive) {
   Ts.push_back(aTt);
   Ts.push_back(oTv);
   return Ts;
+}
+
+void TestTrajectory(TFs & vive, TFs & optitrack) {
+  vpTranslationVector oPv(-2,-1,1.7);
+  vpThetaUVector oAv(0,0,0);
+  vpHomogeneousMatrix oMv(oPv, oAv);
+  vpTranslationVector aPt(0.01,0.06,0.02);
+  vpThetaUVector aAt(0,0,0);
+  vpHomogeneousMatrix aMt(aPt, aAt);
+
+  for (double i = 0; i < 100; i++) {
+    vpTranslationVector vPt(cos(M_PI / 13.576 * i),sin(M_PI / 13.576 *i),i);
+    vpThetaUVector vAt(sqrt(i),i,i*i);
+    vpHomogeneousMatrix vMt(vPt, vAt);
+    vpHomogeneousMatrix oMa = oMv * vMt * aMt.inverse();
+    vpTranslationVector oPa;
+    vpQuaternionVector oQa, vQt;
+    vMt.extract(vQt);
+    oMa.extract(oQa);
+    oMa.extract(oPa);
+    TF oTa, vTt;
+    oTa.transform.translation.x = oPa[0] + 0.005 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    oTa.transform.translation.y = oPa[1] + 0.005 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    oTa.transform.translation.z = oPa[2] + 0.005 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    oTa.transform.rotation.w = oQa.w() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    oTa.transform.rotation.x = oQa.x() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    oTa.transform.rotation.y = oQa.y() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    oTa.transform.rotation.z = oQa.z() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    vTt.transform.translation.x = vPt[0] + 0.005 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    vTt.transform.translation.y = vPt[1] + 0.005 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    vTt.transform.translation.z = vPt[2] + 0.005 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    vTt.transform.rotation.w = vQt.w() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    vTt.transform.rotation.x = vQt.x() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    vTt.transform.rotation.y = vQt.y() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    vTt.transform.rotation.z = vQt.z() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    vive.push_back(vTt);
+    optitrack.push_back(oTa);
+  }
+  return;
 }
 
 class HiveOffset
@@ -408,6 +458,8 @@ void HiveOffset::Spin() {
     cal_.SetLighthouses(*vl);
   }
   ROS_INFO("Lighthouses' setup complete.");
+  // return;
+
 
   // Trackers
   rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
@@ -418,7 +470,7 @@ void HiveOffset::Spin() {
   }
   ROS_INFO("Trackers' setup complete.");
 
-  // Temporary solver - Easily changed
+  // Temporary solver - Easily changed (one tracker only)
   solver = new BaseSolve(cal_.environment,
     cal_.trackers.begin()->second);
 
@@ -434,27 +486,35 @@ void HiveOffset::Spin() {
   }
   ROS_INFO("Data processment complete.");
 
-  // TFs offset;
-  // offset = EstimateOffset(otv_, vv_);
-
   TFs vive_v, opti_v;
+  TFs vive_vfull, opti_vfull;
   vive_v.push_back(*vv_.begin());
   for (size_t msg_it = 1; msg_it < vv_.size(); msg_it++) {
+    // Distance between consecutive poses
     double distance = pow(vv_[msg_it].transform.translation.x - vive_v.back().transform.translation.x, 2) +
       pow(vv_[msg_it].transform.translation.y - vive_v.back().transform.translation.y, 2) +
       pow(vv_[msg_it].transform.translation.z - vive_v.back().transform.translation.z, 2);
-    if (distance > 0.1) {
-    // if (msg_it % (vv_.size()/20) == 0) {
+    // Angular distance between two poses
+    Eigen::Quaterniond Qnow(vv_[msg_it].transform.rotation.w,
+      vv_[msg_it].transform.rotation.x,
+      vv_[msg_it].transform.rotation.y,
+      vv_[msg_it].transform.rotation.z);
+    Eigen::Quaterniond Qpre(vive_v.back().transform.rotation.w,
+      vive_v.back().transform.rotation.x,
+      vive_v.back().transform.rotation.y,
+      vive_v.back().transform.rotation.z);
+    Eigen::AngleAxisd Adif(Qnow * Qpre.inverse());
+    // Filling the pose improvement vector
+    vive_vfull.push_back(vv_[msg_it]);
+    // Finding poses distanced enough from each other
+    if (distance > 0.1 && Adif.angle() > 0.17) { // maybe include orientation difference in here as well
       vive_v.push_back(vv_[msg_it]);
-      std::cout << msg_it <<  ": " << vive_v.back().transform.translation.x << ", " <<
-      vive_v.back().transform.translation.y << ", " <<
-      vive_v.back().transform.translation.z << std::endl;
     }
   }
 
-  std::cout << "***" << std::endl;
-
-  size_t vi_it = 0;
+  size_t vi_it;
+  // Finding the corresponding optitrack pose to vive_v
+  vi_it = 0;
   for (size_t op_it = 0 ; op_it < otv_.size(); op_it++) {
     // std::cout << "HERE1" << std::endl;
     if (otv_[op_it].header.stamp.toSec() > vive_v[vi_it].header.stamp.toSec()) {
@@ -464,20 +524,41 @@ void HiveOffset::Spin() {
       } else {
         opti_v.push_back(otv_[op_it - 1]);
       }
-      std::cout << op_it <<  ": " << opti_v.back().transform.translation.x << ", " <<
-      opti_v.back().transform.translation.y << ", " <<
-      opti_v.back().transform.translation.z << std::endl;
       vi_it++;
       if (vi_it >= vive_v.size()) break;
+    }
+  }
+
+  // Finding the corresponding optitrack pose to vive_vfull
+  vi_it = 0;
+  for (size_t op_it = 0 ; op_it < otv_.size(); op_it++) {
+    // std::cout << "HERE1" << std::endl;
+    if (otv_[op_it].header.stamp.toSec() > vive_vfull[vi_it].header.stamp.toSec()) {
+      if (otv_[op_it].header.stamp.toSec() - vive_vfull[vi_it].header.stamp.toSec() <
+        - otv_[op_it - 1].header.stamp.toSec() + vive_vfull[vi_it].header.stamp.toSec()) {
+        opti_vfull.push_back(otv_[op_it]);
+      } else {
+        opti_vfull.push_back(otv_[op_it - 1]);
+      }
+      vi_it++;
+      if (vi_it >= vive_vfull.size()) break;
     }
   }
 
   // Estimating the offset
   TFs offset;
   offset = EstimateOffset(opti_v, vive_v);
-  // offset = RefineOffset(opti_v, vive_v, offset);
+  offset = RefineOffset(opti_vfull, vive_vfull, offset);
 
   rbag.close();
+
+  // TESTING
+  // TFs vive_v, opti_v, offset;
+  // TestTrajectory(vive_v, opti_v);
+  // offset = EstimateOffset(opti_v, vive_v);
+  // offset = RefineOffset(opti_v, vive_v, offset);
+  // TESTING
+
   return;
 }
 

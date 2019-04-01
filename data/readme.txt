@@ -43,7 +43,7 @@ vivebag_2019-02-11-16-10-06.bag - both linear movement and angular movement with
 
 ENV2
 
-vivebag_2019-02-11-16-16-56.bag - New environment (see picture IMG_ENV2.jpg). For this dataset, the tracker was stationary in the sofa.
+vivebag_2019-02-11-16-16-56.bag - New environment (see picture IMG_ENV2.jpg). For this dataset, the tracker was stationary in the sofa. // this data is not good - can't calibrate
 
 vivebag_2019-02-11-16-20-15.bag - same environment, but moved the tracker in circles around myself.
 

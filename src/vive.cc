@@ -316,7 +316,7 @@ bool Calibration::GetLightSpecs(hive::ViveCalibrationGeneral * msg) {
 }
 
 bool Calibration::SetLighthouses(hive::ViveCalibrationLighthouseArray const& msg) {
-  for (std::vector<hive::ViveCalibrationLighthouse>::const_iterator lh_it = msg.lighthouses.begin();
+  for (auto lh_it = msg.lighthouses.begin();
     lh_it != msg.lighthouses.end(); lh_it++) {
     lighthouses[lh_it->serial].serial = lh_it->serial;
     lighthouses[lh_it->serial].id = lh_it->id;

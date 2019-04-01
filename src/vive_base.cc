@@ -179,7 +179,6 @@ bool ComputeTransformBundle(LightData observations,
     ld_it != observations.end(); ld_it++) {
     // Get lighthouse to angle axis
     bool lighthouse = false;
-    bool correction = false;
     if (environment->lighthouses.find(ld_it->first) == environment->lighthouses.end())
       continue;
 
@@ -243,6 +242,7 @@ bool ComputeTransformBundle(LightData observations,
   }
   // Exit in case no lighthouses are available
   if (counter == 0) {
+    ROS_FATAL("HERE");
     return false;
   }
   problem.SetParameterBlockConstant(extrinsics->positions);
