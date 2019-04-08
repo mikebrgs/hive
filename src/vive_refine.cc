@@ -12,45 +12,181 @@ public:
     smoothing_ = smoothing;
   }
   // Function for ceres solver with parameters
-  template <typename T> bool operator()(const T* const prevPose,
-    const T* const prevT,
-    const T* const nextPose,
-    const T* const nextT,
+  template <typename T> bool operator()(const T* const prev_lTt,
+    const T* const prev_vTl,
+    const T* const next_lTt,
+    const T* const next_vTl,
     T * residual) const {
     // cost function here
 
-    // Still missing the frame conversion here
+    // Frame conversion
+    Eigen::Matrix<T, 3, 1> prev_lPt(prev_lTt[0],
+      prev_lTt[1],
+      prev_lTt[2]);
+    Eigen::Matrix<T, 3, 1> next_lPt(next_lTt[0],
+      next_lTt[1],
+      next_lTt[2]);
+    Eigen::Matrix<T, 3, 1> prev_lAt(prev_lTt[3],
+      prev_lTt[4],
+      prev_lTt[5]);
+    Eigen::Matrix<T, 3, 1> next_lAt(next_lTt[3],
+      next_lTt[4],
+      next_lTt[5]);
+    Eigen::AngleAxis<T> prev_lAAt(prev_lAt.norm(),
+      prev_lAt.normalize());
+    Eigen::AngleAxis<T> next_lAAt(next_lAt.norm(),
+      next_lAt.normalize());
+
+    Eigen::Matrix<T, 3, 1> prev_vPl(prev_vTl[0],
+      prev_vTl[1],
+      prev_vTl[2]);
+    Eigen::Matrix<T, 3, 1> next_vPl(next_vTl[0],
+      next_vTl[1],
+      next_vTl[2]);
+    Eigen::Matrix<T, 3, 1> prev_vAl(prev_vTl[3],
+      prev_vTl[4],
+      prev_vTl[5]);
+    Eigen::Matrix<T, 3, 1> next_vAl(next_vTl[3],
+      next_vTl[4],
+      next_vTl[5]);
+    Eigen::AngleAxis<T> prev_vAAl(prev_vAl.norm(),
+      prev_vAl.normalize());
+    Eigen::AngleAxis<T> next_vAAl(next_vAl.norm(),
+      next_vAl.normalize());
+
+    Eigen::Matrix<T, 3, 1> prev_vPt = prev_vAAl * prev_lPt + prev_vPl;
+    Eigen::AngleAxis<T> prev_vAAt = prev_vAAl * prev_lAAt;
+
+    Eigen::Matrix<T, 3, 1> next_vPt = next_vAAl * next_lPt + next_vPl;
+    Eigen::AngleAxis<d> next_vAAt = next_vAAl * next_vAAt;
 
     // Translation cost with smoothing
-    residual[0] = smoothing_ * (prevPose[0] - nextPose[0]);
-    residual[1] = smoothing_ * (prevPose[1] - nextPose[1]);
-    residual[2] = smoothing_ * (prevPose[2] - nextPose[2]);
+    residual[0] = smoothing_ * (prev_vPt(0) - next_vPt(0));
+    residual[1] = smoothing_ * (prev_vPt(1) - next_vPt(1));
+    residual[2] = smoothing_ * (prev_vPt(2) - next_vPt(2));
     // Rotation cost with smoothing
-    Eigen::AngleAxis<T> prevA(prevPose[3], prevPose[4], prevPose[5]);
-    Eigen::AngleAxis<T> nextA(nextPose[3], nextPose[4], nextPose[5]);
-    residual[3] = smoothing_ * (nextA.inverse() * prevA).angle();
+    residual[3] = smoothing_ * (next_vAAt.inverse() * prev_vAAt).angle();
     return true;
   }
 private:
   smoothing_;
 };
 
-class PoseCost
+class PoseHorizontalCost
 {
 public:
-  PoseCost(/*Data here*/) {
-    // Save data here
+  PoseHorizontalCost(hive::ViveLight data,
+    Motor tracker,
+    Lighthouse lighthouse,
+    bool correction) {
+    data_ = data;
+    correction_ = correction;
+    tracker_ = tracker;
+    lighthouse_ = lighthouse;
   }
 
   template <typename T> bool operator()(const T* const parameters,
     T * residual) const {
-    // Do cost here
+    Eigen::Matrix<T, 3, 1> lPt(parameters[0][0],
+      parameters[0][1],
+      parameters[0][2]);
+    Eigen::Matrix<T, 3, 1> lAt(parameters[0][3],
+      parameters[0][4],
+      parameters[0][5]);
+    Eigen::AngleAxis<T> lAAt(lAt.norm(), lAt.normalize());
+
+    for (auto li_it = data_.samples.begin();
+      li_it != data_.samples.end(); li_it++) {
+      Eigen::Matrix<T, 3, 1> tPs(tracker_.sensors[li_it->sensor].position.x,
+        tracker_.sensors[li_it->sensor].position.y,
+        tracker_.sensors[li_it->sensor].position.z);
+
+      Eigen::Matrix<T, 3, 1> lPs = lAAt.toRotationMatrix() * tPs + lPt;
+
+      T ang; // The final angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
+      T phase = tracker.phase;
+      T tilt = tracker.tilt;
+      T gib_phase = tracker.gib_phase;
+      T gib_mag = tracker.gib_magnitude;
+      T curve = tracker.curve;
+
+      if (correction_) {
+        ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
+      } else {
+        ang = atan(x);
+      }
+
+      residual[i] = T(li_it->angle) - ang;
+
+    }
     return true;
   }
 private:
-  // Save stuff here
+  bool correction_;
+  Motor tracker_;
+  Lighthouse lighthouse_;
+  hive::ViveLight data_;
 };
 
+class PoseVerticalCost
+{
+public:
+  PoseVerticalCost(hive::ViveLight data,
+    Motor tracker,
+    Lighthouse lighthouse,
+    bool correction) {
+    data_ = data;
+    correction_ = correction;
+    tracker_ = tracker;
+    lighthouse_ = lighthouse;
+  }
+
+  template <typename T> bool operator()(const T* const parameters,
+    T * residual) const {
+    Eigen::Matrix<T, 3, 1> lPt(parameters[0][0],
+      parameters[0][1],
+      parameters[0][2]);
+    Eigen::Matrix<T, 3, 1> lAt(parameters[0][3],
+      parameters[0][4],
+      parameters[0][5]);
+    Eigen::AngleAxis<T> lAAt(lAt.norm(), lAt.normalize());
+
+    for (auto li_it = data_.samples.begin();
+      li_it != data_.samples.end(); li_it++) {
+      Eigen::Matrix<T, 3, 1> tPs(tracker_.sensors[li_it->sensor].position.x,
+        tracker_.sensors[li_it->sensor].position.y,
+        tracker_.sensors[li_it->sensor].position.z);
+
+      Eigen::Matrix<T, 3, 1> lPs = lAAt.toRotationMatrix() * tPs + lPt;
+
+      T ang; // The final angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
+      T phase = tracker.phase;
+      T tilt = tracker.tilt;
+      T gib_phase = tracker.gib_phase;
+      T gib_mag = tracker.gib_magnitude;
+      T curve = tracker.curve;
+
+      if (correction_) {
+        ang = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
+      } else {
+        ang = atan(y);
+      }
+
+      residual[i] = T(li_it->angle) - ang;
+
+    }
+    return true;
+  }
+private:
+  bool correction_;
+  Motor tracker_;
+  Lighthouse lighthouse_;
+  hive::ViveLight data_;
+};
 
 Refinery::Refinery(Calibration & calibration) {
   // Initialize calibration (reference)
