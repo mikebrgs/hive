@@ -20,6 +20,7 @@ public:
   // Solver(Environment environment,
   //   Tracker tracker);
   // ~Solver() {};
+  virtual void ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) = 0;
   virtual void ProcessLight(const hive::ViveLight::ConstPtr & msg) = 0;
   virtual bool GetTransform(geometry_msgs::TransformStamped & msg) = 0;
 };

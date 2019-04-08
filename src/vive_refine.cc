@@ -1,10 +1,14 @@
 #include <hive/vive_refine.h>
 
+#include <hive/hive_solve.h>
+
 typedef geometry_msgs::TransformStamped TF;
 
-#define INFUNCTIONRESIDUALS 4
+#define SMOOTHING 0.1
 
-// TODO Cost function -- check this
+
+
+// Trajectory smoothing cost function
 class SmoothingCost {
 public:
   // Constructor to pass data
@@ -231,23 +235,23 @@ bool Refinery::Solve() {
   options.max_num_iterations = 200;
 
   // Environment transforms
-  std::map<std::string, double[6]> lhTv;
+  std::map<std::string, double[6]> vTl;
   for (auto lh_it = calibration_.environment.lighthouses.begin();
     lh_it != calibration_.environment.lighthouses.end(); lh_it++) {
     // Conversion from quaternion to angle axis
-    Eigen::AngleAxisd lhAv(Eigen::Quaterniond(
+    Eigen::AngleAxisd vAl(Eigen::Quaterniond(
       lh_it->second.rotation.w,
       lh_it->second.rotation.x,
       lh_it->second.rotation.y,
       lh_it->second.rotation.z));
     // Conversion to double array
-    lhTv[lh_it->first] = {
+    vTl[lh_it->first] = {
       lh_it->second.transform.translation.x,
       lh_it->second.transform.translation.y,
       lh_it->second.transform.translation.z,
-      lhAv[0],
-      lhAv[1],
-      lhAv[2]
+      vAl[0],
+      vAl[1],
+      vAl[2]
     };
   }
 
@@ -255,20 +259,56 @@ bool Refinery::Solve() {
   Solver * solver = new BaseSolve(calibration_.environment,
     calibration_.trackers.begin()->second)
 
+  double * prev_pose = NULL;
+  double * next_pose = NULL;
+  std::string prev, next;
+
+  // Solution to save data
+  // std::map<std::string, std::pair<hive::ViveLight, hive::ViveLight>> data;
+
   // Iterate tracker data
   for (auto tr_it = data_.begin(); tr_it != data_.end(); tr_it++) {
     // Iterate light data
     for (auto li_it = tr_it->second.first.begin();
       li_it != tr_it->second.first.end(); li_it++) {
-      // Check if lighthouse is in calibration
+      // Check if lighthouse is in calibration -- if not continue
       if (lhTv.find(li_it->lighthouse) == lhTv.end()) continue;
       // TODO Compute first individual poses
-
-      // Do cost function
-      // ceres::CostFunction * thecost =
-      //   new ceres::AutoDiffCostFunction<RefineCostFunctor, INFUNCTIONRESIDUALS, 6, 6>
-      //   (new RefineCostFunctor(pose1, pose2));
-      // problem.AddResidualBlock(thecost, NULL, lh1, lh2);
+      /*CHANGE HERE >> */
+      solver->ProcessLight(li_it); // Not this solver -- maybe create new solver for here
+      TF tf;
+      if (solver->GetTransform(tf)) {
+      /* << CHANGE HERE*/
+        double pose[6];
+        prev_pose = next_pose;
+        prev = next;
+        next_pose = pose;
+        // Horizontal cost
+        if (li_it->axis == HORIZONTAL) {
+          ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4> * cost =
+            new ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4>
+            (new PoseHorizontalCost(*li_it, CORRECTION));
+          cost->AddParameterBlock(6);
+          cost->SetNumResiduals(li_it->samples.size());
+          problem.AddResidualBlock(cost, NULL, next_pose);
+        // Vertical cost
+        } else if (li_it->axis == VERTICAL) {
+          ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4> * cost =
+            new ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4>
+            (new PoseVerticalCost(*li_it, CORRECTION));
+          cost->AddParameterBlock(6);
+          cost->SetNumResiduals(li_it->samples.size());
+          problem.AddResidualBlock(cost, NULL, next_pose);
+        }
+        // Smoothing cost
+        if (prev_pose != NULL && next_pose != NULL) {
+          ceres::CostFunction * thecost =
+            new ceres::AutoDiffCostFunction<SmoothingCost, 4, 6, 6, 6, 6>
+            (new SmoothingCost(SMOOTHING));
+          problem.AddResidualBlock(cost, NULL,
+            vTl[prev], prev_pose, vTl[next], next_pose);
+        }
+      }
     }
   }
 

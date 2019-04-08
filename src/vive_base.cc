@@ -359,3 +359,8 @@ void BaseSolve::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   }
   return;
 }
+
+void BaseSolve::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
+  // Do nothing
+  return;
+}

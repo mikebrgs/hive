@@ -73,6 +73,7 @@ public:
   ~BaseSolve();
   // bool Initialize(Environment const& environment,
     // Tracker const& tracker);
+  void ProcessImu(const sensor_msgs::Imu::ConstPtr& msg);
   void ProcessLight(const hive::ViveLight::ConstPtr& msg);
   bool GetTransform(geometry_msgs::TransformStamped &msg);
 private:

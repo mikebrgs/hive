@@ -22,6 +22,7 @@
 #include <ros/ros.h>
 
 #include <hive/vive.h>
+#include <hive/vive_solver.h>
 
 // Incoming measurements
 #include <sensor_msgs/Imu.h>
@@ -80,7 +81,7 @@ struct SolvedPose {
 };
 
 // A class to solve for the position of a single tracker
-class ViveSolve {
+class ViveSolve : public Solver {
  public:
   // Constructor
   ViveSolve();
