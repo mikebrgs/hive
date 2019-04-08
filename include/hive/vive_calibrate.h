@@ -49,15 +49,18 @@ typedef std::function<void(Calibration const&)> CallbackFn;
 
 
 // Internal datatypes
-struct Sweep {
-  LightVec lights;
-  std::string lighthouse;
-  uint8_t axis;
-};
-typedef std::vector<Sweep> SweepVec;
-typedef std::pair<SweepVec, ImuVec> DataPair;         // pair of Light data and Imu data - change imu
-typedef std::map<std::string, DataPair> DataPairMap;         // map of trackers
+namespace calibrate {
+  struct Sweep {
+    LightVec lights;
+    std::string lighthouse;
+    uint8_t axis;
+  };
+  typedef std::vector<Sweep> SweepVec;
+  typedef std::pair<SweepVec, ImuVec> DataPair;         // pair of Light data and Imu data - change imu
+  typedef std::map<std::string, DataPair> DataPairMap;         // map of trackers
+} // namespace calibrate
 
+using namespace calibrate;
 
 class ViveCalibrate {
  public:

@@ -51,8 +51,8 @@ struct PoseCostFunctor{
   explicit PoseCostFunctor(TF vive, TF optitrack) :
     vive_(vive), optitrack_(optitrack) {}
   template <typename T> bool operator()(const T* const o_v,
-  const T* const a_t,
-  T * residual) const {
+    const T* const a_t,
+    T * residual) const {
     // Pose of the tracker in the Vive frame at instant t
     Eigen::Matrix<T, 3, 1> vPt;
     Eigen::Matrix<T, 3, 3> vRt;
@@ -183,10 +183,6 @@ TFs RefineOffset(TFs optitrack, TFs vive, TFs offset) {
   // options.trust_region_strategy_type = ceres::DOGLEG;
   // options.dogleg_type = ceres::SUBSPACE_DOGLEG;
 
-  // auto o_it = optitrack.begin();
-  // auto o_pit = o_it;
-  // auto v_it = vive.begin();
-
   // Different notation
   std::cout << "oTv: "
             << oTv[0] << ", "
@@ -205,7 +201,6 @@ TFs RefineOffset(TFs optitrack, TFs vive, TFs offset) {
 
   auto v_it = vive.begin();
   auto o_it = optitrack.begin();
-  size_t counter = 0;
   while (v_it != vive.end() && o_it != optitrack.end()) {
     ceres::CostFunction * thecost =
       new ceres::AutoDiffCostFunction<PoseCostFunctor, INFUNCTIONRESIDUALS, 6, 6>
@@ -213,17 +208,7 @@ TFs RefineOffset(TFs optitrack, TFs vive, TFs offset) {
     problem.AddResidualBlock(thecost, NULL, oTv, aTt);
     v_it++;
     o_it++;
-    counter++;
   }
-
-  // while(v_it != vive.end()) {
-  //   ceres::CostFunction * cost_prev =
-  //     new ceres::AutoDiffCostFunction<PoseCostFunctor, 4, 6, 6>
-  //     (new PoseCostFunctor(*v_it, *o_it));
-  //   problem.AddResidualBlock(cost_prev, NULL, oTv, aTt);
-  //   v_it++;
-  //   o_it++;
-  // }
 
   ceres::Solve(options, &problem, &summary);
 
