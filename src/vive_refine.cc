@@ -62,8 +62,7 @@ public:
     T aa[3];
     Eigen::Matrix<T, 3, 3> R = next_vRt.transpose() * prev_vRt;
     ceres::RotationMatrixToAngleAxis(R.data(), aa);
-    // Try to change this to remove squared angle
-    residual[3] = T(smoothing_) * (aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
+    residual[3] = T(smoothing_) * sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
     return true;
   }
 private:
@@ -197,7 +196,14 @@ private:
 Refinery::Refinery(Calibration & calibration) {
   // Initialize calibration (reference)
   calibration_ = calibration;
+  correction_ = true;
+  return;
+}
 
+Refinery::Refinery(Calibration & calibration, bool correction) {
+  // Initialize calibration (reference)
+  calibration_ = calibration;
+  correction_ = correction;
   return;
 }
 
@@ -225,8 +231,10 @@ bool Refinery::AddLight(const hive::ViveLight::ConstPtr& msg) {
 // Solve the problem
 bool Refinery::Solve() {
   // Check requirements
-  if (calibration_.environment.lighthouses.size() <= 1)
+  if (calibration_.environment.lighthouses.size() <= 1) {
     ROS_WARN("Not enough lighthouses for Refinement.");
+    return false;
+  }
 
   // Ceres set up
   ceres::Problem problem;
@@ -241,6 +249,7 @@ bool Refinery::Solve() {
   std::map<std::string, double[6]> vTl;
   for (auto lh_it = calibration_.environment.lighthouses.begin();
     lh_it != calibration_.environment.lighthouses.end(); lh_it++) {
+    std::cout << "LH: " << lh_it->first << std::endl;
     // Conversion from quaternion to angle axis
     Eigen::AngleAxisd vAl(Eigen::Quaterniond(
       lh_it->second.rotation.w,
@@ -264,11 +273,16 @@ bool Refinery::Solve() {
 
   // Iterate tracker data
   for (auto tr_it = data_.begin(); tr_it != data_.end(); tr_it++) {
+    std::cout << "TR: " << tr_it->first << std::endl;
     // Iterate light data
     for (auto li_it = tr_it->second.first.begin();
       li_it != tr_it->second.first.end(); li_it++) {
+      std::cout << "LI: " << li_it->header.stamp << std::endl;
       // Check if lighthouse is in calibration -- if not continue
-      if (vTl.find(li_it->lighthouse) == vTl.end()) continue;
+      if (vTl.find(li_it->lighthouse) == vTl.end()) {
+        std::cout << "BYE" << std::endl;
+        continue;
+      }
       // Compute first individual poses
       if (li_it->axis == HORIZONTAL) {
         // Convert from iterator to pointer
@@ -285,41 +299,42 @@ bool Refinery::Solve() {
         tf, calibration_.trackers[tr_it->first],
         calibration_.lighthouses[li_it->lighthouse],
         CORRECTION)) {
-        double pose[6];
-        prev_pose = next_pose;
-        prev = next;
-        next_pose = pose;
-        // Horizontal cost
-        if (li_it->axis == HORIZONTAL) {
-          ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4> * cost =
-            new ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4>
-            (new PoseHorizontalCost(*li_it,
-              calibration_.trackers[tr_it->first],
-              calibration_.lighthouses[li_it->lighthouse].horizontal_motor,
-              CORRECTION));
-          cost->AddParameterBlock(6);
-          cost->SetNumResiduals(li_it->samples.size());
-          problem.AddResidualBlock(cost, NULL, next_pose);
-        // Vertical cost
-        } else if (li_it->axis == VERTICAL) {
-          ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4> * cost =
-            new ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4>
-            (new PoseVerticalCost(*li_it,
-              calibration_.trackers[tr_it->first],
-              calibration_.lighthouses[li_it->lighthouse].vertical_motor,
-              CORRECTION));
-          cost->AddParameterBlock(6);
-          cost->SetNumResiduals(li_it->samples.size());
-          problem.AddResidualBlock(cost, NULL, next_pose);
-        }
-        // Smoothing cost
-        if (prev_pose != NULL && next_pose != NULL) {
-          ceres::CostFunction * cost =
-            new ceres::AutoDiffCostFunction<SmoothingCost, 4, 6, 6, 6, 6>
-            (new SmoothingCost(SMOOTHING));
-          problem.AddResidualBlock(cost, NULL,
-            vTl[prev], prev_pose, vTl[next], next_pose);
-        }
+          return true;
+        // double pose[6];
+        // prev_pose = next_pose;
+        // prev = next;
+        // next_pose = pose;
+        // // Horizontal cost
+        // if (li_it->axis == HORIZONTAL) {
+        //   ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4> * cost =
+        //     new ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4>
+        //     (new PoseHorizontalCost(*li_it,
+        //       calibration_.trackers[tr_it->first],
+        //       calibration_.lighthouses[li_it->lighthouse].horizontal_motor,
+        //       CORRECTION));
+        //   cost->AddParameterBlock(6);
+        //   cost->SetNumResiduals(li_it->samples.size());
+        //   problem.AddResidualBlock(cost, NULL, next_pose);
+        // // Vertical cost
+        // } else if (li_it->axis == VERTICAL) {
+        //   ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4> * cost =
+        //     new ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4>
+        //     (new PoseVerticalCost(*li_it,
+        //       calibration_.trackers[tr_it->first],
+        //       calibration_.lighthouses[li_it->lighthouse].vertical_motor,
+        //       CORRECTION));
+        //   cost->AddParameterBlock(6);
+        //   cost->SetNumResiduals(li_it->samples.size());
+        //   problem.AddResidualBlock(cost, NULL, next_pose);
+        // }
+        // // Smoothing cost
+        // if (prev_pose != NULL && next_pose != NULL) {
+        //   ceres::CostFunction * cost =
+        //     new ceres::AutoDiffCostFunction<SmoothingCost, 4, 6, 6, 6, 6>
+        //     (new SmoothingCost(SMOOTHING));
+        //   problem.AddResidualBlock(cost, NULL,
+        //     vTl[prev], prev_pose, vTl[next], next_pose);
+        // }
       }
     }
   }
@@ -331,8 +346,61 @@ bool Refinery::Solve() {
   return true;
 }
 
+// This is a test function
 int main(int argc, char ** argv)
 {
-  ROS_INFO("Refinery");
+  // ros intializations
+  rosbag::View view;
+  rosbag::Bag rbag;
+
+  // Refinery initializations
+  Calibration cal;
+
+  // Read the bag name
+  if (argc < 2) {
+    std::cout << "Usage: ... hive_offset name_of_read_bag.bag "
+      << "name_of_write_bag.bag" << std::endl;
+    return -1;
+  }
+
+  // Calibration
+  if (!ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE, &cal)) {
+    ROS_FATAL("Can't find calibration file.");
+    return -1;
+  } else {
+    ROS_INFO("Read calibration file.");
+  }
+
+  rbag.open(argv[1], rosbag::bagmode::Read);
+  // Lighthouses
+  rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
+  for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
+    const hive::ViveCalibrationLighthouseArray::ConstPtr vl =
+      bag_it->instantiate<hive::ViveCalibrationLighthouseArray>();
+    cal.SetLighthouses(*vl);
+  }
+  ROS_INFO("Lighthouses' setup complete.");
+
+  // Trackers
+  rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
+  for (auto bag_it = view_tr.begin(); bag_it != view_tr.end(); bag_it++) {
+    const hive::ViveCalibrationTrackerArray::ConstPtr vt =
+      bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
+    cal.SetTrackers(*vt);
+  }
+  ROS_INFO("Trackers' setup complete.");
+
+  Refinery ref = Refinery(cal, true);
+  // Light data
+  rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
+  for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
+    const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
+    ref.AddLight(vl);
+  }
+  ROS_INFO("Data processment complete.");
+
+  // Solve the refinement
+  ref.Solve();
+
   return 0;
 }

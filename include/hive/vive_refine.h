@@ -7,6 +7,7 @@
 #include <ros/ros.h>
 
 // Hive includes
+#include <hive/vive_general.h>
 #include <hive/vive_solve.h>
 #include <hive/vive.h>
 
@@ -44,9 +45,12 @@ class Refinery {
 private:
   Calibration calibration_;
   DataMap data_;
+  // Parameters
+  bool correction_;
 public:
   // Initialize
   Refinery(Calibration & calibration);
+  Refinery(Calibration & calibration, bool correction);
 
   // Destroy
   ~Refinery();

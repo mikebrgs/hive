@@ -113,7 +113,7 @@ struct PoseCostFunctor{
     T aa[3];
     Eigen::Matrix<T, 3, 3> R = _oRa * oRa.transpose();
     ceres::RotationMatrixToAngleAxis(R.data(), aa);
-    residual[3] = aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2];
+    residual[3] = sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
 
     // residual[3] = T(M_PI / 2) - ((_oRa * oRa.transpose()).trace() - T(1))
     // - ((_oRa * oRa.transpose()).trace() - T(1)) *

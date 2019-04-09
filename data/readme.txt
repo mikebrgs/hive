@@ -66,3 +66,29 @@ vivebeta5.bag - tried to collect a bag with all positions and orientations to tr
 vivebeta6.bag - big set of data collected with two lighthouses and moving the tracker arround the MoCap System
 
 vivebeta7.bag - smaller set of the same environment (for testing)
+
+ENV4
+
+dat4.1.bag - tracker on the sofa with two lighthouses pointing at it. Static dataset
+
+dat4.2.bag - the same but moved the tracket a bit to the right
+
+dat4.3.bag - the same but to the left
+
+dat4.4.bag - the same but on the floor
+
+dat4.5.bag - on top of chair
+
+dat4.6.bag - on top of the chair but slightly rotated
+
+dat4.7.bag - the same
+
+dat4.8.bag - moving bag
+
+dat4.9.bag - moving bag
+
+dat4.10.bag - moving bag
+
+dat4.11.bag - moving bag
+
+dat4.12.bag - moving bag
