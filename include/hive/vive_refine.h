@@ -34,7 +34,7 @@
 namespace refine {
   typedef std::vector<hive::ViveLight> SweepVec;
   typedef std::vector<sensor_msgs::Imu> ImuVec;
-  typedef std::pair<SweepVec, ImuVec> DataTracker;         // pair of Light data and Imu data - change imu
+  typedef std::pair<SweepVec, ImuVec> DataPair;         // pair of Light data and Imu data - change imu
   typedef std::map<std::string, DataPair> DataMap;         // map of trackers
 } // namespace refine
 
@@ -44,7 +44,6 @@ class Refinery {
 private:
   Calibration calibration_;
   DataMap data_;
-  MsgMap data_;
 public:
   // Initialize
   Refinery(Calibration & calibration);

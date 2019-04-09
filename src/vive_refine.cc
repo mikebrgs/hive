@@ -1,7 +1,5 @@
 #include <hive/vive_refine.h>
 
-#include <hive/hive_solve.h>
-
 typedef geometry_msgs::TransformStamped TF;
 
 #define SMOOTHING 0.1
@@ -24,56 +22,52 @@ public:
     // cost function here
 
     // Frame conversion
-    Eigen::Matrix<T, 3, 1> prev_lPt(prev_lTt[0],
+    Eigen::Matrix<T, 3, 1> prev_lPt;
+    prev_lPt << prev_lTt[0],
       prev_lTt[1],
-      prev_lTt[2]);
-    Eigen::Matrix<T, 3, 1> next_lPt(next_lTt[0],
+      prev_lTt[2];
+    Eigen::Matrix<T, 3, 1> next_lPt;
+    next_lPt << next_lTt[0],
       next_lTt[1],
-      next_lTt[2]);
-    Eigen::Matrix<T, 3, 1> prev_lAt(prev_lTt[3],
-      prev_lTt[4],
-      prev_lTt[5]);
-    Eigen::Matrix<T, 3, 1> next_lAt(next_lTt[3],
-      next_lTt[4],
-      next_lTt[5]);
-    Eigen::AngleAxis<T> prev_lAAt(prev_lAt.norm(),
-      prev_lAt.normalize());
-    Eigen::AngleAxis<T> next_lAAt(next_lAt.norm(),
-      next_lAt.normalize());
+      next_lTt[2];
+    Eigen::Matrix<T, 3, 3> prev_lRt;
+    ceres::AngleAxisToRotationMatrix(&prev_lTt[3], prev_lRt.data());
+    Eigen::Matrix<T, 3, 3> next_lRt;
+    ceres::AngleAxisToRotationMatrix(&next_lTt[3], next_lRt.data());
 
-    Eigen::Matrix<T, 3, 1> prev_vPl(prev_vTl[0],
+    Eigen::Matrix<T, 3, 1> prev_vPl;
+    prev_vPl << prev_vTl[0],
       prev_vTl[1],
-      prev_vTl[2]);
-    Eigen::Matrix<T, 3, 1> next_vPl(next_vTl[0],
+      prev_vTl[2];
+    Eigen::Matrix<T, 3, 1> next_vPl;
+    next_vPl << next_vTl[0],
       next_vTl[1],
-      next_vTl[2]);
-    Eigen::Matrix<T, 3, 1> prev_vAl(prev_vTl[3],
-      prev_vTl[4],
-      prev_vTl[5]);
-    Eigen::Matrix<T, 3, 1> next_vAl(next_vTl[3],
-      next_vTl[4],
-      next_vTl[5]);
-    Eigen::AngleAxis<T> prev_vAAl(prev_vAl.norm(),
-      prev_vAl.normalize());
-    Eigen::AngleAxis<T> next_vAAl(next_vAl.norm(),
-      next_vAl.normalize());
+      next_vTl[2];
+    Eigen::Matrix<T, 3, 3> prev_vRl;
+    ceres::AngleAxisToRotationMatrix(&prev_vTl[3], prev_vRl.data());
+    Eigen::Matrix<T, 3, 3> next_vRl;
+    ceres::AngleAxisToRotationMatrix(&next_vTl[3], next_vRl.data());
 
-    Eigen::Matrix<T, 3, 1> prev_vPt = prev_vAAl * prev_lPt + prev_vPl;
-    Eigen::AngleAxis<T> prev_vAAt = prev_vAAl * prev_lAAt;
+    Eigen::Matrix<T, 3, 1> prev_vPt = prev_vRl * prev_lPt + prev_vPl;
+    Eigen::Matrix<T, 3, 3> prev_vRt = prev_vRl * prev_lRt;
 
-    Eigen::Matrix<T, 3, 1> next_vPt = next_vAAl * next_lPt + next_vPl;
-    Eigen::AngleAxis<d> next_vAAt = next_vAAl * next_vAAt;
+    Eigen::Matrix<T, 3, 1> next_vPt = next_vRl * next_lPt + next_vPl;
+    Eigen::Matrix<T, 3, 3> next_vRt = next_vRl * next_vRt;
 
-    // Translation cost with smoothing
-    residual[0] = smoothing_ * (prev_vPt(0) - next_vPt(0));
-    residual[1] = smoothing_ * (prev_vPt(1) - next_vPt(1));
-    residual[2] = smoothing_ * (prev_vPt(2) - next_vPt(2));
-    // Rotation cost with smoothing
-    residual[3] = smoothing_ * (next_vAAt.inverse() * prev_vAAt).angle();
+    // // Translation cost with smoothing
+    residual[0] = T(smoothing_) * (prev_vPt(0) - next_vPt(0));
+    residual[1] = T(smoothing_) * (prev_vPt(1) - next_vPt(1));
+    residual[2] = T(smoothing_) * (prev_vPt(2) - next_vPt(2));
+    // // Rotation cost with smoothing
+    T aa[3];
+    Eigen::Matrix<T, 3, 3> R = next_vRt.transpose() * prev_vRt;
+    ceres::RotationMatrixToAngleAxis(R.data(), aa);
+    // Try to change this to remove squared angle
+    residual[3] = T(smoothing_) * (aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
     return true;
   }
 private:
-  smoothing_;
+  double smoothing_;
 };
 
 struct PoseHorizontalCost {
@@ -237,7 +231,8 @@ bool Refinery::Solve() {
   // Ceres set up
   ceres::Problem problem;
   ceres::Solver::Options options;
-  ceres::Options::Summary summary;
+  ceres::Solver::Summary summary;
+
   // Solver's options
   options.minimizer_progress_to_stdout = true;
   options.max_num_iterations = 200;
@@ -253,26 +248,19 @@ bool Refinery::Solve() {
       lh_it->second.rotation.y,
       lh_it->second.rotation.z));
     // Conversion to double array
-    vTl[lh_it->first] = {
-      lh_it->second.transform.translation.x,
-      lh_it->second.transform.translation.y,
-      lh_it->second.transform.translation.z,
-      vAl[0],
-      vAl[1],
-      vAl[2]
-    };
+    vTl[lh_it->first][0] = lh_it->second.translation.x;
+    vTl[lh_it->first][1] = lh_it->second.translation.y;
+    vTl[lh_it->first][2] = lh_it->second.translation.z;
+    vTl[lh_it->first][3] = vAl.axis()(0) * vAl.angle();
+    vTl[lh_it->first][4] = vAl.axis()(0) * vAl.angle();
+    vTl[lh_it->first][5] = vAl.axis()(0) * vAl.angle();
   }
-
-  // TODO Solver - this is temporary
-  Solver * solver = new BaseSolve(calibration_.environment,
-    calibration_.trackers.begin()->second)
 
   double * prev_pose = NULL;
   double * next_pose = NULL;
   std::string prev, next;
-  hive::ViveLight * horizontal_observations, * vertical_observations:
-  horizontal_observations = NULL;
-  vertical_observations = NULL;
+  hive::ViveLight * horizontal_observations = NULL;
+  hive::ViveLight * vertical_observations = NULL;
 
   // Iterate tracker data
   for (auto tr_it = data_.begin(); tr_it != data_.end(); tr_it++) {
@@ -280,21 +268,23 @@ bool Refinery::Solve() {
     for (auto li_it = tr_it->second.first.begin();
       li_it != tr_it->second.first.end(); li_it++) {
       // Check if lighthouse is in calibration -- if not continue
-      if (lhTv.find(li_it->lighthouse) == lhTv.end()) continue;
-      // TODO Compute first individual poses
+      if (vTl.find(li_it->lighthouse) == vTl.end()) continue;
+      // Compute first individual poses
       if (li_it->axis == HORIZONTAL) {
-        horizontal_observations = li_it;
+        // Convert from iterator to pointer
+        horizontal_observations = &(*li_it);
       } else if (li_it->axis == VERTICAL) {
-        vertical_observations = li_it;
+        // Convert from iterator to pointer
+        vertical_observations = &(*li_it);
       }
-      // Preliminary solver
       TF tf;
       if (horizontal_observations != NULL &&
         vertical_observations != NULL &&
-        ViveSolve::SolvePose(horizontal_observations,
-        vertical_observations,
+        ViveSolve::SolvePose(*horizontal_observations,
+        *vertical_observations,
         tf, calibration_.trackers[tr_it->first],
-        calibration.lighthouses[li_it->lighthouse], CORRECTION)) {
+        calibration_.lighthouses[li_it->lighthouse],
+        CORRECTION)) {
         double pose[6];
         prev_pose = next_pose;
         prev = next;
@@ -303,7 +293,10 @@ bool Refinery::Solve() {
         if (li_it->axis == HORIZONTAL) {
           ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4> * cost =
             new ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4>
-            (new PoseHorizontalCost(*li_it, CORRECTION));
+            (new PoseHorizontalCost(*li_it,
+              calibration_.trackers[tr_it->first],
+              calibration_.lighthouses[li_it->lighthouse].horizontal_motor,
+              CORRECTION));
           cost->AddParameterBlock(6);
           cost->SetNumResiduals(li_it->samples.size());
           problem.AddResidualBlock(cost, NULL, next_pose);
@@ -311,14 +304,17 @@ bool Refinery::Solve() {
         } else if (li_it->axis == VERTICAL) {
           ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4> * cost =
             new ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4>
-            (new PoseVerticalCost(*li_it, CORRECTION));
+            (new PoseVerticalCost(*li_it,
+              calibration_.trackers[tr_it->first],
+              calibration_.lighthouses[li_it->lighthouse].vertical_motor,
+              CORRECTION));
           cost->AddParameterBlock(6);
           cost->SetNumResiduals(li_it->samples.size());
           problem.AddResidualBlock(cost, NULL, next_pose);
         }
         // Smoothing cost
         if (prev_pose != NULL && next_pose != NULL) {
-          ceres::CostFunction * thecost =
+          ceres::CostFunction * cost =
             new ceres::AutoDiffCostFunction<SmoothingCost, 4, 6, 6, 6, 6>
             (new SmoothingCost(SMOOTHING));
           problem.AddResidualBlock(cost, NULL,
@@ -337,6 +333,6 @@ bool Refinery::Solve() {
 
 int main(int argc, char ** argv)
 {
-  ROS_INFO("Refinery")
+  ROS_INFO("Refinery");
   return 0;
 }
