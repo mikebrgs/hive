@@ -320,6 +320,144 @@ struct RayVerticalAngle{
   bool correction_;
 };
 
+// bool ViveSolve::SolvePose(std::vector<hive::ViveLight> & data,
+//   geometry_msgs::TransformStamped & pose,
+//   Tracker & tracker,
+//   Lighthouse & lighthouse,
+//   bool correction) {
+//   // Initializations
+//   bool correction;
+//   double pose[6];
+
+//   ceres::Problem problem;
+
+//   // Data conversion
+//   pose[0] = pose.transform.translation.x;
+//   pose[1] = pose.transform.translation.y;
+//   pose[2] = pose.transform.translation.z;
+//   Eigen::Quaterniond Q(pose.transform.rotation.w,
+//     pose.transform.rotation.x,
+//     pose.transform.rotation.y,
+//     pose.transform.rotation.z);
+//   Eigen::AngleAxisd AA(Q);
+//   pose[3] = AA.axis()(0) * AA.angle();
+//   pose[4] = AA.axis()(1) * AA.angle();
+//   pose[5] = AA.axis()(2) * AA.angle();
+
+
+//   double lh_horizontal_extrinsics[5] = {0.0,0.0,0.0,0.0,0.0};
+//   double lh_vertical_extrinsics[5] = {0.0,0.0,0.0,0.0,0.0};
+
+//   if (lighthouse != NULL && CORRECTION) {
+//     correction = true;
+//     // Horizontal correction parameters
+//     lh_horizontal_extrinsics[0] = lighthouse.horizontal_motor.phase;
+//     lh_horizontal_extrinsics[1] = lighthouse.horizontal_motor.tilt;
+//     lh_horizontal_extrinsics[2] = lighthouse.horizontal_motor.gib_phase;
+//     lh_horizontal_extrinsics[3] = lighthouse.horizontal_motor.gib_magnitude;
+//     lh_horizontal_extrinsics[4] = lighthouse.horizontal_motor.curve;
+//     // Vertical correction parameters
+//     lh_vertical_extrinsics[0] = lighthouse.vertical_motor.phase;
+//     lh_vertical_extrinsics[1] = lighthouse.vertical_motor.tilt;
+//     lh_vertical_extrinsics[2] = lighthouse.vertical_motor.gib_phase;
+//     lh_vertical_extrinsics[3] = lighthouse.vertical_motor.gib_magnitude;
+//     lh_vertical_extrinsics[4] = lighthouse.vertical_motor.curve;
+//   } else {
+//     correction = false;
+//   }
+
+//   ceres::DynamicAutoDiffCostFunction<RayVerticalAngle, 4> * vertical_cost =
+//     new ceres::DynamicAutoDiffCostFunction<RayVerticalAngle, 4>
+//     (new RayVerticalAngle(observations.axis[VERTICAL].lights, CORRECTION));
+//   vertical_cost->AddParameterBlock(6);
+//   vertical_cost->AddParameterBlock(3 * extrinsics->size);
+//   vertical_cost->AddParameterBlock(5);
+//   vertical_cost->SetNumResiduals(observations.axis[VERTICAL].lights.size());
+
+//   ceres::ResidualBlockId vrb = problem.AddResidualBlock(vertical_cost,
+//     NULL,
+//     pose,
+//     extrinsics->positions,
+//     lh_vertical_extrinsics);
+
+//   ceres::DynamicAutoDiffCostFunction<RayHorizontalAngle, 4> * horizontal_cost =
+//     new ceres::DynamicAutoDiffCostFunction<RayHorizontalAngle, 4>
+//     (new RayHorizontalAngle(observations.axis[HORIZONTAL].lights, CORRECTION));
+//   horizontal_cost->AddParameterBlock(6);
+//   horizontal_cost->AddParameterBlock(3 * extrinsics->size);
+//   horizontal_cost->AddParameterBlock(5);
+//   horizontal_cost->SetNumResiduals(observations.axis[HORIZONTAL].lights.size());
+
+
+//   ceres::ResidualBlockId hrb = problem.AddResidualBlock(horizontal_cost,
+//     NULL,
+//     pose,
+//     extrinsics->positions,
+//     lh_horizontal_extrinsics);
+
+//   problem.SetParameterBlockConstant(extrinsics->positions);
+//   problem.SetParameterBlockConstant(lh_horizontal_extrinsics);
+//   problem.SetParameterBlockConstant(lh_vertical_extrinsics);
+
+//   ceres::Solver::Options options;
+//   ceres::Solver::Summary summary;
+
+//   options.minimizer_progress_to_stdout = false;
+//   options.linear_solver_type = ceres::DENSE_SCHUR;
+//   options.max_solver_time_in_seconds = 1.0;
+
+//   ceres::Solve(options, &problem, &summary);
+
+//   // Obtain the angles again and compare the results
+//   {
+//     std::cout << "CT: " << summary.final_cost << ", " << summary.num_residual_blocks << ", " << summary.num_residuals << " - "
+//       << pose[0] << ", "
+//       << pose[1] << ", "
+//       << pose[2] << ", "
+//       << pose[3] << ", "
+//       << pose[4] << ", "
+//       << pose[5];
+//     if (CORRECTION) {
+//       std::cout << " - CORRECTED" << std::endl;
+//     } else {
+//       std::cout << " - NOT CORRECTED" << std::endl;
+//     }
+
+//   // Check if valid
+//   double pose_norm = sqrt(pose[0]*pose[0] + pose[1]*pose[1] + pose[2]*pose[2]);
+//   if (summary.final_cost > 1e-5* 0.5 * static_cast<double>(unsigned( observations.axis[VERTICAL].lights.size()
+//     + observations.axis[HORIZONTAL].lights.size()))
+//     || pose_norm > 20
+//     || pose[2] <= 0 ) {
+//     return false;
+//   }
+
+//   double angle_norm = sqrt(pose[3]*pose[3] + pose[4]*pose[4] + pose[5]*pose[5]);
+//   // Change the axis angle to an acceptable interval
+//   while (angle_norm > M_PI) {
+//     pose[3] = pose[3] / angle_norm * (angle_norm - 2 * M_PI);
+//     pose[4] = pose[4] / angle_norm * (angle_norm - 2 * M_PI);
+//     pose[5] = pose[5] / angle_norm * (angle_norm - 2 * M_PI);
+//     angle_norm = sqrt(pose[3]*pose[3] + pose[4]*pose[4] + pose[5]*pose[5]);
+//   }
+//   // Change the axis angle to an acceptable interval
+//   while (angle_norm < - M_PI) {
+//     pose[3] = pose[3] / angle_norm * (angle_norm + 2 * M_PI);
+//     pose[4] = pose[4] / angle_norm * (angle_norm + 2 * M_PI);
+//     pose[5] = pose[5] / angle_norm * (angle_norm + 2 * M_PI);
+//     angle_norm = sqrt(pose[3]*pose[3] + pose[4]*pose[4] + pose[5]*pose[5]);
+//   }
+
+//   // Save the solved pose
+//   for (int i = 0; i < 6; i++) {
+//     pose_tracker->transform[i] = pose[i];
+//   }
+//   pose_tracker->lighthouse = observations.lighthouse;
+//   pose_tracker->valid = true;
+
+//   return true;
+// }
+
 bool ComputeTransform(AxisLightVec observations,
   SolvedPose * pose_tracker,
   std::string * last_lh_pose,
@@ -371,13 +509,6 @@ bool ComputeTransform(AxisLightVec observations,
   vertical_cost->AddParameterBlock(5);
   vertical_cost->SetNumResiduals(observations.axis[VERTICAL].lights.size());
 
-  // problem.AddResidualBlock(vertical_cost,
-  //   new ceres::CauchyLoss(0.5),
-  //   pose,
-  //   extrinsics->positions,
-  //   lighthouseZeros,
-  //   &(extrinsics->radius),
-  //   lh_vertical_extrinsics);
   ceres::ResidualBlockId vrb = problem.AddResidualBlock(vertical_cost,
     NULL,
     pose,
@@ -399,13 +530,6 @@ bool ComputeTransform(AxisLightVec observations,
   horizontal_cost->SetNumResiduals(observations.axis[HORIZONTAL].lights.size());
 
 
-  // problem.AddResidualBlock(horizontal_cost,
-  //   new ceres::CauchyLoss(0.5),
-  //   pose,
-  //   extrinsics->positions,
-  //   lighthouseZeros,
-  //   &(extrinsics->radius),
-  //   lh_horizontal_extrinsics);
   ceres::ResidualBlockId hrb = problem.AddResidualBlock(horizontal_cost,
     NULL,
     pose,

@@ -192,6 +192,125 @@ private:
   hive::ViveLight data_;
 };
 
+bool SolvePose(hive::ViveLight & horizontal_observations,
+  hive::ViveLight & vertical_observations,
+  geometry_msgs::TransformStamped & tf,
+  Tracker & tracker,
+  Lighthouse & lighthouse,
+  bool correction) {
+  // Initializations
+  bool correction;
+  double pose[6];
+
+  ceres::Problem problem;
+
+  // Data conversion
+  pose[0] = pose.transform.translation.x;
+  pose[1] = pose.transform.translation.y;
+  pose[2] = pose.transform.translation.z;
+  Eigen::Quaterniond Q(pose.transform.rotation.w,
+    pose.transform.rotation.x,
+    pose.transform.rotation.y,
+    pose.transform.rotation.z);
+  Eigen::AngleAxisd AA(Q);
+  pose[3] = AA.axis()(0) * AA.angle();
+  pose[4] = AA.axis()(1) * AA.angle();
+  pose[5] = AA.axis()(2) * AA.angle();
+
+  // Find if correction is being used
+  if (lighthouse != NULL && CORRECTION) {
+    correction = true;
+  } else {
+    correction = false;
+  }
+
+  ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4> * hcost =
+    new ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4>
+    (new PoseHorizontalCost(horizontal_observations, tracker, lighthouse, correction));
+  hcost->AddParameterBlock(6);
+  hcost->SetNumResiduals(horizontal_observations->samples.size());
+  problem.AddResidualBlock(hcost,
+    NULL,
+    pose);
+
+  ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4> * vcost =
+    new ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4>
+    (new PoseVerticalCost(vertical_observations, tracker, lighthouse, correction));
+  vcost->AddParameterBlock(6);
+  vcost->SetNumResiduals(vertical_observations->samples.size());
+  problem.AddResidualBlock(vcost,
+    NULL,
+    pose);
+
+  ceres::Solver::Options options;
+  ceres::Solver::Summary summary;
+
+  options.minimizer_progress_to_stdout = false;
+  options.linear_solver_type = ceres::DENSE_SCHUR;
+  options.max_solver_time_in_seconds = 1.0;
+
+  ceres::Solve(options, &problem, &summary);
+
+  // Obtain the angles again and compare the results
+  {
+    std::cout << "CT: " << summary.final_cost << ", " << summary.num_residual_blocks << ", " << summary.num_residuals << " - "
+      << pose[0] << ", "
+      << pose[1] << ", "
+      << pose[2] << ", "
+      << pose[3] << ", "
+      << pose[4] << ", "
+      << pose[5];
+    if (CORRECTION) {
+      std::cout << " - CORRECTED" << std::endl;
+    } else {
+      std::cout << " - NOT CORRECTED" << std::endl;
+    }
+  }
+
+  // Check if valid
+  double pose_norm = sqrt(pose[0]*pose[0] + pose[1]*pose[1] + pose[2]*pose[2]);
+  if (summary.final_cost > 1e-5* 0.5 * static_cast<double>(unsigned( vertical_observations.samples.size()
+    + horizontal_observations.samples.size()))
+    || pose_norm > 20
+    || pose[2] <= 0 ) {
+    return false;
+  }
+
+  double angle_norm = sqrt(pose[3]*pose[3] + pose[4]*pose[4] + pose[5]*pose[5]);
+  // Change the axis angle to an acceptable interval
+  while (angle_norm > M_PI) {
+    pose[3] = pose[3] / angle_norm * (angle_norm - 2 * M_PI);
+    pose[4] = pose[4] / angle_norm * (angle_norm - 2 * M_PI);
+    pose[5] = pose[5] / angle_norm * (angle_norm - 2 * M_PI);
+    angle_norm = sqrt(pose[3]*pose[3] + pose[4]*pose[4] + pose[5]*pose[5]);
+  }
+  // Change the axis angle to an acceptable interval
+  while (angle_norm < - M_PI) {
+    pose[3] = pose[3] / angle_norm * (angle_norm + 2 * M_PI);
+    pose[4] = pose[4] / angle_norm * (angle_norm + 2 * M_PI);
+    pose[5] = pose[5] / angle_norm * (angle_norm + 2 * M_PI);
+    angle_norm = sqrt(pose[3]*pose[3] + pose[4]*pose[4] + pose[5]*pose[5]);
+  }
+
+  // Save the solved pose
+  tf.transform.translation.x = pose[0];
+  tf.transform.translation.y = pose[1];
+  tf.transform.translation.z = pose[2];
+
+  Eigen::Vector3d A(pose[3], pose[4], pose[5]);
+  AA = Eigen::AngleAxisd(A.norm(), A.normalize());
+  Q = Eigen::Quaterniond(AA);
+  tf.transform.rotation.w = Q.w();
+  tf.transform.rotation.x = Q.x();
+  tf.transform.rotation.y = Q.y();
+  tf.transform.rotation.z = Q.z();
+
+  tf.header.frame_id = lighthouse.serial;
+  tf.child_frame_id = tracker.serial;
+
+  return true;
+}
+
 Refinery::Refinery(Calibration & calibration) {
   // Initialize calibration (reference)
   calibration_ = calibration;
@@ -262,6 +381,7 @@ bool Refinery::Solve() {
   double * prev_pose = NULL;
   double * next_pose = NULL;
   std::string prev, next;
+  hive::ViveLight horizontal_observations, vertical_observations:
 
   // Solution to save data
   // std::map<std::string, std::pair<hive::ViveLight, hive::ViveLight>> data;
@@ -274,11 +394,17 @@ bool Refinery::Solve() {
       // Check if lighthouse is in calibration -- if not continue
       if (lhTv.find(li_it->lighthouse) == lhTv.end()) continue;
       // TODO Compute first individual poses
-      /*CHANGE HERE >> */
-      solver->ProcessLight(li_it); // Not this solver -- maybe create new solver for here
+      if (li_it->axis == HORIZONTAL) {
+        horizontal_observations = *li_it;
+      } else {
+        vertical_observations = *li_it;
+      }
+      // Preliminary solver
       TF tf;
-      if (solver->GetTransform(tf)) {
-      /* << CHANGE HERE*/
+      if (SolvePose(horizontal_observations,
+        vertical_observations,
+        tf, calibration_.trackers[tr_it->first],
+        calibration.lighthouses[li_it->lighthouse], CORRECTION)) {
         double pose[6];
         prev_pose = next_pose;
         prev = next;
