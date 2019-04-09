@@ -112,11 +112,19 @@ class ViveSolve : public Solver {
   bool Update(LighthouseMap const& lh_extrinsics);
 
   // Solves the pose from data
-  // static bool SolvePose(std::vector<hive::ViveLight> & data,
-  //   geometry_msgs::TransformStamped & pose,
-  //   Tracker & tracker,
-  //   Lighthouse & lighthouse,
-  //   bool correction);
+  static bool SolvePose(std::vector<hive::ViveLight> & data,
+    geometry_msgs::TransformStamped & pose,
+    Tracker & tracker,
+    Lighthouse & lighthouse,
+    bool correction);
+
+  // Solves the pose from data
+  bool SolvePose(hive::ViveLight & horizontal_observations,
+    hive::ViveLight & vertical_observations,
+    geometry_msgs::TransformStamped & tf,
+    Tracker & tracker,
+    Lighthouse & lighthouse,
+    bool correction);
 
  private:
   std::map<std::string, SolvedPose> poses_;
