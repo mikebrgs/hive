@@ -119,12 +119,12 @@ class ViveSolve : public Solver {
   Lighthouse & lighthouse,
   bool correction);
 
-  // Solves the pose from data
-  // static bool SolvePose(hive::ViveLight & horizontal_observations,
-  //   hive::ViveLight & vertical_observations,
+  // static bool SolvePose(
+  //   std::vector<hive::ViveLight> & observations,
   //   geometry_msgs::TransformStamped & tf,
   //   Tracker & tracker,
   //   Lighthouse & lighthouse,
+  //   Environment & environment,
   //   bool correction);
 
  private:

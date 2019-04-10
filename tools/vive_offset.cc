@@ -43,6 +43,9 @@
 #include <tf2_msgs/TFMessage.h>
 
 #define INFUNCTIONRESIDUALS 4
+#define DISTANCE_THRESH 0.1
+#define ANGLE_THRESH 0.17
+#define TIME_THRESH 0.01
 
 typedef geometry_msgs::TransformStamped TF;
 typedef std::vector<TF> TFs;
@@ -115,21 +118,6 @@ struct PoseCostFunctor{
     ceres::RotationMatrixToAngleAxis(R.data(), aa);
     residual[3] = sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
 
-    // residual[3] = T(M_PI / 2) - ((_oRa * oRa.transpose()).trace() - T(1))
-    // - ((_oRa * oRa.transpose()).trace() - T(1)) *
-    // ((_oRa * oRa.transpose()).trace() - T(1))*
-    // ((_oRa * oRa.transpose()).trace() - T(1)) / T(6.0);
-
-    // residual[3] = T(1.0) - (oQa.w() * _oQa.w() +
-    //   oQa.x() * _oQa.x() +
-    //   oQa.y() * _oQa.y() +
-    //   oQa.z() * _oQa.z());
-    // T x = (oQa.w() * _oQa.w() +
-    //   oQa.x() * _oQa.x() +
-    //   oQa.y() * _oQa.y() +
-    //   oQa.z() * _oQa.z());
-    // residual[3] = T(M_PI/2) - x - x*x*x / T(6.0);
-
     return true;
   }
  private:
@@ -174,14 +162,7 @@ TFs RefineOffset(TFs optitrack, TFs vive, TFs offset) {
 
   // Solver's options
   options.minimizer_progress_to_stdout = true;
-  options.max_num_iterations = 200;
-  // options.parameter_tolerance = 1e-40;
-  // options.gradient_tolerance = 1e-40;
-  // options.function_tolerance = 1e-40;
-  // options.minimizer_type = ceres::LINE_SEARCH;
-  // options.line_search_direction_type = ceres::NONLINEAR_CONJUGATE_GRADIENT;
-  // options.trust_region_strategy_type = ceres::DOGLEG;
-  // options.dogleg_type = ceres::SUBSPACE_DOGLEG;
+  options.max_num_iterations = 1000;
 
   // Different notation
   std::cout << "oTv: "
@@ -389,7 +370,7 @@ public:
   void Spin();
 private:
   std::string bagname_;
-  std::vector<geometry_msgs::TransformStamped> otv_;
+  std::vector<geometry_msgs::TransformStamped> ov_;
   std::vector<geometry_msgs::TransformStamped> vv_;
   Calibration cal_;
   ros::NodeHandle * nh_;
@@ -422,7 +403,7 @@ void HiveOffset::Spin() {
       bag_it->instantiate<tf2_msgs::TFMessage>();
     for (auto tf_it = tf->transforms.begin();
       tf_it != tf->transforms.end(); tf_it++) {
-      otv_.push_back(*tf_it);
+      ov_.push_back(*tf_it);
     }
   }
   ROS_INFO("Lighthouses' setup complete.");
@@ -473,60 +454,62 @@ void HiveOffset::Spin() {
 
   TFs vive_v, opti_v;
   TFs vive_vfull, opti_vfull;
-  vive_v.push_back(*vv_.begin());
-  for (size_t msg_it = 1; msg_it < vv_.size(); msg_it++) {
-    // Distance between consecutive poses
-    double distance = pow(vv_[msg_it].transform.translation.x - vive_v.back().transform.translation.x, 2) +
-      pow(vv_[msg_it].transform.translation.y - vive_v.back().transform.translation.y, 2) +
-      pow(vv_[msg_it].transform.translation.z - vive_v.back().transform.translation.z, 2);
-    // Angular distance between two poses
-    Eigen::Quaterniond Qnow(vv_[msg_it].transform.rotation.w,
-      vv_[msg_it].transform.rotation.x,
-      vv_[msg_it].transform.rotation.y,
-      vv_[msg_it].transform.rotation.z);
-    Eigen::Quaterniond Qpre(vive_v.back().transform.rotation.w,
-      vive_v.back().transform.rotation.x,
-      vive_v.back().transform.rotation.y,
-      vive_v.back().transform.rotation.z);
-    Eigen::AngleAxisd Adif(Qnow * Qpre.inverse());
-    // Filling the pose improvement vector
-    vive_vfull.push_back(vv_[msg_it]);
-    // Finding poses distanced enough from each other
-    if (distance > 0.1 && Adif.angle() > 0.17) { // maybe include orientation difference in here as well
-      vive_v.push_back(vv_[msg_it]);
-    }
-  }
-
-  size_t vi_it;
-  // Finding the corresponding optitrack pose to vive_v
-  vi_it = 0;
-  for (size_t op_it = 0 ; op_it < otv_.size(); op_it++) {
-    // std::cout << "HERE1" << std::endl;
-    if (otv_[op_it].header.stamp.toSec() > vive_v[vi_it].header.stamp.toSec()) {
-      if (otv_[op_it].header.stamp.toSec() - vive_v[vi_it].header.stamp.toSec() <
-        - otv_[op_it - 1].header.stamp.toSec() + vive_v[vi_it].header.stamp.toSec()) {
-        opti_v.push_back(otv_[op_it]);
-      } else {
-        opti_v.push_back(otv_[op_it - 1]);
+  // Search the vive poses
+  for (auto vive_it = vv_.begin(); vive_it != vv_.end(); vive_it++) {
+    // Search the optitrack poses
+    for (auto opti_it = ov_.begin(); opti_it != ov_.end(); opti_it++) {
+      // Check if the optitrack iterator is after the vive pose
+      if (opti_it->header.stamp.toSec() > vive_it->header.stamp.toSec()) {
+        // Find the closes image
+        if (opti_it == ov_.begin()) {
+          vive_vfull.push_back(*vive_it);
+          opti_vfull.push_back(*opti_it);
+        } else if (opti_it->header.stamp.toSec() - vive_it->header.stamp.toSec() <
+          - (opti_it - 1)->header.stamp.toSec() + vive_it->header.stamp.toSec()) {
+          vive_vfull.push_back(*vive_it);
+          opti_vfull.push_back(*opti_it);
+        } else {
+          vive_vfull.push_back(*vive_it);
+          opti_vfull.push_back(*(opti_it-1));
+        }
+        // Check if the time difference is valid
+        if (abs(vive_vfull.back().header.stamp.toSec() -
+          opti_vfull.back().header.stamp.toSec()) > TIME_THRESH ) {
+          opti_vfull.pop_back();
+          vive_vfull.pop_back();
+        }
+        break;
       }
-      vi_it++;
-      if (vi_it >= vive_v.size()) break;
     }
-  }
-
-  // Finding the corresponding optitrack pose to vive_vfull
-  vi_it = 0;
-  for (size_t op_it = 0 ; op_it < otv_.size(); op_it++) {
-    // std::cout << "HERE1" << std::endl;
-    if (otv_[op_it].header.stamp.toSec() > vive_vfull[vi_it].header.stamp.toSec()) {
-      if (otv_[op_it].header.stamp.toSec() - vive_vfull[vi_it].header.stamp.toSec() <
-        - otv_[op_it - 1].header.stamp.toSec() + vive_vfull[vi_it].header.stamp.toSec()) {
-        opti_vfull.push_back(otv_[op_it]);
-      } else {
-        opti_vfull.push_back(otv_[op_it - 1]);
+    if (vive_vfull.size() >= 2) {
+      TF next, prev;
+      // Last element
+      next = vive_vfull.back();
+      // Second to last element
+      prev = vive_vfull[vive_vfull.size() - 2];
+      // Distance between two consecutive poses
+      double distance = pow(prev.transform.translation.x - next.transform.translation.x, 2) +
+        pow(prev.transform.translation.y - next.transform.translation.y, 2) +
+        pow(prev.transform.translation.z - next.transform.translation.z, 2);
+      // Angular distance between two poses
+      Eigen::Quaterniond Qnow(next.transform.rotation.w,
+        next.transform.rotation.x,
+        next.transform.rotation.y,
+        next.transform.rotation.z);
+      Eigen::Quaterniond Qpre(prev.transform.rotation.w,
+        prev.transform.rotation.x,
+        prev.transform.rotation.y,
+        prev.transform.rotation.z);
+      Eigen::AngleAxisd Adif(Qnow * Qpre.inverse());
+      // Test against the thresholds
+      if (distance > DISTANCE_THRESH || Adif.angle() > ANGLE_THRESH) {
+        vive_v.push_back(vive_vfull.back());
+        opti_v.push_back(opti_vfull.back());
       }
-      vi_it++;
-      if (vi_it >= vive_vfull.size()) break;
+    // If first poses
+    } else {
+      vive_v.push_back(vive_vfull.back());
+      opti_v.push_back(opti_vfull.back());
     }
   }
 

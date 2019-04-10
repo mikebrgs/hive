@@ -1,10 +1,3 @@
-/**
- *
- *
- *
- *
-*/
-
 #include <hive/vive_base.h>
 
 int main(int argc, char ** argv)
@@ -82,10 +75,12 @@ int main(int argc, char ** argv)
       wbag.write("/tf", ros::Time::now(), msg);
     }
   }
+  ROS_INFO("Data processment complete.");
 
   TFVector tfs = ViveUtils::GetTransforms(cal);
   for (auto tf_it = tfs.begin(); tf_it != tfs.end(); tf_it++) {
-    wbag.write("/tf_static", ros::Time::now(), *tf_it);
+    if (write_bag)
+      wbag.write("/tf_static", ros::Time::now(), *tf_it);
   }
 
   rbag.close();

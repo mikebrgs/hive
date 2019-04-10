@@ -1,5 +1,7 @@
 #include <hive/vive_refine.h>
 
+#define ROTATION_COST_FACTOR 1.0
+
 typedef geometry_msgs::TransformStamped TF;
 typedef std::vector<TF> TFs;
 typedef std::map<std::string, std::pair<hive::ViveLight*,
@@ -58,7 +60,8 @@ template <typename T> bool SmoothingCost::operator()(const T* const prev_lTt,
   T aa[3];
   Eigen::Matrix<T, 3, 3> R = next_vRt.transpose() * prev_vRt;
   ceres::RotationMatrixToAngleAxis(R.data(), aa);
-  residual[3] = T(smoothing_) * sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
+  residual[3] = T(ROTATION_COST_FACTOR) * T(smoothing_)*
+    sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
   return true;
 }
 
@@ -101,7 +104,8 @@ template <typename T> bool SmoothingCost::operator()(const T* const prev_lTt,
   T aa[3];
   Eigen::Matrix<T, 3, 3> R = next_vRt.transpose() * prev_vRt;
   ceres::RotationMatrixToAngleAxis(R.data(), aa);
-  residual[3] = T(smoothing_) * sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
+  residual[3] = T(ROTATION_COST_FACTOR) * T(smoothing_) *
+    sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
   return true;
 }
 

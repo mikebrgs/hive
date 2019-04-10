@@ -70,7 +70,7 @@ public:
 class SmoothingCost {
 public:
   // Constructor to pass data
-  // A good smoothing factor is 0.1
+  // A good smoothing factor is 0.1, but it may be changed
   explicit SmoothingCost(double smoothing);
 
   // Function for ceres solver with parameters (different frames)
