@@ -204,8 +204,7 @@ bool ViveSolve::Update(std::map<std::string, Lighthouse> const& lh_extrinsics) {
   return true;
 }
 
-struct PoseHorizontalCost {
-explicit PoseHorizontalCost(hive::ViveLight data,
+PoseHorizontalCost::PoseHorizontalCost(hive::ViveLight data,
     Tracker tracker,
     Motor lighthouse,
     bool correction) {
@@ -215,113 +214,100 @@ explicit PoseHorizontalCost(hive::ViveLight data,
     lighthouse_ = lighthouse;
   }
 
-  template <typename T> bool operator()(const T* const * parameters,
-    T * residual) const {
-    Eigen::Matrix<T, 3, 1> lPt;
-    lPt << parameters[0][0],
-      parameters[0][1],
-      parameters[0][2];
-    Eigen::Matrix<T, 3, 3> lRt;
-    ceres::AngleAxisToRotationMatrix(&parameters[0][3], lRt.data());
+template <typename T> bool PoseHorizontalCost::operator()(const T* const * parameters,
+  T * residual) const {
+  Eigen::Matrix<T, 3, 1> lPt;
+  lPt << parameters[0][0],
+    parameters[0][1],
+    parameters[0][2];
+  Eigen::Matrix<T, 3, 3> lRt;
+  ceres::AngleAxisToRotationMatrix(&parameters[0][3], lRt.data());
 
-    size_t counter = 0;
-    for (auto li_it = data_.samples.begin();
-      li_it != data_.samples.end(); li_it++) {
-      auto sensor_it = tracker_.sensors.find((uint8_t)li_it->sensor);
-      if (sensor_it == tracker_.sensors.end()) return false;
-      Eigen::Matrix<T, 3, 1> tPs;
-      tPs << T(sensor_it->second.position.x),
-        T(sensor_it->second.position.y),
-        T(sensor_it->second.position.z);
+  size_t counter = 0;
+  for (auto li_it = data_.samples.begin();
+    li_it != data_.samples.end(); li_it++) {
+    auto sensor_it = tracker_.sensors.find((uint8_t)li_it->sensor);
+    if (sensor_it == tracker_.sensors.end()) return false;
+    Eigen::Matrix<T, 3, 1> tPs;
+    tPs << T(sensor_it->second.position.x),
+      T(sensor_it->second.position.y),
+      T(sensor_it->second.position.z);
 
-      Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
+    Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
 
-      T ang; // The final angle
-      T x = (lPs(0)/lPs(2)); // Horizontal angle
-      T y = (lPs(1)/lPs(2)); // Vertical angle
-      T phase = T(lighthouse_.phase);
-      T tilt = T(lighthouse_.tilt);
-      T gib_phase = T(lighthouse_.gib_phase);
-      T gib_mag = T(lighthouse_.gib_magnitude);
-      T curve = T(lighthouse_.curve);
+    T ang; // The final angle
+    T x = (lPs(0)/lPs(2)); // Horizontal angle
+    T y = (lPs(1)/lPs(2)); // Vertical angle
+    T phase = T(lighthouse_.phase);
+    T tilt = T(lighthouse_.tilt);
+    T gib_phase = T(lighthouse_.gib_phase);
+    T gib_mag = T(lighthouse_.gib_magnitude);
+    T curve = T(lighthouse_.curve);
 
-      if (correction_) {
-        ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
-      } else {
-        ang = atan(x);
-      }
-
-
-      residual[counter] = T(li_it->angle) - ang;
-      counter++;
+    if (correction_) {
+      ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
+    } else {
+      ang = atan(x);
     }
-    return true;
+
+
+    residual[counter] = T(li_it->angle) - ang;
+    counter++;
   }
-private:
-  bool correction_;
-  Tracker tracker_;
-  Motor lighthouse_;
-  hive::ViveLight data_;
-};
+  return true;
+}
 
-struct PoseVerticalCost {
-explicit PoseVerticalCost(hive::ViveLight data,
-    Tracker tracker,
-    Motor lighthouse,
-    bool correction) {
-    data_ = data;
-    correction_ = correction;
-    tracker_ = tracker;
-    lighthouse_ = lighthouse;
-  }
+PoseVerticalCost::PoseVerticalCost(hive::ViveLight data,
+  Tracker tracker,
+  Motor lighthouse,
+  bool correction) {
+  data_ = data;
+  correction_ = correction;
+  tracker_ = tracker;
+  lighthouse_ = lighthouse;
+}
 
-  template <typename T> bool operator()(const T* const * parameters,
-    T * residual) const {
-    Eigen::Matrix<T, 3, 1> lPt;
-    lPt << parameters[0][0],
-      parameters[0][1],
-      parameters[0][2];
-    Eigen::Matrix<T, 3, 3> lRt;
-    ceres::AngleAxisToRotationMatrix(&parameters[0][3], lRt.data());
+template <typename T> bool PoseVerticalCost::operator()(const T* const * parameters,
+  T * residual) const {
+  Eigen::Matrix<T, 3, 1> lPt;
+  lPt << parameters[0][0],
+    parameters[0][1],
+    parameters[0][2];
+  Eigen::Matrix<T, 3, 3> lRt;
+  ceres::AngleAxisToRotationMatrix(&parameters[0][3], lRt.data());
 
-    size_t counter = 0;
-    for (auto li_it = data_.samples.begin();
-      li_it != data_.samples.end(); li_it++) {
-      auto sensor_it = tracker_.sensors.find((uint8_t)li_it->sensor);
-      if (sensor_it == tracker_.sensors.end()) return false;
-      Eigen::Matrix<T, 3, 1> tPs;
-      tPs << T(sensor_it->second.position.x),
-        T(sensor_it->second.position.y),
-        T(sensor_it->second.position.z);
+  size_t counter = 0;
+  for (auto li_it = data_.samples.begin();
+    li_it != data_.samples.end(); li_it++) {
+    auto sensor_it = tracker_.sensors.find((uint8_t)li_it->sensor);
+    if (sensor_it == tracker_.sensors.end()) return false;
+    Eigen::Matrix<T, 3, 1> tPs;
+    tPs << T(sensor_it->second.position.x),
+      T(sensor_it->second.position.y),
+      T(sensor_it->second.position.z);
 
-      Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
+    Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
 
-      T ang; // The final angle
-      T x = (lPs(0)/lPs(2)); // Horizontal angle
-      T y = (lPs(1)/lPs(2)); // Vertical angle
-      T phase = T(lighthouse_.phase);
-      T tilt = T(lighthouse_.tilt);
-      T gib_phase = T(lighthouse_.gib_phase);
-      T gib_mag = T(lighthouse_.gib_magnitude);
-      T curve = T(lighthouse_.curve);
+    T ang; // The final angle
+    T x = (lPs(0)/lPs(2)); // Horizontal angle
+    T y = (lPs(1)/lPs(2)); // Vertical angle
+    T phase = T(lighthouse_.phase);
+    T tilt = T(lighthouse_.tilt);
+    T gib_phase = T(lighthouse_.gib_phase);
+    T gib_mag = T(lighthouse_.gib_magnitude);
+    T curve = T(lighthouse_.curve);
 
-      if (correction_) {
-        ang = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
-      } else {
-        ang = atan(y);
-      }
-
-      residual[counter] = T(li_it->angle) - ang;
-      counter++;
+    if (correction_) {
+      ang = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
+    } else {
+      ang = atan(y);
     }
-    return true;
+
+    residual[counter] = T(li_it->angle) - ang;
+    counter++;
   }
-private:
-  bool correction_;
-  Tracker tracker_;
-  Motor lighthouse_;
-  hive::ViveLight data_;
-};
+  return true;
+}
 
 bool ViveSolve::SolvePose(hive::ViveLight & horizontal_observations,
   hive::ViveLight & vertical_observations,
@@ -366,51 +352,6 @@ bool ViveSolve::SolvePose(hive::ViveLight & horizontal_observations,
   problem.AddResidualBlock(vcost,
     NULL,
     pose);
-
-  // Check data here
-  // // Sensors
-  // std::cout << tracker.serial << std::endl;
-  // for (auto sn_it = tracker.sensors.begin();
-  //   sn_it != tracker.sensors.end(); sn_it++) {
-  //   std::cout << (int)sn_it->first << " "
-  //     << sn_it->second.position.x << ", "
-  //     << sn_it->second.position.y << ", "
-  //     << sn_it->second.position.z << std::endl;
-  // }
-  // std::cout << std::endl;
-
-  // // Horizontal observations
-  // std::cout << horizontal_observations.lighthouse << " "
-  //   << (int)horizontal_observations.axis << std::endl;
-  // for (auto li_it = horizontal_observations.samples.begin();
-  //   li_it != horizontal_observations.samples.end(); li_it++) {
-  //   std::cout << li_it->sensor << " " << li_it->angle << std::endl;
-  // }
-  // std::cout << std::endl;
-
-  // // Vertical observations
-  // std::cout << vertical_observations.lighthouse << " "
-  //   << (int)vertical_observations.axis << std::endl;
-  // for (auto li_it = vertical_observations.samples.begin();
-  //   li_it != vertical_observations.samples.end(); li_it++) {
-  //   std::cout << li_it->sensor << " " << li_it->angle << std::endl;
-  // }
-  // std::cout << std::endl;
-
-  // // Correction
-  // std::cout << lighthouse.serial << std::endl;
-  // std::cout << "Horizontal Motor "
-  //   << lighthouse.horizontal_motor.phase << ", "
-  //   << lighthouse.horizontal_motor.tilt << ", "
-  //   << lighthouse.horizontal_motor.gib_phase << ", "
-  //   << lighthouse.horizontal_motor.gib_magnitude << ", "
-  //   << lighthouse.horizontal_motor.curve << std::endl;
-  // std::cout << "Vertical Motor "
-  //   << lighthouse.vertical_motor.phase << ", "
-  //   << lighthouse.vertical_motor.tilt << ", "
-  //   << lighthouse.vertical_motor.gib_phase << ", "
-  //   << lighthouse.vertical_motor.gib_magnitude << ", "
-  //   << lighthouse.vertical_motor.curve << std::endl;
 
   ceres::Solver::Options options;
   ceres::Solver::Summary summary;
@@ -467,12 +408,19 @@ bool ViveSolve::SolvePose(hive::ViveLight & horizontal_observations,
   tf.transform.translation.z = pose[2];
 
   Eigen::Vector3d A(pose[3], pose[4], pose[5]);
-  AA = Eigen::AngleAxisd(A.norm(), A.normalized());
-  Q = Eigen::Quaterniond(AA);
-  tf.transform.rotation.w = Q.w();
-  tf.transform.rotation.x = Q.x();
-  tf.transform.rotation.y = Q.y();
-  tf.transform.rotation.z = Q.z();
+  if (A.norm() == 0) {
+    tf.transform.rotation.w = 1.0;
+    tf.transform.rotation.x = 0.0;
+    tf.transform.rotation.y = 0.0;
+    tf.transform.rotation.z = 0.0;
+  } else {
+    AA = Eigen::AngleAxisd(A.norm(), A.normalized());
+    Q = Eigen::Quaterniond(AA);
+    tf.transform.rotation.w = Q.w();
+    tf.transform.rotation.x = Q.x();
+    tf.transform.rotation.y = Q.y();
+    tf.transform.rotation.z = Q.z();
+  }
 
   tf.header.frame_id = lighthouse.serial;
   tf.child_frame_id = tracker.serial;

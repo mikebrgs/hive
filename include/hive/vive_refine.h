@@ -47,10 +47,12 @@ private:
   DataMap data_;
   // Parameters
   bool correction_;
+  double smoothing_;
 public:
   // Initialize
   Refinery(Calibration & calibration);
   Refinery(Calibration & calibration, bool correction);
+  Refinery(Calibration & calibration, bool correction, double smoothing);
 
   // Destroy
   ~Refinery();
@@ -63,6 +65,29 @@ public:
 
   // Solve the problem based on the assumption tge body of tracker's is still.
   bool Solve();
+};
+
+class SmoothingCost {
+public:
+  // Constructor to pass data
+  // A good smoothing factor is 0.1
+  explicit SmoothingCost(double smoothing);
+
+  // Function for ceres solver with parameters (different frames)
+  template <typename T> bool operator()(const T* const prev_lTt,
+    const T* const prev_vTl,
+    const T* const next_lTt,
+    const T* const next_vTl,
+    T * residual) const;
+
+  // Function for ceres solver with parameters (same frame)
+  template <typename T> bool operator()(const T* const prev_lTt,
+    const T* const next_lTt,
+    const T* const vTl,
+    T * residual) const;
+
+private:
+  double smoothing_;
 };
 
 #endif

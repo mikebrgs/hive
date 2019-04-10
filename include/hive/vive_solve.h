@@ -138,6 +138,39 @@ class ViveSolve : public Solver {
   LighthouseMap lh_extrinsics_;
 };
 
+class PoseHorizontalCost {
+public:
+  explicit PoseHorizontalCost(hive::ViveLight data,
+    Tracker tracker,
+    Motor lighthouse,
+    bool correction);
+
+  template <typename T> bool operator()(const T* const * parameters,
+    T * residual) const;
+private:
+  bool correction_;
+  Tracker tracker_;
+  Motor lighthouse_;
+  hive::ViveLight data_;
+};
+
+class PoseVerticalCost {
+public:
+  explicit PoseVerticalCost(hive::ViveLight data,
+    Tracker tracker,
+    Motor lighthouse,
+    bool correction);
+
+  template <typename T> bool operator()(const T* const * parameters,
+    T * residual) const;
+private:
+  bool correction_;
+  Tracker tracker_;
+  Motor lighthouse_;
+  hive::ViveLight data_;
+};
+
+
 // Computes the full pose of a tracker for each lighthouse
 bool ComputeTransform(AxisLightVec observations,
   SolvedPose * pose_tracker,
