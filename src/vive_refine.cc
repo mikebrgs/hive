@@ -244,7 +244,7 @@ bool Refinery::Solve() {
         prev_pose = next_pose;
         next_pose = pose;
         // Horizontal cost
-        // if (li_it->axis == HORIZONTAL) {
+        if (li_it->axis == HORIZONTAL) {
           ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4> * hcost =
             new ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4>
             (new PoseHorizontalCost(*observations[li_it->lighthouse].first,
@@ -255,7 +255,7 @@ bool Refinery::Solve() {
           hcost->SetNumResiduals(observations[li_it->lighthouse].first->samples.size());
           problem.AddResidualBlock(hcost, NULL, next_pose);
         // Vertical cost
-        // } else if (li_it->axis == VERTICAL) {
+        } else if (li_it->axis == VERTICAL) {
           ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4> * vcost =
             new ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4>
             (new PoseVerticalCost(*observations[li_it->lighthouse].second,
@@ -265,7 +265,7 @@ bool Refinery::Solve() {
           vcost->AddParameterBlock(6);
           vcost->SetNumResiduals(observations[li_it->lighthouse].second->samples.size());
           problem.AddResidualBlock(vcost, NULL, next_pose);
-        // }
+        }
         poses.push_back(pose);
         // Smoothing cost
         // If the poses are in the same frame
@@ -362,7 +362,7 @@ int main(int argc, char ** argv)
   ROS_INFO("Trackers' setup complete.");
 
   size_t counter = 0;
-  Refinery ref = Refinery(cal, false, 1e-3);
+  Refinery ref = Refinery(cal, false, 1e-1);
   // Light data
   rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
