@@ -1,10 +1,11 @@
 #include <hive/vive_refine.h>
 
 typedef geometry_msgs::TransformStamped TF;
+typedef std::vector<TF> TFs;
+typedef std::map<std::string, std::pair<hive::ViveLight*,
+  hive::ViveLight*>> LightMap;
 
 #define SMOOTHING 0.1
-
-
 
 // Trajectory smoothing cost function
 class SmoothingCost {
@@ -268,8 +269,9 @@ bool Refinery::Solve() {
   double * prev_pose = NULL;
   double * next_pose = NULL;
   std::string prev, next;
-  hive::ViveLight * horizontal_observations = NULL;
-  hive::ViveLight * vertical_observations = NULL;
+  // first -- horizontal observations
+  // second -- vertical observations
+  LightMap observations;
 
   // Iterate tracker data
   for (auto tr_it = data_.begin(); tr_it != data_.end(); tr_it++) {
@@ -277,29 +279,35 @@ bool Refinery::Solve() {
     // Iterate light data
     for (auto li_it = tr_it->second.first.begin();
       li_it != tr_it->second.first.end(); li_it++) {
-      std::cout << "LI: " << li_it->header.stamp << std::endl;
+      std::cout << "LI: " << li_it->lighthouse
+        << " " << (int)li_it->axis << std::endl;
       // Check if lighthouse is in calibration -- if not continue
       if (vTl.find(li_it->lighthouse) == vTl.end()) {
         std::cout << "BYE" << std::endl;
         continue;
       }
+      if (observations.find(li_it->lighthouse) == observations.end()) {
+        observations[li_it->lighthouse].first = NULL; // horizontal
+        observations[li_it->lighthouse].second = NULL; // vertical
+      }
       // Compute first individual poses
       if (li_it->axis == HORIZONTAL) {
         // Convert from iterator to pointer
-        horizontal_observations = &(*li_it);
+        observations[li_it->lighthouse].first = &(*li_it);
       } else if (li_it->axis == VERTICAL) {
         // Convert from iterator to pointer
-        vertical_observations = &(*li_it);
+        observations[li_it->lighthouse].second  = &(*li_it);
       }
       TF tf;
-      if (horizontal_observations != NULL &&
-        vertical_observations != NULL &&
-        ViveSolve::SolvePose(*horizontal_observations,
-        *vertical_observations,
+      if (observations[li_it->lighthouse].first != NULL &&
+        observations[li_it->lighthouse].second != NULL) {
+        if (ViveSolve::SolvePose(*observations[li_it->lighthouse].first,
+        *observations[li_it->lighthouse].second,
         tf, calibration_.trackers[tr_it->first],
         calibration_.lighthouses[li_it->lighthouse],
-        CORRECTION)) {
+        correction_))
           return true;
+        return false;
         // double pose[6];
         // prev_pose = next_pose;
         // prev = next;
