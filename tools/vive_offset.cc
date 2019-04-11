@@ -42,10 +42,11 @@
 #include <geometry_msgs/TransformStamped.h>
 #include <tf2_msgs/TFMessage.h>
 
-#define INFUNCTIONRESIDUALS 4
 #define DISTANCE_THRESH 0.1
 #define ANGLE_THRESH 0.17
 #define TIME_THRESH 0.01
+#define CAUCHY 0.05
+#define CERES_ITERATIONS 500
 
 typedef geometry_msgs::TransformStamped TF;
 typedef std::vector<TF> TFs;
@@ -259,41 +260,53 @@ HiveOffset::~HiveOffset() {
 }
 
 bool HiveOffset::AddVivePose(const TF& pose) {
-  if (steps_)
-    tmp_vive_.push_back(pose);
-  else
-    vive_.push_back(pose);
+  tmp_vive_.push_back(pose);
   return true;
 }
 
 bool HiveOffset::AddOptiTrackPose(const TF& pose) {
-  if (steps_)
-    tmp_optitrack_.push_back(pose);
-  else
-    optitrack_.push_back(pose);
+  tmp_optitrack_.push_back(pose);
   return true;
 }
 
 bool HiveOffset::NextPose() {
   // Check object type
   if (!steps_) return true;
+
+  // Check if for any vector the number of poses is zero
+  if (tmp_vive_.size() == 0 || tmp_optitrack_.size() == 0) {
+    return true;
+  }
+
   // Average vive poses
   ceres::Problem problem_vive;
   ceres::Solver::Options options_vive;
   ceres::Solver::Summary summary_vive;
   // Averages pose
   double vive_pose[6];
+  vive_pose[0] = tmp_vive_.front().transform.translation.x;
+  vive_pose[1] = tmp_vive_.front().transform.translation.y;
+  vive_pose[2] = tmp_vive_.front().transform.translation.z;
+  Eigen::Quaterniond guessQvive(tmp_vive_.front().transform.rotation.w,
+    tmp_vive_.front().transform.rotation.z,
+    tmp_vive_.front().transform.rotation.y,
+    tmp_vive_.front().transform.rotation.z);
+  Eigen::AngleAxisd guessAAvive(guessQvive);
+  vive_pose[3] = guessAAvive.axis()(0) * guessAAvive.angle();
+  vive_pose[4] = guessAAvive.axis()(1) * guessAAvive.angle();
+  vive_pose[5] = guessAAvive.axis()(2) * guessAAvive.angle();
+
   // Set up residuals
   for (auto pose_it = tmp_vive_.begin();
     pose_it != tmp_vive_.end(); pose_it++) {
     ceres::CostFunction * cost =
       new ceres::AutoDiffCostFunction<PoseAverageCost, 4, 6>
       (new PoseAverageCost(*pose_it, angle_factor_));
-    problem_vive.AddResidualBlock(cost, NULL, vive_pose);
+    problem_vive.AddResidualBlock(cost, new ceres::CauchyLoss(CAUCHY), vive_pose);
   }
   // Options and solve
   options_vive.minimizer_progress_to_stdout = false;
-  options_vive.max_num_iterations = 1000;
+  options_vive.max_num_iterations = CERES_ITERATIONS;
   ceres::Solve(options_vive, &problem_vive, &summary_vive);
   std::cout << vive_pose[0] << ", "
     << vive_pose[1] << ", "
@@ -328,23 +341,37 @@ bool HiveOffset::NextPose() {
   avg_vive.transform.rotation.z = avgQvive.z();
   vive_.push_back(avg_vive);
 
+  tmp_vive_.clear();
+
   // OptiTrack average poses
   ceres::Problem problem_optitrack;
   ceres::Solver::Options options_optitrack;
   ceres::Solver::Summary summary_optitrack;
   // Averages pose
   double optitrack_pose[6];
+  optitrack_pose[0] = tmp_optitrack_.front().transform.translation.x;
+  optitrack_pose[1] = tmp_optitrack_.front().transform.translation.y;
+  optitrack_pose[2] = tmp_optitrack_.front().transform.translation.z;
+  Eigen::Quaterniond guessQoptitrack(tmp_optitrack_.front().transform.rotation.w,
+    tmp_optitrack_.front().transform.rotation.z,
+    tmp_optitrack_.front().transform.rotation.y,
+    tmp_optitrack_.front().transform.rotation.z);
+  Eigen::AngleAxisd guessAAoptitrack(guessQoptitrack);
+  optitrack_pose[3] = guessAAoptitrack.axis()(0) * guessAAoptitrack.angle();
+  optitrack_pose[4] = guessAAoptitrack.axis()(1) * guessAAoptitrack.angle();
+  optitrack_pose[5] = guessAAoptitrack.axis()(2) * guessAAoptitrack.angle();
+
   // Set up residuals
   for (auto pose_it = tmp_optitrack_.begin();
     pose_it != tmp_optitrack_.end(); pose_it++) {
     ceres::CostFunction * cost =
       new ceres::AutoDiffCostFunction<PoseAverageCost, 4, 6>
       (new PoseAverageCost(*pose_it, angle_factor_));
-    problem_optitrack.AddResidualBlock(cost, NULL, optitrack_pose);
+    problem_optitrack.AddResidualBlock(cost, new ceres::CauchyLoss(CAUCHY), optitrack_pose);
   }
   // Options and solve
   options_optitrack.minimizer_progress_to_stdout = false;
-  options_optitrack.max_num_iterations = 1000;
+  options_optitrack.max_num_iterations = CERES_ITERATIONS;
   ceres::Solve(options_optitrack, &problem_optitrack, &summary_optitrack);
   std::cout << optitrack_pose[0] << ", "
     << optitrack_pose[1] << ", "
@@ -379,84 +406,95 @@ bool HiveOffset::NextPose() {
   avg_optitrack.transform.rotation.z = avgQoptitrack.z();
   optitrack_.push_back(avg_optitrack);
 
+  tmp_optitrack_.clear();
+
   return true;
 }
 
 bool HiveOffset::GetOffset(TFs & offsets) {
   // If the data was collected in steps
   if (steps_) {
+    NextPose();
     offsets = EstimateOffset(optitrack_, vive_);
     if (refine_)
       offsets = RefineOffset(optitrack_, vive_, offsets);
   // If we have continuous data
   } else {
-  TFs vive_vfull, opti_vfull;
-  // Search the vive poses
-  for (auto vive_it = tmp_vive_.begin();
-    vive_it != tmp_vive_.end(); vive_it++) {
-    // Search the optitrack poses
-    for (auto opti_it = tmp_optitrack_.begin();
-      opti_it != tmp_optitrack_.end(); opti_it++) {
-      // Check if the optitrack iterator is after the vive pose
-      if (opti_it->header.stamp.toSec() > vive_it->header.stamp.toSec()) {
-        // Find the closes image
-        if (opti_it == tmp_optitrack_.begin()) {
-          vive_vfull.push_back(*vive_it);
-          opti_vfull.push_back(*opti_it);
-        } else if (opti_it->header.stamp.toSec() - vive_it->header.stamp.toSec() <
-          - (opti_it - 1)->header.stamp.toSec() + vive_it->header.stamp.toSec()) {
-          vive_vfull.push_back(*vive_it);
-          opti_vfull.push_back(*opti_it);
-        } else {
-          vive_vfull.push_back(*vive_it);
-          opti_vfull.push_back(*(opti_it-1));
+    TFs vive_vfull, opti_vfull;
+    // Search the vive poses
+    for (auto vive_it = tmp_vive_.begin();
+      vive_it != tmp_vive_.end(); vive_it++) {
+      // Search the optitrack poses
+      for (auto opti_it = tmp_optitrack_.begin();
+        opti_it != tmp_optitrack_.end(); opti_it++) {
+        // Check if the optitrack iterator is after the vive pose
+        if (opti_it->header.stamp.toSec() > vive_it->header.stamp.toSec()) {
+          // Find the closes image
+          if (opti_it == tmp_optitrack_.begin()) {
+            vive_vfull.push_back(*vive_it);
+            opti_vfull.push_back(*opti_it);
+          } else if (opti_it->header.stamp.toSec() - vive_it->header.stamp.toSec() <
+            - (opti_it - 1)->header.stamp.toSec() + vive_it->header.stamp.toSec()) {
+            vive_vfull.push_back(*vive_it);
+            opti_vfull.push_back(*opti_it);
+          } else {
+            vive_vfull.push_back(*vive_it);
+            opti_vfull.push_back(*(opti_it-1));
+          }
+          // Check if the time difference is valid
+          if (abs(vive_vfull.back().header.stamp.toSec() -
+            opti_vfull.back().header.stamp.toSec()) > TIME_THRESH ) {
+            opti_vfull.pop_back();
+            vive_vfull.pop_back();
+          }
+          break;
         }
-        // Check if the time difference is valid
-        if (abs(vive_vfull.back().header.stamp.toSec() -
-          opti_vfull.back().header.stamp.toSec()) > TIME_THRESH ) {
-          opti_vfull.pop_back();
-          vive_vfull.pop_back();
-        }
-        break;
       }
-    }
-    if (vive_vfull.size() >= 2) {
-      TF next, prev;
-      // Last element
-      next = vive_vfull.back();
-      // Second to last element
-      prev = vive_vfull[vive_vfull.size() - 2];
-      // Distance between two consecutive poses
-      double distance = pow(prev.transform.translation.x - next.transform.translation.x, 2) +
-        pow(prev.transform.translation.y - next.transform.translation.y, 2) +
-        pow(prev.transform.translation.z - next.transform.translation.z, 2);
-      // Angular distance between two poses
-      Eigen::Quaterniond Qnow(next.transform.rotation.w,
-        next.transform.rotation.x,
-        next.transform.rotation.y,
-        next.transform.rotation.z);
-      Eigen::Quaterniond Qpre(prev.transform.rotation.w,
-        prev.transform.rotation.x,
-        prev.transform.rotation.y,
-        prev.transform.rotation.z);
-      Eigen::AngleAxisd Adif(Qnow * Qpre.inverse());
-      // Test against the thresholds
-      if (distance > DISTANCE_THRESH || Adif.angle() > ANGLE_THRESH) {
+      if (vive_vfull.size() >= 2) {
+        TF next, prev;
+        // Last element
+        next = vive_vfull.back();
+        // Second to last element
+        prev = vive_vfull[vive_vfull.size() - 2];
+        // Distance between two consecutive poses
+        double distance = pow(prev.transform.translation.x - next.transform.translation.x, 2) +
+          pow(prev.transform.translation.y - next.transform.translation.y, 2) +
+          pow(prev.transform.translation.z - next.transform.translation.z, 2);
+        // Angular distance between two poses
+        Eigen::Quaterniond Qnow(next.transform.rotation.w,
+          next.transform.rotation.x,
+          next.transform.rotation.y,
+          next.transform.rotation.z);
+        Eigen::Quaterniond Qpre(prev.transform.rotation.w,
+          prev.transform.rotation.x,
+          prev.transform.rotation.y,
+          prev.transform.rotation.z);
+        Eigen::AngleAxisd Adif(Qnow * Qpre.inverse());
+        // Test against the thresholds
+        if (distance > DISTANCE_THRESH || Adif.angle() > ANGLE_THRESH) {
+          vive_.push_back(vive_vfull.back());
+          optitrack_.push_back(opti_vfull.back());
+        }
+      // If first poses
+      } else {
         vive_.push_back(vive_vfull.back());
         optitrack_.push_back(opti_vfull.back());
       }
-    // If first poses
-    } else {
-      vive_.push_back(vive_vfull.back());
-      optitrack_.push_back(opti_vfull.back());
     }
+
+    std::cout << vive_.size() << " " << optitrack_.size() << std::endl;
+    // Estimating the offset
+    offsets = EstimateOffset(optitrack_, vive_);
+    if (refine_)
+      offsets = RefineOffset(optitrack_, vive_, offsets);
   }
 
-  // Estimating the offset
-  offsets = EstimateOffset(optitrack_, vive_);
-  if (refine_)
-    offsets = RefineOffset(optitrack_, vive_, offsets);
-  }
+  // Clear the data
+  tmp_vive_.clear();
+  vive_.clear();
+  tmp_optitrack_.clear();
+  optitrack_.clear();
+
   return true;
 }
 
@@ -482,7 +520,7 @@ TFs HiveOffset::EstimateOffset(TFs optitrack, TFs vive) {
     vMt.buildFrom(vtt, vrt);
     vMtVec.push_back(vMt); // To compute the big offset
     tMvVec.push_back(vMt.inverse()); // To compute the small offset
-}
+  }
 
   // Arrow in Optitrack's frame
   for (auto msg_it = optitrack.begin();
@@ -498,7 +536,7 @@ TFs HiveOffset::EstimateOffset(TFs optitrack, TFs vive) {
     oMa.buildFrom(ota, ora);
     aMoVec.push_back(oMa.inverse()); // To compute the big offset
     oMaVec.push_back(oMa); // To compute the small offset
-}
+  }
 
   int status;
 
@@ -608,7 +646,7 @@ TFs HiveOffset::RefineOffset(TFs optitrack, TFs vive, TFs offset) {
   auto o_it = optitrack.begin();
   while (v_it != vive.end() && o_it != optitrack.end()) {
     ceres::CostFunction * thecost =
-      new ceres::AutoDiffCostFunction<PoseCostFunctor, INFUNCTIONRESIDUALS, 6, 6>
+      new ceres::AutoDiffCostFunction<PoseCostFunctor, 4, 6, 6>
       (new PoseCostFunctor(*v_it, *o_it));
     problem.AddResidualBlock(thecost, NULL, oTv, aTt);
     v_it++;
@@ -661,32 +699,20 @@ TFs HiveOffset::RefineOffset(TFs optitrack, TFs vive, TFs offset) {
 int main(int argc, char ** argv) {
   // Read bag with data
 
+  HiveOffset * hiver;
+
+  Calibration calibration;
+  Solver * solver;
+
+
+
+  // Wrong parameters
   if (argc < 2) {
     std::cout << "Usage: ... hive_offset name_of_read_bag.bag "
       << "name_of_write_bag.bag" << std::endl;
     return -1;
+  // Just one bag
   }
-
-  HiveOffset hiver(1.0, true, false);
-  Calibration calibration;
-  Solver * solver;
-
-  rosbag::View view;
-  rosbag::Bag rbag;
-
-
-  rbag.open(argv[1], rosbag::bagmode::Read);
-  // Read OptiTrack poses
-  rosbag::View view_ot(rbag, rosbag::TopicQuery("/tf"));
-  for (auto bag_it = view_ot.begin(); bag_it != view_ot.end(); bag_it++) {
-    const tf2_msgs::TFMessage::ConstPtr tf =
-      bag_it->instantiate<tf2_msgs::TFMessage>();
-    for (auto tf_it = tf->transforms.begin();
-      tf_it != tf->transforms.end(); tf_it++) {
-      hiver.AddOptiTrackPose(*tf_it);
-    }
-  }
-  ROS_INFO("Lighthouses' setup complete.");
 
   // Calibration
   if (!ViveUtils::ReadConfig(HIVE_BASE_CALIBRATION_FILE, &calibration)) {
@@ -696,41 +722,153 @@ int main(int argc, char ** argv) {
     ROS_INFO("Read calibration file.");
   }
 
-  // Lighthouses
-  rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
-  for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
-    const hive::ViveCalibrationLighthouseArray::ConstPtr vl =
-      bag_it->instantiate<hive::ViveCalibrationLighthouseArray>();
-    calibration.SetLighthouses(*vl);
-  }
-  ROS_INFO("Lighthouses' setup complete.");
+  // No step
+  if (argc == 2) {
+    ROS_INFO ("NO STEP OFFSET.");
 
-  // Trackers
-  rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
-  for (auto bag_it = view_tr.begin(); bag_it != view_tr.end(); bag_it++) {
-    const hive::ViveCalibrationTrackerArray::ConstPtr vt =
-      bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
-    calibration.SetTrackers(*vt);
-  }
-  ROS_INFO("Trackers' setup complete.");
+    rosbag::View view;
+    rosbag::Bag rbag;
+    hiver = new HiveOffset(1.0, true, false);
+    rbag.open(argv[1], rosbag::bagmode::Read);
 
-  // Temporary solver - Easily changed (one tracker only)
-  solver = new BaseSolve(calibration.environment,
-    calibration.trackers.begin()->second);
-
-  // Light data
-  rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
-  for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
-    const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-    solver->ProcessLight(vl);
-    geometry_msgs::TransformStamped msg;
-    if (solver->GetTransform(msg)) {
-      hiver.AddVivePose(msg);
+    // Read OptiTrack poses
+    rosbag::View view_ot(rbag, rosbag::TopicQuery("/tf"));
+    for (auto bag_it = view_ot.begin(); bag_it != view_ot.end(); bag_it++) {
+      const tf2_msgs::TFMessage::ConstPtr tf =
+        bag_it->instantiate<tf2_msgs::TFMessage>();
+      for (auto tf_it = tf->transforms.begin();
+        tf_it != tf->transforms.end(); tf_it++) {
+        hiver->AddOptiTrackPose(*tf_it);
+      }
     }
-  }
-  ROS_INFO("Data processment complete.");
+    ROS_INFO("Lighthouses' setup complete.");
 
-  rbag.close();
+    // Lighthouses
+    rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
+    for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
+      const hive::ViveCalibrationLighthouseArray::ConstPtr vl =
+        bag_it->instantiate<hive::ViveCalibrationLighthouseArray>();
+      calibration.SetLighthouses(*vl);
+    }
+    ROS_INFO("Lighthouses' setup complete.");
+
+    // Trackers
+    rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
+    for (auto bag_it = view_tr.begin(); bag_it != view_tr.end(); bag_it++) {
+      const hive::ViveCalibrationTrackerArray::ConstPtr vt =
+        bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
+      calibration.SetTrackers(*vt);
+    }
+    ROS_INFO("Trackers' setup complete.");
+
+    // Temporary solver - Easily changed (one tracker only)
+    solver = new BaseSolve(calibration.environment,
+      calibration.trackers.begin()->second);
+
+    // Light data
+    rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
+    for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
+      const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
+      solver->ProcessLight(vl);
+      geometry_msgs::TransformStamped msg;
+      if (solver->GetTransform(msg)) {
+        hiver->AddVivePose(msg);
+      }
+    }
+    ROS_INFO("Data processment complete.");
+    rbag.close();
+
+    TFs offsets;
+    hiver->GetOffset(offsets);
+
+  // Multiple bags - with step
+  } else {
+    ROS_INFO ("STEP OFFSET.");
+
+    hiver = new HiveOffset(1.0, true, true);
+
+    // Iterate over all bags
+    size_t counter;
+    for (size_t arg = 1; arg < argc; arg++) {
+      rosbag::View view;
+      rosbag::Bag rbag;
+      rbag.open(argv[arg], rosbag::bagmode::Read);
+
+      // Read OptiTrack poses
+      counter = 0;
+      rosbag::View view_ot(rbag, rosbag::TopicQuery("/tf"));
+      for (auto bag_it = view_ot.begin(); bag_it != view_ot.end(); bag_it++) {
+        const tf2_msgs::TFMessage::ConstPtr tf =
+          bag_it->instantiate<tf2_msgs::TFMessage>();
+        for (auto tf_it = tf->transforms.begin();
+          tf_it != tf->transforms.end(); tf_it++) {
+          std::cout << "OptiTrack: " <<
+            tf_it->transform.translation.x << ", " <<
+            tf_it->transform.translation.y << ", " <<
+            tf_it->transform.translation.z << ", " <<
+            tf_it->transform.rotation.w << ", " <<
+            tf_it->transform.rotation.x << ", " <<
+            tf_it->transform.rotation.y << ", " <<
+            tf_it->transform.rotation.z << std::endl;
+          hiver->AddOptiTrackPose(*tf_it);
+          counter++;
+        }
+        if (counter >= 10) break;
+      }
+      ROS_INFO("Lighthouses' setup complete.");
+
+      // Lighthouses
+      rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
+      for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
+        const hive::ViveCalibrationLighthouseArray::ConstPtr vl =
+          bag_it->instantiate<hive::ViveCalibrationLighthouseArray>();
+        calibration.SetLighthouses(*vl);
+      }
+      ROS_INFO("Lighthouses' setup complete.");
+
+      // Trackers
+      rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
+      for (auto bag_it = view_tr.begin(); bag_it != view_tr.end(); bag_it++) {
+        const hive::ViveCalibrationTrackerArray::ConstPtr vt =
+          bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
+        calibration.SetTrackers(*vt);
+      }
+      ROS_INFO("Trackers' setup complete.");
+
+      // Temporary solver - Easily changed (one tracker only)
+      solver = new BaseSolve(calibration.environment,
+        calibration.trackers.begin()->second);
+
+      // Light data
+      counter = 0;
+      size_t unsuccess = 0;
+      rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
+      for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
+        const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
+        solver->ProcessLight(vl);
+        geometry_msgs::TransformStamped msg;
+        if (solver->GetTransform(msg)) {
+          hiver->AddVivePose(msg);
+          std::cout << "Vive: " <<
+            msg.transform.translation.x << ", " <<
+            msg.transform.translation.y << ", " <<
+            msg.transform.translation.z << ", " <<
+            msg.transform.rotation.w << ", " <<
+            msg.transform.rotation.x << ", " <<
+            msg.transform.rotation.y << ", " <<
+            msg.transform.rotation.z << std::endl;
+          counter++;
+        } else {
+          unsuccess++;
+        }
+        if (counter >= 10 || unsuccess >= 100) break;
+      }
+      hiver->NextPose();
+      rbag.close();
+    }
+    TFs offsets;
+    hiver->GetOffset(offsets);
+  }
 
   return 0;
 }
