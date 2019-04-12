@@ -278,4 +278,17 @@ void hCorrection(T const * position, T const * corrections, T * ang);
 template <typename T>
 void vCorrection(T const * position, T const * corrections, T * ang);
 
+// // Something to consider
+// template <class T>
+// class ViveModel {
+// public:
+//   ViveModel();
+//   ~ViveModel();
+//   T Alpha(T * pose);
+//   T * dAlpha(T * pose);
+//   T ** d2Alpha(T * pose);
+//   T * Imu(T * lin_acc, T * ang_vel);
+//   T * dImu(T * pose);
+// };
+
 #endif  // VIVE_VIVE_H_
