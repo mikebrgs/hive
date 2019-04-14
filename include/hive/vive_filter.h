@@ -58,7 +58,7 @@ public:
   void ProcessLight(const hive::ViveLight::ConstPtr& msg);
   // Get the current pose according to the solver
   bool GetTransform(geometry_msgs::TransformStamped& msg);
-private:
+// private: // temporary
   // Internal method
   bool Predict(const sensor_msgs::Imu & msg);
   // Internal method
