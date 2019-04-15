@@ -69,6 +69,7 @@ private:
   geometry_msgs::Vector3 velocity_;
   geometry_msgs::Quaternion rotation_;
   geometry_msgs::Vector3 bias_;
+  ros::Time time_;
   // Covatiances
   double * tu_covariance;
   double * mu_covariance;

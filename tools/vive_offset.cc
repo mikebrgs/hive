@@ -413,6 +413,7 @@ bool HiveOffset::NextPose() {
 
 bool HiveOffset::GetOffset(TFs & offsets) {
   // If the data was collected in steps
+  TFs vive_vfull, opti_vfull;
   if (steps_) {
     NextPose();
     offsets = EstimateOffset(optitrack_, vive_);
@@ -420,7 +421,6 @@ bool HiveOffset::GetOffset(TFs & offsets) {
       offsets = RefineOffset(optitrack_, vive_, offsets);
   // If we have continuous data
   } else {
-    TFs vive_vfull, opti_vfull;
     // Search the vive poses
     for (auto vive_it = tmp_vive_.begin();
       vive_it != tmp_vive_.end(); vive_it++) {
@@ -509,7 +509,7 @@ TFs HiveOffset::EstimateOffset(TFs optitrack, TFs vive) {
   // Tracker in Vive's frame
   for (auto msg_it = vive.begin();
     msg_it != vive.end(); msg_it++) {
-    vpHomogeneousMatrix vMt;
+    vpHomogeneousMatrix * vMt = new vpHomogeneousMatrix();
     vpTranslationVector vtt(msg_it->transform.translation.x,
       msg_it->transform.translation.y,
       msg_it->transform.translation.z);
@@ -517,15 +517,15 @@ TFs HiveOffset::EstimateOffset(TFs optitrack, TFs vive) {
       msg_it->transform.rotation.y,
       msg_it->transform.rotation.z,
       msg_it->transform.rotation.w);
-    vMt.buildFrom(vtt, vrt);
-    vMtVec.push_back(vMt); // To compute the big offset
-    tMvVec.push_back(vMt.inverse()); // To compute the small offset
+    vMt->buildFrom(vtt, vrt);
+    vMtVec.push_back(*vMt); // To compute the big offset
+    tMvVec.push_back(vMt->inverse()); // To compute the small offset
   }
 
   // Arrow in Optitrack's frame
   for (auto msg_it = optitrack.begin();
     msg_it != optitrack.end(); msg_it++) {
-    vpHomogeneousMatrix oMa;
+    vpHomogeneousMatrix * oMa = new vpHomogeneousMatrix();
     vpTranslationVector ota(msg_it->transform.translation.x,
       msg_it->transform.translation.y,
       msg_it->transform.translation.z);
@@ -533,9 +533,9 @@ TFs HiveOffset::EstimateOffset(TFs optitrack, TFs vive) {
       msg_it->transform.rotation.y,
       msg_it->transform.rotation.z,
       msg_it->transform.rotation.w);
-    oMa.buildFrom(ota, ora);
-    aMoVec.push_back(oMa.inverse()); // To compute the big offset
-    oMaVec.push_back(oMa); // To compute the small offset
+    oMa->buildFrom(ota, ora);
+    aMoVec.push_back(oMa->inverse()); // To compute the big offset
+    oMaVec.push_back(*oMa); // To compute the small offset
   }
 
   int status;
@@ -552,39 +552,39 @@ TFs HiveOffset::EstimateOffset(TFs optitrack, TFs vive) {
   oMv.print(); // end effector to camera - arrow to tracker
   std::cout << std::endl << "Status: " <<  status << std::endl;
 
-  TFs Ts;
-  TF aTt; // Transform from tracker to optitrack's arrow
-  TF oTv; // Transform from vive to optitrack
+  TFs * Ts = new TFs();
+  TF * aTt = new TF(); // Transform from tracker to optitrack's arrow
+  TF *oTv = new TF(); // Transform from vive to optitrack
 
   // Changing the format for aTt
   vpTranslationVector aPt;
   vpQuaternionVector aQt;
   aMt.extract(aPt);
   aMt.extract(aQt);
-  aTt.transform.translation.x = aPt[0];
-  aTt.transform.translation.y = aPt[1];
-  aTt.transform.translation.z = aPt[2];
-  aTt.transform.rotation.w = aQt.w();
-  aTt.transform.rotation.x = aQt.x();
-  aTt.transform.rotation.y = aQt.y();
-  aTt.transform.rotation.z = aQt.z();
+  aTt->transform.translation.x = aPt[0];
+  aTt->transform.translation.y = aPt[1];
+  aTt->transform.translation.z = aPt[2];
+  aTt->transform.rotation.w = aQt.w();
+  aTt->transform.rotation.x = aQt.x();
+  aTt->transform.rotation.y = aQt.y();
+  aTt->transform.rotation.z = aQt.z();
 
   // Changing the format for oTv
   vpTranslationVector oPv;
   vpQuaternionVector oQv;
   oMv.extract(oPv);
   oMv.extract(oQv);
-  oTv.transform.translation.x = oPv[0];
-  oTv.transform.translation.y = oPv[1];
-  oTv.transform.translation.z = oPv[2];
-  oTv.transform.rotation.w = oQv.w();
-  oTv.transform.rotation.x = oQv.x();
-  oTv.transform.rotation.y = oQv.y();
-  oTv.transform.rotation.z = oQv.z();
+  oTv->transform.translation.x = oPv[0];
+  oTv->transform.translation.y = oPv[1];
+  oTv->transform.translation.z = oPv[2];
+  oTv->transform.rotation.w = oQv.w();
+  oTv->transform.rotation.x = oQv.x();
+  oTv->transform.rotation.y = oQv.y();
+  oTv->transform.rotation.z = oQv.z();
 
-  Ts.push_back(aTt);
-  Ts.push_back(oTv);
-  return Ts;
+  Ts->push_back(*aTt);
+  Ts->push_back(*oTv);
+  return *Ts;
 }
 
 TFs HiveOffset::RefineOffset(TFs optitrack, TFs vive, TFs offset) {
@@ -777,9 +777,11 @@ int main(int argc, char ** argv) {
     }
     ROS_INFO("Data processment complete.");
     rbag.close();
-
+    ROS_INFO("HERE");
     TFs offsets;
+    ROS_INFO("HERE");
     hiver->GetOffset(offsets);
+    ROS_INFO("HERE");
 
   // Multiple bags - with step
   } else {

@@ -256,27 +256,25 @@ bool ComputeTransformBundle(LightData observations,
 
   ceres::Solve(options, &problem, &summary);
 
-  // std::cout << summary.final_cost;
-
-  // std::cout << std::setprecision(4) << "CTB: " 
-  //   << std::setprecision(4) << summary.final_cost << " - "
-  //   << std::setprecision(4) << pose[0] << ", "
-  //   << std::setprecision(4) << pose[1] << ", "
-  //   << std::setprecision(4) << pose[2] << ", "
-  //   << std::setprecision(4) << pose[3] << ", "
-  //   << std::setprecision(4) << pose[4] << ", "
-  //   << std::setprecision(4) << pose[5];
+  std::cout << std::setprecision(4) << "CTB: " 
+    << std::setprecision(4) << summary.final_cost << " - "
+    << std::setprecision(4) << pose[0] << ", "
+    << std::setprecision(4) << pose[1] << ", "
+    << std::setprecision(4) << pose[2] << ", "
+    << std::setprecision(4) << pose[3] << ", "
+    << std::setprecision(4) << pose[4] << ", "
+    << std::setprecision(4) << pose[5];
 
   // Check if valid
   double pose_norm = sqrt(pose[0]*pose[0] + pose[1]*pose[1] + pose[2]*pose[2]);
   if (summary.final_cost > 1e-4 * static_cast<double>(unsigned(n_sensors))
     || pose_norm > 20
     || pose[2] <= 0 ) {
-    // std::cout << " - INVALID" << std::endl;
+    std::cout << " - INVALID" << std::endl;
     // std::cout << " x ";
     return false;
   }
-  // std::cout << " - VALID" << std::endl;
+  std::cout << " - VALID" << std::endl;
   // std::cout << " . ";
 
   double angle_norm = sqrt(pose[3]*pose[3] + pose[4]*pose[4] + pose[5]*pose[5]);

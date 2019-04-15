@@ -92,3 +92,21 @@ dat4.10.bag - moving bag
 dat4.11.bag - moving bag
 
 dat4.12.bag - moving bag
+
+ENV5
+
+env5_data1.bag - static on chair
+
+env5_data2.bag - static on floor pillow
+
+env5_data3.bag - same
+
+env5_data4.bag - same
+
+env5_data6.bag - same
+
+env5_data7.bag - same
+
+env5_data8.bag - moving
+
+env5_data9.bag - same
