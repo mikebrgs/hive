@@ -42,26 +42,21 @@ namespace filter {
 
 ViveFilter::ViveFilter() {
   // Position initialization
-  position_.x = 0.0;
-  position_.y = 0.0;
-  position_.z = 1.0;
+  position_ = Eigen::Vector3d(0.0, 0.0, 1.0);
   // Velocity initialization
-  velocity_.x = 0.0;
-  velocity_.y = 0.0;
-  velocity_.z = 0.0;
+  velocity_ = Eigen::Vector3d(0.0, 0.0, 0.0);
   // Quaternion initialization
-  rotation_.w = 1.0;
-  rotation_.x = 0.0;
-  rotation_.y = 0.0;
-  rotation_.z = 0.0;
+  rotation_ = Eigen::Quaterniond(1.0, 0.0, 0.0, 0.0);
   // Bias initialization
-  bias_.x = 0.0;
-  bias_.y = 0.0;
-  bias_.z = 0.0;
+  bias_ = Eigen::Vector3d(0.0, 0.0, 0.0);
   // Gravity
-  gravity_.x = 0.0;
-  gravity_.y = 0.0;
-  gravity_.z = -9.8;
+  gravity_ = Eigen::Vector3d(0.0, 0.0, -9.8);
+  // Model covariance
+  model_covariance_ = Eigen::MatrixXd::Identity(STATE_SIZE,STATE_SIZE);
+  // Measure covariance - assuming 3 sensors for now
+  measure_covariance_ = Eigen::MatrixXd::Identity(3,3);
+  // Aux variables
+   covariance_ = model_covariance_;
   return;
 }
 
@@ -85,6 +80,16 @@ void ViveFilter::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
 }
 
 bool ViveFilter::GetTransform(geometry_msgs::TransformStamped& msg) {
+  msg.transform.translation.x = position_(0);
+  msg.transform.translation.y = position_(1);
+  msg.transform.translation.z = position_(2);
+  msg.transform.rotation.w = rotation_.w();
+  msg.transform.rotation.x = rotation_.x();
+  msg.transform.rotation.y = rotation_.y();
+  msg.transform.rotation.z = rotation_.z();
+  msg.child_frame_id = tracker_.serial;
+  msg.header.stamp = time_;
+  msg.header.frame_id = "vive"; // For now it's not this the frame
   return true;
 }
 
@@ -313,55 +318,115 @@ Eigen::MatrixXd GetVerticalZ(Eigen::Vector3d position,
   return Z;
 }
 
-
+// Time update (Inertial data)
 bool ViveFilter::Predict(const sensor_msgs::Imu & msg) {
   // Convert measurements
   Eigen::Vector3d linear_acceleration = filter::ConvertMessage(msg.linear_acceleration);
   Eigen::Vector3d angular_velocity = filter::ConvertMessage(msg.angular_velocity);
-  Eigen::Vector3d position = filter::ConvertMessage(position_);
-  Eigen::Vector3d velocity = filter::ConvertMessage(velocity_);
-  Eigen::Quaterniond rotation = filter::ConvertMessage(rotation_);
-  Eigen::Vector3d bias = filter::ConvertMessage(bias_);
+
   // Time difference
-  double dT = (time_ * msg.header.stamp).toSec()
+  double dT = (msg.header.stamp - time_).toSec();
 
   // Derivative of the state in time
-  Eigen::MatrixXd dState = GetDState(velocity,
-    rotation,
+  Eigen::MatrixXd dState = GetDState(velocity_,
+    rotation_,
     linear_acceleration,
     angular_velocity);
   // Old state
   Eigen::Matrix<double, STATE_SIZE, 1> oldX;
-  oldX.block<3,1>(0,0) = position;
-  oldX.block<3,1>(3,0) = velocity;
+  oldX.block<3,1>(0,0) = position_;
+  oldX.block<3,1>(3,0) = velocity_;
   oldX.block<4,1>(6,0) = Eigen::Vector4d(
-    rotation.w(),
-    rotation.x(),
-    rotation.y(),
-    rotation.z());
+    rotation_.w(),
+    rotation_.x(),
+    rotation_.y(),
+    rotation_.z());
   // New state
   Eigen::MatrixXd newX = oldX + dT * dState;
   // Conversion of the new state
-  position_ = filter::ConvertMessage(newX.block<3,1>(0,0));
-  velocity_ = filter::ConvertMessage(newX.block<3,1>(3,0));
-  Eigen::Quaterniond ;
-  rotation_ = filter::ConvertMessage(Eigen::Quaterniond(newX(6),
-    newX(7),
-    newX(8),
-    newX(9)).normalized());
+  position_ = newX.block<3,1>(0,0);
+  velocity_ = newX.block<3,1>(3,0);
+  rotation_ = Eigen::Quaterniond(newX(6), newX(7), newX(8),
+    newX(9)).normalized();
 
   // Covariance update
-  Eigen::MatrixXd F = GetF(rotation,
+  Eigen::MatrixXd oldP = covariance_;
+  Eigen::MatrixXd F = GetF(rotation_,
     linear_acceleration,
     angular_velocity,
-    bias);
-  Eigen::MatrixXd Q = filter::ConvertMessage(tu_covariance);
-  Eigen::MatrixXd P = (Eigen::MatrixXd(STATE_SIZE, STATE_SIZE)::Identity() + dT * F) *
-  O * (Eigen::MatrixXd(STATE_SIZE, STATE_SIZE)::Identity() + dT * F).transpose() + Q;
+    bias_);
+  Eigen::MatrixXd Q = model_covariance_;
+  Eigen::MatrixXd newP = (Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE) + dT * F) *
+  oldP * (Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE) + dT * F).transpose() + Q;
   return true;
 }
 
+Eigen::MatrixXd SliceR(Eigen::MatrixXd R,
+  std::vector<int> sensors) {
+  size_t col = 0, row = 0;
+  Eigen::MatrixXd slicedR = Eigen::MatrixXd(sensors.size(),
+    sensors.size());
+  for (auto sensor_row : sensors) {
+    for (auto sensor_col : sensors) {
+      slicedR(row, col) = R(sensor_row, sensor_col);
+      col++;
+    }
+    row++;
+  }
+  return slicedR;
+}
+
+// Measure upate (Light data)
 bool ViveFilter::Update(const hive::ViveLight & msg) {
+  size_t row = 0;
+  std::vector<Eigen::Vector3d> photodiodes;
+  Eigen::MatrixXd Z = Eigen::MatrixXd(msg.samples.size(),1);
+  std::vector<int> sensors;
+  for (auto sample : msg.samples) {
+    // Add photodiode's position to vector
+    photodiodes.push_back(Eigen::Vector3d(
+      tracker_.sensors[sample.sensor].position.x,
+      tracker_.sensors[sample.sensor].position.y,
+      tracker_.sensors[sample.sensor].position.z));
+    // Put angle in Vector
+    Z(row, 0) = sample.angle;
+    row++;
+    // For later usage
+    sensors.push_back(sample.sensor);
+  }
+  // EKF update
+  Eigen::MatrixXd H, R, S, K, oldP, newP;
+  Eigen::VectorXd oldX, newX, diffZ;
+  oldX.segment<3>(0) = position_;
+  oldX.segment<3>(3) = velocity_;
+  oldX.segment<4>(6) = Eigen::Vector4d(
+    rotation_.w(),
+    rotation_.x(),
+    rotation_.y(),
+    rotation_.z());
+  oldP = covariance_;
+  R = SliceR(measure_covariance_, sensors);
+  // Choose the model according to the orientation
+  if (msg.axis == HORIZONTAL) {
+    H = GetHorizontalH(position_, rotation_, photodiodes);
+    diffZ = Z - GetHorizontalZ(position_, rotation_, photodiodes);
+  } else {
+    H = GetVerticalH(position_, rotation_, photodiodes);
+    diffZ = Z - GetVerticalZ(position_, rotation_, photodiodes);
+  }
+  S = H * oldP * H.transpose() * R;
+  K = oldP * H.transpose() * S.inverse();
+  newX = oldX + K * diffZ;
+  newP = (Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE) - K * H) * oldP;
+
+  // Save new state
+  position_ = newX.segment<3>(0);
+  velocity_ = newX.segment<3>(3);
+  rotation_ = Eigen::Quaterniond(newX(6),
+    newX(7),
+    newX(8),
+    newX(9)).normalized();
+  covariance_ = newP;
   return true;
 }
 

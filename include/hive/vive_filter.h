@@ -47,8 +47,8 @@ public:
     Tracker & tracker,
     std::vector<Lighthouse> & lighthouses,
     Environment & environment,
-    double * tu_covariance, // concatenated by row -- time update
-    double * mu_covariance, // concatenated by row -- measurements
+    double ** tu_covariance, // concatenated by row -- time update
+    double ** mu_covariance, // concatenated by row -- measurements
     bool correction);
   // Destructor
   ~ViveFilter();
@@ -65,21 +65,29 @@ public:
   bool Update(const hive::ViveLight & msg);
 private:
   // State
-  geometry_msgs::Vector3 position_;
-  geometry_msgs::Vector3 velocity_;
-  geometry_msgs::Quaternion rotation_;
-  geometry_msgs::Vector3 bias_;
+  Eigen::Vector3d position_;
+  // geometry_msgs::Vector3 position_;
+  Eigen::Vector3d velocity_;
+  // geometry_msgs::Vector3 velocity_;
+  Eigen::Quaterniond rotation_;
+  // geometry_msgs::Quaternion rotation_;
+  Eigen::Vector3d bias_;
+  // geometry_msgs::Vector3 bias_;
   ros::Time time_;
   // Covatiances
-  double * tu_covariance;
-  double * mu_covariance;
+  Eigen::MatrixXd model_covariance_;
+  // double * tu_covariance;
+  Eigen::MatrixXd measure_covariance_;
+  // double * mu_covari>ance;
+  // State covariance
+  Eigen::MatrixXd covariance_;
   // Other elements
   std::vector<Lighthouse> lighthouses_;
   Environment environment_; // TODO include gravity in Environment
   Tracker tracker_;
   bool correction_;
   // Temp
-  geometry_msgs::Vector3 gravity_;
+  Eigen::Vector3d gravity_;
 };
 
 #endif  // HIVE_VIVE_FILTER_H_
