@@ -1,12 +1,12 @@
 // ROS includes
-#include <hive/vive_filter.h>
+#include <hive/vive_ekf.h>
 
-#define STATE_SIZE 10
-#define NOISE_SIZE 6
+#define STATE_SIZE 13
+#define NOISE_SIZE 9
 #define SENSORS_SIZE 5
 #define DT 0.01
 
-namespace filter {
+namespace ekf {
   Eigen::Vector3d ConvertMessage(geometry_msgs::Vector3 msg) {
     return Eigen::Vector3d(msg.x, msg.y, msg.z);
   }
@@ -41,9 +41,27 @@ namespace filter {
     msg.z = q.z();
     return msg;
   }
+
+  // Auxility matrix
+  Eigen::MatrixXd GetOmega(Eigen::Quaterniond Q) {
+    Eigen::Matrix<double, 4, 3> Omega;
+    Omega(0,0) = -Q.x();
+    Omega(0,1) = -Q.y();
+    Omega(0,2) = -Q.z();
+    Omega(1,0) = Q.w();
+    Omega(1,1) = -Q.z();
+    Omega(1,2) = Q.y();
+    Omega(2,0) = Q.z();
+    Omega(2,1) = Q.w();
+    Omega(2,2) = -Q.x();
+    Omega(3,0) = -Q.y();
+    Omega(3,1) = Q.x();
+    Omega(3,2) = Q.w();
+    return Omega;
+  }
 }
 
-ViveFilter::ViveFilter() {
+ViveEKF::ViveEKF() {
   // Position initialization
   position_ = Eigen::Vector3d(0.0, 0.0, 1.0);
   // Velocity initialization
@@ -88,10 +106,26 @@ ViveFilter::ViveFilter() {
   tracker_.sensors[2].position = sensor2;
   tracker_.sensors[3].position = sensor3;
   tracker_.sensors[4].position = sensor4;
+  // Tracker frame transform -- head to light
+  tracker_.head_transform.translation.x = 0.0;
+  tracker_.head_transform.translation.y = 0.0;
+  tracker_.head_transform.translation.z = 0.0;
+  tracker_.head_transform.rotation.w = 1.0;
+  tracker_.head_transform.rotation.x = 0.0;
+  tracker_.head_transform.rotation.y = 0.0;
+  tracker_.head_transform.rotation.z = 0.0;
+  // Tracker frame transform -- head to light
+  tracker_.imu_transform.translation.x = 0.0;
+  tracker_.imu_transform.translation.y = 0.0;
+  tracker_.imu_transform.translation.z = 0.0;
+  tracker_.imu_transform.rotation.w = 1.0;
+  tracker_.imu_transform.rotation.x = 0.0;
+  tracker_.imu_transform.rotation.y = 0.0;
+  tracker_.imu_transform.rotation.z = 0.0;
   return;
 }
 
-ViveFilter::ViveFilter(geometry_msgs::TransformStamped & pose,
+ViveEKF::ViveEKF(geometry_msgs::TransformStamped & pose,
   Tracker & tracker,
   std::vector<Lighthouse> & lighthouses,
   Environment & environment,
@@ -127,11 +161,11 @@ ViveFilter::ViveFilter(geometry_msgs::TransformStamped & pose,
   return;
 }
 
-ViveFilter::~ViveFilter() {
+ViveEKF::~ViveEKF() {
   return;
 }
 
-void ViveFilter::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
+void ViveEKF::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
   if (msg == NULL) {
     return;
   }
@@ -139,14 +173,15 @@ void ViveFilter::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
   return;
 }
 
-void ViveFilter::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
+void ViveEKF::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   if (msg == NULL) {
     return;
   }
+  Update(*msg);
   return;
 }
 
-bool ViveFilter::GetTransform(geometry_msgs::TransformStamped& msg) {
+bool ViveEKF::GetTransform(geometry_msgs::TransformStamped& msg) {
   msg.transform.translation.x = position_(0);
   msg.transform.translation.y = position_(1);
   msg.transform.translation.z = position_(2);
@@ -166,70 +201,76 @@ Eigen::MatrixXd GetF(Eigen::Quaterniond rotation,
   Eigen::Vector3d angular_velocity,
   Eigen::Vector3d bias) {
 
+  double vQt_w = rotation.w();
+  double vQt_x = rotation.x();
+  double vQt_y = rotation.y();
+  double vQt_z = rotation.z();
+
+  double tA_x = linear_acceleration(0);
+  double tA_y = linear_acceleration(1);
+  double tA_z = linear_acceleration(2);
+
+  double tW_x = angular_velocity(0);
+  double tW_y = angular_velocity(1);
+  double tW_z = angular_velocity(2);
+
+  double tB_x = bias(0);
+  double tB_y = bias(1);
+  double tB_z = bias(2);
+
   // Set matrix
   Eigen::Matrix<double, STATE_SIZE, STATE_SIZE> F;
   F.block<3,3>(0,0) = Eigen::Matrix3d::Zero();
   F.block<3,3>(0,3) = Eigen::Matrix3d::Identity();
   F.block<3,4>(0,6) = Eigen::MatrixXd::Zero(3,4);
+  F.block<3,3>(0,10) = Eigen::MatrixXd::Zero(3,3);
   F.block<3,3>(3,0) = Eigen::MatrixXd::Zero(3,3);
   F.block<3,3>(3,3) = Eigen::MatrixXd::Zero(3,3);
+  F.block<3,3>(3,10) = Eigen::MatrixXd::Zero(3,3);
   F.block<4,3>(6,0) = Eigen::MatrixXd::Zero(4,3);
   F.block<4,3>(6,3) = Eigen::MatrixXd::Zero(4,3);
+  F.block<4,3>(6,10) = -0.5 * ekf::GetOmega(rotation);
+  F.block<3,3>(10,0) = Eigen::MatrixXd::Zero(3,3);
+  F.block<3,3>(10,3) = Eigen::MatrixXd::Zero(3,3);
+  F.block<3,4>(10,6) = Eigen::MatrixXd::Zero(3,4);
+  F.block<3,3>(10,10) = Eigen::MatrixXd::Zero(3,3);
 
-  // d\dot{V}/dq
-  F(3,6) = 2*linear_acceleration(2) * rotation.y() -
-    2*linear_acceleration(1) * rotation.z();
-  F(4,6) = 2*linear_acceleration(0) * rotation.z() -
-    2*linear_acceleration(2) * rotation.x();
-  F(5,6) = 2*linear_acceleration(1) * rotation.x() -
-    2*linear_acceleration(0) * rotation.y();
+  // new d\dot{V}/d_qw
+  F(3,6) = tA_y*vQt_z*-2.0+tA_z*vQt_y*2.0;
+  F(4,6) = tA_x*vQt_z*2.0-tA_z*vQt_x*2.0;
+  F(5,6) = tA_x*vQt_y*-2.0+tA_y*vQt_x*2.0;
+  // new d\dot{V}/d_qx
+  F(3,7) = tA_y*vQt_y*2.0+tA_z*vQt_z*2.0;
+  F(4,7) = tA_x*vQt_y*2.0-tA_y*vQt_x*4.0-tA_z*vQt_w*2.0;
+  F(5,7) = tA_y*vQt_w*2.0+tA_x*vQt_z*2.0-tA_z*vQt_x*4.0;
+  // new d\dot{V}/d_qy
+  F(3,8) = tA_x*vQt_y*-4.0+tA_y*vQt_x*2.0+tA_z*vQt_w*2.0;
+  F(4,8) = tA_x*vQt_x*2.0+tA_z*vQt_z*2.0;
+  F(5,8) = tA_x*vQt_w*-2.0+tA_y*vQt_z*2.0-tA_z*vQt_y*4.0;
+  // new d\dot{V}/d_qz
+  F(3,9) = tA_y*vQt_w*-2.0-tA_x*vQt_z*4.0+tA_z*vQt_x*2.0;
+  F(3,9) = tA_x*vQt_w*2.0-tA_y*vQt_z*4.0+tA_z*vQt_y*2.0;
+  F(3,9) = tA_x*vQt_x*2.0+tA_y*vQt_y*2.0;
 
-  F(3,7) = 2*linear_acceleration(1) * rotation.y() +
-    2*linear_acceleration(2) * rotation.z();
-  F(4,7) = 2*linear_acceleration(0) * rotation.y() -
-    4*linear_acceleration(1) * rotation.x() -
-    2*linear_acceleration(2) * rotation.w();
-  F(5,7) = 2*linear_acceleration(1) * rotation.w() +
-    2*linear_acceleration(0) * rotation.z() -
-    4*linear_acceleration(2) * rotation.x();
-
-  F(3,8) = 2*linear_acceleration(1) * rotation.x() -
-    4*linear_acceleration(0) * rotation.y() +
-    2*linear_acceleration(2) * rotation.w();
-  F(4,8) = 2*linear_acceleration(0) * rotation.x() +
-    2*linear_acceleration(2) * rotation.z();
-  F(5,8) = 2*linear_acceleration(1) * rotation.z() -
-    2*linear_acceleration(0) * rotation.w() -
-    4*linear_acceleration(2) * rotation.y();
-
-  F(3,9) = 2*linear_acceleration(2) * rotation.x() -
-    4*linear_acceleration(0) * rotation.z() -
-    2*linear_acceleration(1) * rotation.w();
-  F(4,9) = 2*linear_acceleration(0) * rotation.w() -
-    4*linear_acceleration(1) * rotation.z() +
-    2*linear_acceleration(2) * rotation.y();
-  F(5,9) = 2*linear_acceleration(0) * rotation.x() +
-    2*linear_acceleration(1) * rotation.y();
-
-  // d\dot{q}/dq
+  // d\dot{d}/dq_w
   F(6,6) = 0.0;
-  F(7,6) = angular_velocity(0)/2;
-  F(8,6) = angular_velocity(1)/2;
-  F(9,6) = angular_velocity(2)/2;
-
-  F(6,7) = -angular_velocity(0)/2;
+  F(7,6) = tB_x*(-1.0/2.0)+tW_x*(1.0/2.0);
+  F(8,6) = tB_y*(-1.0/2.0)+tW_y*(1.0/2.0);
+  F(9,6) = tB_z*(-1.0/2.0)+tW_z*(1.0/2.0);
+  // d\dot{d}/dq_x
+  F(6,7) = tB_x*(1.0/2.0)-tW_x*(1.0/2.0);
   F(7,7) = 0.0;
-  F(8,7) = -angular_velocity(2)/2;
-  F(9,7) = angular_velocity(1)/2;
-
-  F(6,8) = -angular_velocity(1)/2;
-  F(7,8) = angular_velocity(2)/2;
+  F(8,7) = tB_z*(1.0/2.0)-tW_z*(1.0/2.0);
+  F(9,7) = tB_y*(-1.0/2.0)+tW_y*(1.0/2.0);
+  // d\dot{d}/dq_y
+  F(6,8) = tB_y*(1.0/2.0)-tW_y*(1.0/2.0);
+  F(7,8) = tB_z*(-1.0/2.0)+tW_z*(1.0/2.0);
   F(8,8) = 0.0;
-  F(9,8) = -angular_velocity(0)/2;
-
-  F(6,9) = -angular_velocity(2)/2;
-  F(7,9) = -angular_velocity(1)/2;
-  F(8,9) = angular_velocity(0)/2;
+  F(9,8) = tB_x*(1.0/2.0)-tW_x*(1.0/2.0);
+  // d\dot{d}/dq_z
+  F(6,9) = tB_z*(1.0/2.0)-tW_z*(1.0/2.0);
+  F(7,9) = tB_y*(1.0/2.0)-tW_y*(1.0/2.0);
+  F(8,9) = tB_x*(-1.0/2.0)+tW_x*(1.0/2.0);
   F(9,9) = 0.0;
 
   return F;
@@ -324,26 +365,6 @@ Eigen::MatrixXd GetG(Eigen::Quaterniond rotation) {
   return G;
 }
 
-namespace filter {
-  // Auxility matrix
-  Eigen::MatrixXd GetOmega(Eigen::Quaterniond Q) {
-    Eigen::Matrix<double, 4, 3> Omega;
-    Omega(0,0) = -Q.x();
-    Omega(0,1) = -Q.y();
-    Omega(0,2) = -Q.z();
-    Omega(1,0) = Q.w();
-    Omega(1,1) = -Q.z();
-    Omega(1,2) = Q.y();
-    Omega(2,0) = Q.z();
-    Omega(2,1) = Q.w();
-    Omega(2,2) = -Q.x();
-    Omega(3,0) = -Q.y();
-    Omega(3,1) = Q.x();
-    Omega(3,2) = Q.w();
-    return Omega;
-  }
-} // filter
-
 // Vector that represents the evolution of the system is continuous time
 Eigen::MatrixXd GetDState(Eigen::Vector3d velocity,
   Eigen::Quaterniond rotation,
@@ -355,7 +376,7 @@ Eigen::MatrixXd GetDState(Eigen::Vector3d velocity,
   // Velocity - assumed constant
   dotX.block<3,1>(3,0) = rotation.toRotationMatrix() * linear_acceleration;
   // Orientation
-  Eigen::MatrixXd Omega = filter::GetOmega(rotation);
+  Eigen::MatrixXd Omega = ekf::GetOmega(rotation);
   dotX.block<4,1>(6,0) = 0.5 * (Omega * angular_velocity);
   return dotX;
 }
@@ -393,10 +414,10 @@ Eigen::MatrixXd GetVerticalZ(Eigen::Vector3d position,
 }
 
 // Time update (Inertial data)
-bool ViveFilter::Predict(const sensor_msgs::Imu & msg) {
+bool ViveEKF::Predict(const sensor_msgs::Imu & msg) {
   // Convert measurements
-  Eigen::Vector3d linear_acceleration = filter::ConvertMessage(msg.linear_acceleration);
-  Eigen::Vector3d angular_velocity = filter::ConvertMessage(msg.angular_velocity);
+  Eigen::Vector3d linear_acceleration = ekf::ConvertMessage(msg.linear_acceleration);
+  Eigen::Vector3d angular_velocity = ekf::ConvertMessage(msg.angular_velocity);
 
   // Time difference TODO change this
   double dT = DT;//(msg.header.stamp - time_).toSec();
@@ -456,7 +477,7 @@ Eigen::MatrixXd SliceR(Eigen::MatrixXd R,
 }
 
 // Measure upate (Light data)
-bool ViveFilter::Update(const hive::ViveLight & msg) {
+bool ViveEKF::Update(const hive::ViveLight & msg) {
   size_t row = 0;
   std::vector<Eigen::Vector3d> photodiodes;
   Eigen::MatrixXd Z = Eigen::VectorXd(msg.samples.size());
@@ -522,7 +543,7 @@ bool ViveFilter::Update(const hive::ViveLight & msg) {
   return true;
 }
 
-void ViveFilter::PrintState() {
+void ViveEKF::PrintState() {
   std::cout << "Position: "
     << position_(0) << ", "
     << position_(1) << ", "
@@ -549,7 +570,7 @@ int main(int argc, char ** argv)
 {
   ROS_INFO("FILTERING");
 
-  ViveFilter filter = ViveFilter();
+  ViveEKF filter = ViveEKF();
   ViveModel model = ViveModel();
   // Eigen::Vector3d linear_acceleration(0.0, 0.0, 0.0);
   // Eigen::Vector3d angular_velocity(0.0, 0.0, 0.0);

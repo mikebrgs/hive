@@ -1,5 +1,5 @@
-#ifndef HIVE_VIVE_FILTER_H_
-#define HIVE_VIVE_FILTER_H_
+#ifndef HIVE_VIVE_EKF_H_
+#define HIVE_VIVE_EKF_H_
 
 // ROS includes
 #include <ros/ros.h>
@@ -39,11 +39,11 @@
 //   double bias[3];
 // } State;
 
-class ViveFilter : public Solver{
+class ViveEKF : public Solver{
 public:
   // Constructor
-  ViveFilter(); // Initial template
-  ViveFilter(geometry_msgs::TransformStamped & pose,
+  ViveEKF(); // Initial template
+  ViveEKF(geometry_msgs::TransformStamped & pose,
     Tracker & tracker,
     std::vector<Lighthouse> & lighthouses,
     Environment & environment,
@@ -51,7 +51,7 @@ public:
     double ** measure_covariance, // measurements
     bool correction);
   // Destructor
-  ~ViveFilter();
+  ~ViveEKF();
   // Process an IMU measurement
   void ProcessImu(const sensor_msgs::Imu::ConstPtr& msg);
   // Process a light measurement
@@ -92,4 +92,4 @@ private:
   Eigen::Vector3d gravity_;
 };
 
-#endif  // HIVE_VIVE_FILTER_H_
+#endif  // HIVE_VIVE_EKF_H_

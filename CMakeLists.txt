@@ -138,7 +138,7 @@ add_executable(hive_bridge src/vive_bridge.cc)
 add_executable(hive_beta tools/vive_beta.cc src/vive.cc src/vive_solve.cc)
 add_executable(hive_offset tools/vive_offset.cc src/vive.cc src/vive_base.cc)
 add_executable(hive_refine src/vive_refine.cc src/vive.cc src/vive_solve.cc)
-add_executable(hive_filter src/vive_filter.cc src/vive.cc)
+add_executable(hive_ekf src/vive_ekf.cc src/vive.cc)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
@@ -153,7 +153,7 @@ add_dependencies(hive_bridge hive_generate_messages_cpp deepdive)
 add_dependencies(hive_beta hive_generate_messages_cpp)
 add_dependencies(hive_offset hive_generate_messages_cpp)
 add_dependencies(hive_refine hive_generate_messages_cpp)
-add_dependencies(hive_filter hive_generate_messages_cpp)
+add_dependencies(hive_ekf hive_generate_messages_cpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(hive_server
@@ -206,7 +206,7 @@ target_link_libraries(hive_refine
   ${EIGEN_LIBRARIES}
 )
 
-target_link_libraries(hive_filter
+target_link_libraries(hive_ekf
   ${catkin_LIBRARIES}
   ${EIGEN_LIBRARIES}
 )
