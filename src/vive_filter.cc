@@ -2,6 +2,7 @@
 #include <hive/vive_filter.h>
 
 #define STATE_SIZE 10
+#define NOISE_SIZE 6
 #define SENSORS_SIZE 5
 #define DT 0.01
 
@@ -318,6 +319,11 @@ Eigen::MatrixXd GetVerticalH(Eigen::Vector3d translation,
   return H;
 }
 
+Eigen::MatrixXd GetG(Eigen::Quaterniond rotation) {
+  Eigen::MatrixXd G = Eigen::MatrixXd(STATE_SIZE, NOISE_SIZE);
+  return G;
+}
+
 namespace filter {
   // Auxility matrix
   Eigen::MatrixXd GetOmega(Eigen::Quaterniond Q) {
@@ -468,7 +474,7 @@ bool ViveFilter::Update(const hive::ViveLight & msg) {
     sensors.push_back(sample.sensor);
   }
   // EKF update
-  Eigen::MatrixXd H, R, S, K, oldP, newP;
+  Eigen::MatrixXd H, R, K, oldP, newP;
   Eigen::VectorXd oldX = Eigen::VectorXd(STATE_SIZE), newX, Y;
   oldX.segment<3>(0) = position_;
   oldX.segment<3>(3) = velocity_;
@@ -478,7 +484,6 @@ bool ViveFilter::Update(const hive::ViveLight & msg) {
     rotation_.y(),
     rotation_.z());
   oldP = covariance_;
-  // std::cout << "sensors " << sensors.size() << std::endl;
   // Choose the model according to the orientation
   if (msg.axis == HORIZONTAL) {
     H = GetHorizontalH(position_, rotation_, photodiodes);
@@ -493,13 +498,14 @@ bool ViveFilter::Update(const hive::ViveLight & msg) {
       SENSORS_SIZE>(SENSORS_SIZE*VERTICAL,
       SENSORS_SIZE*VERTICAL), sensors);
   }
-  std::cout << "Z " << Z.transpose() << std::endl;
-  std::cout << "Y " << Y.transpose() << std::endl;
-  S = H * oldP * H.transpose() + R;
+  // std::cout << "Z " << Z.transpose() << std::endl;
+  // std::cout << "Y " << Y.transpose() << std::endl;
+  // S = H * oldP * H.transpose() + R;
   // std::cout << "S " << S << std::endl;
-  K = 1.0 * (oldP * H.transpose() * S.inverse());
-  std::cout << "K " << K << std::endl;
-  std::cout << "K*Y " << (K*Y).transpose() << std::endl;
+  // Kalman Gain
+  K = oldP * H.transpose() * (H * oldP * H.transpose() + R).inverse();
+  // std::cout << "K " << K << std::endl;
+  // std::cout << "K*Y " << (K*Y).transpose() << std::endl;
   newX = oldX + K * Y;
   // std::cout << "newX " << newX.transpose() << std::endl;
   newP = (Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE) - K * H) * oldP;
@@ -556,7 +562,7 @@ int main(int argc, char ** argv)
   for (size_t i = 0; i < 40; i++) {
     { // Inertial message
       Eigen::Vector3d linear_acceleration(0.0, 0.0, 0.0);
-      Eigen::Vector3d angular_velocity(0.0, 0.0, 0.0);
+      Eigen::Vector3d angular_velocity(0.0, 0.0, 1.0);
       model.Update(linear_acceleration, angular_velocity, DT);
     }
     { // Inertial update

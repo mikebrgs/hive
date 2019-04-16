@@ -101,6 +101,10 @@ struct Tracker {
   geometry_msgs::Vector3 acc_scale;
   geometry_msgs::Vector3 gyr_bias;
   geometry_msgs::Vector3 gyr_scale;
+  // Transform from the imu frame to the light frame (tracker)
+  geometry_msgs::Transform imu_transform;
+  // Transform from the head frame to the light frame (tracker)
+  geometry_msgs::Transform head_transform;
 };
 
 struct Motor {
@@ -136,6 +140,7 @@ struct Environment {
   Transform offset;  // Body calibration offset
   std::map<std::string, Transform> lighthouses;  // indexed by the serial
   std::map<std::string, Transform> bodies;  // indexed by the serial
+  geometry_msgs::Vector3 gravity; // registred gravity in calibration
 };
 
 // struct CalibrationData {

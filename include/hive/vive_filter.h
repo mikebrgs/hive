@@ -86,7 +86,7 @@ private:
   // Other elements
   std::vector<Lighthouse> lighthouses_;
   Environment environment_; // TODO include gravity in Environment
-  Tracker tracker_;
+  Tracker tracker_; // TODO Include head and light transforms in tracker
   bool correction_;
   // Temp
   Eigen::Vector3d gravity_;
