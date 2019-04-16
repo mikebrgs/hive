@@ -27,8 +27,11 @@
 #include <geometry_msgs/Vector3.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PointStamped.h>
+#include <sensor_msgs/Imu.h>
 
 // Messages
+#include <hive/ViveLight.h>
+#include <hive/ViveLightSample.h>
 #include <hive/ViveCalibration.h>
 #include <hive/ViveCalibrationLighthouseArray.h>
 #include <hive/ViveCalibrationTrackerArray.h>
@@ -278,17 +281,37 @@ void hCorrection(T const * position, T const * corrections, T * ang);
 template <typename T>
 void vCorrection(T const * position, T const * corrections, T * ang);
 
-// // Something to consider
-// template <class T>
-// class ViveModel {
-// public:
-//   ViveModel();
-//   ~ViveModel();
-//   T Alpha(T * pose);
-//   T * dAlpha(T * pose);
-//   T ** d2Alpha(T * pose);
-//   T * Imu(T * lin_acc, T * ang_vel);
-//   T * dImu(T * pose);
-// };
+class ViveModel
+{
+public:
+  ViveModel();
+
+  ViveModel(Eigen::Vector3d position,
+  Eigen::Quaterniond rotation);
+
+  ~ViveModel();
+  
+  void Update(Eigen::Vector3d linear_acceleration,
+    Eigen::Vector3d angular_velocity,
+    double dT);
+
+  void Update(double dT) ;
+  
+  sensor_msgs::Imu GetInertialMeasures();
+  
+  hive::ViveLight GetHorizontalLightMeasures();
+
+  hive::ViveLight GetVerticalLightMeasures();
+
+  void PrintState();
+
+private:
+  Tracker tracker_;
+  Eigen::Vector3d position_;
+  Eigen::Vector3d velocity_;
+  Eigen::Vector3d linear_acceleration_;
+  Eigen::Quaterniond rotation_;
+  Eigen::Vector3d angular_velocity_;
+};
 
 #endif  // VIVE_VIVE_H_

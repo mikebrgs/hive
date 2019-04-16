@@ -684,3 +684,166 @@ void vCorrection(T const * position, T const * corrections, T * ang) {
   *ang = atan(position[1]/position[2]);
   return;
 }
+
+namespace vive {
+  // Auxility matrix
+  Eigen::MatrixXd GetOmega(Eigen::Quaterniond Q) {
+    Eigen::Matrix<double, 4, 3> Omega;
+    Omega(0,0) = -Q.x();
+    Omega(0,1) = -Q.y();
+    Omega(0,2) = -Q.z();
+    Omega(1,0) = Q.w();
+    Omega(1,1) = -Q.z();
+    Omega(1,2) = Q.y();
+    Omega(2,0) = Q.z();
+    Omega(2,1) = Q.w();
+    Omega(2,2) = -Q.x();
+    Omega(3,0) = -Q.y();
+    Omega(3,1) = Q.x();
+    Omega(3,2) = Q.w();
+    return Omega;
+  }
+} // namespace vive
+
+ViveModel::ViveModel() : 
+  ViveModel(Eigen::Vector3d(0.0, 0.0, 1.0),
+    Eigen::Quaterniond(1.0, 0.0, 0.0, 0.0)) {}
+
+ViveModel::ViveModel(Eigen::Vector3d position,
+  Eigen::Quaterniond rotation) {
+  // Virtual tracker
+  tracker_.serial = "virtual";
+  geometry_msgs::Point sensor0;
+  sensor0.x = 0.1;
+  sensor0.y = 0.1;
+  sensor0.z = 0.0;
+  geometry_msgs::Point sensor1;
+  sensor1.x = -0.1;
+  sensor1.y = -0.1;
+  sensor1.z = 0.0;
+  geometry_msgs::Point sensor2;
+  sensor2.x = 0.1;
+  sensor2.y = -0.1;
+  sensor2.z = 0.0;
+  geometry_msgs::Point sensor3;
+  sensor3.x = -0.1;
+  sensor3.y = 0.1;
+  sensor3.z = 0.0;
+  geometry_msgs::Point sensor4;
+  sensor4.x = 0.0;
+  sensor4.y = 0.0;
+  sensor4.z = 0.1;
+  tracker_.sensors[0].position = sensor0;
+  tracker_.sensors[1].position = sensor1;
+  tracker_.sensors[2].position = sensor2;
+  tracker_.sensors[3].position = sensor3;
+  tracker_.sensors[4].position = sensor4;
+
+  position_ = position;
+  rotation_ = rotation;
+  // velocity_ = Eigen::Vector3d::Zero();
+  velocity_ = Eigen::Vector3d(0.0, 0.0, 1.0);
+  linear_acceleration_ = Eigen::Vector3d::Zero();
+  angular_velocity_ = Eigen::Vector3d::Zero();
+
+  return;
+}
+
+ViveModel::~ViveModel() {
+  // pass
+  return;
+}
+
+void ViveModel::Update(Eigen::Vector3d linear_acceleration,
+  Eigen::Vector3d angular_velocity,
+  double dT) {
+  // std::cout << position_.transpose() << std::endl;
+  // std::cout << rotation_.w() << " "
+  //   << rotation_.x() << " "
+  //   << rotation_.y() << " "
+  //   << rotation_.z() << std::endl;
+  linear_acceleration_ = linear_acceleration;
+  angular_velocity_ = angular_velocity;
+
+  position_ = position_ + dT * velocity_;
+  velocity_ = velocity_ + dT * rotation_.toRotationMatrix() * linear_acceleration_;
+  Eigen::Vector4d oldQ(rotation_.w(),
+    rotation_.x(),
+    rotation_.y(),
+    rotation_.z());
+  Eigen::Vector4d newQ = oldQ + dT * 0.5 * (vive::GetOmega(rotation_) * angular_velocity_);
+  rotation_ = Eigen::Quaterniond(newQ(0),
+    newQ(1),
+    newQ(2),
+    newQ(3)).normalized();
+  // std::cout << position_.transpose() << std::endl;
+  // std::cout << rotation_.w() << " "
+  //   << rotation_.x() << " "
+  //   << rotation_.y() << " "
+  //   << rotation_.z() << std::endl;
+  return;
+}
+
+sensor_msgs::Imu ViveModel::GetInertialMeasures() {
+  sensor_msgs::Imu msg;
+  msg.angular_velocity.x = angular_velocity_(0);
+  msg.angular_velocity.y = angular_velocity_(1);
+  msg.angular_velocity.z = angular_velocity_(2);
+  msg.linear_acceleration.x = linear_acceleration_(0);
+  msg.linear_acceleration.y = linear_acceleration_(1);
+  msg.linear_acceleration.z = linear_acceleration_(2);
+  return msg;
+}
+
+hive::ViveLight ViveModel::GetHorizontalLightMeasures() {
+  hive::ViveLight msg;
+  msg.lighthouse = "vive";
+  msg.axis = HORIZONTAL;
+  msg.header.frame_id = tracker_.serial;
+  for (auto sensor : tracker_.sensors) {
+    hive::ViveLightSample sample;
+    Eigen::Vector3d tPs(sensor.second.position.x,
+      sensor.second.position.y,
+      sensor.second.position.z);
+    sample.sensor = sensor.first;
+    Eigen::Vector3d lPs = rotation_.toRotationMatrix() * tPs + position_;
+    sample.angle = atan(lPs(0)/lPs(2));
+    msg.samples.push_back(sample);
+  }
+  return msg;
+}
+
+hive::ViveLight ViveModel::GetVerticalLightMeasures() {
+  hive::ViveLight msg;
+  msg.lighthouse = "vive";
+  msg.axis = VERTICAL;
+  msg.header.frame_id = tracker_.serial;
+  for (auto sensor : tracker_.sensors) {
+    hive::ViveLightSample sample;
+    Eigen::Vector3d tPs(sensor.second.position.x,
+      sensor.second.position.y,
+      sensor.second.position.z);
+    sample.sensor = sensor.first;
+    Eigen::Vector3d lPs = rotation_.toRotationMatrix() * tPs + position_;
+    sample.angle = atan(lPs(1)/lPs(2));
+    msg.samples.push_back(sample);
+  }
+  return msg;
+}
+
+void ViveModel::PrintState() {
+  std::cout << "Position: "
+    << position_(0) << ", "
+    << position_(1) << ", "
+    << position_(2) << std::endl;
+  std::cout << "Velocity: "
+    << velocity_(0) << ", "
+    << velocity_(1) << ", "
+    << velocity_(2) << std::endl;
+  std::cout << "Orientation: "
+    << rotation_.w() << ", "
+    << rotation_.x() << ", "
+    << rotation_.y() << ", "
+    << rotation_.z() << std::endl;
+  return;
+}

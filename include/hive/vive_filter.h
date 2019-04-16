@@ -47,8 +47,8 @@ public:
     Tracker & tracker,
     std::vector<Lighthouse> & lighthouses,
     Environment & environment,
-    double ** tu_covariance, // concatenated by row -- time update
-    double ** mu_covariance, // concatenated by row -- measurements
+    double ** model_covariance, // time update
+    double ** measure_covariance, // measurements
     bool correction);
   // Destructor
   ~ViveFilter();
@@ -58,6 +58,8 @@ public:
   void ProcessLight(const hive::ViveLight::ConstPtr& msg);
   // Get the current pose according to the solver
   bool GetTransform(geometry_msgs::TransformStamped& msg);
+  // Temporary
+  void PrintState();
 // private: // temporary
   // Internal method
   bool Predict(const sensor_msgs::Imu & msg);
