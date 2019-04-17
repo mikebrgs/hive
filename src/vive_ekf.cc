@@ -221,6 +221,7 @@ bool ViveEKF::Valid() {
 }
 
 bool ViveEKF::GetTransform(geometry_msgs::TransformStamped& msg) {
+  if (!valid_) return false;
   // Change to this to be in the light frame
   msg.transform.translation.x = position_(0);
   msg.transform.translation.y = position_(1);
@@ -903,8 +904,7 @@ void ViveEKF::PrintState() {
   return;
 }
 
-int main(int argc, char ** argv)
-{
+int main(int argc, char ** argv) {
   ROS_INFO("FILTERING");
 
   ViveEKF filter = ViveEKF();
