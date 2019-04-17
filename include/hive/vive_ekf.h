@@ -41,6 +41,7 @@ public:
     Environment & environment,
     double ** model_covariance, // time update
     double ** measure_covariance, // measurements
+    Solver * solver,
     bool correction);
   // Destructor
   ~ViveEKF();
@@ -57,6 +58,8 @@ public:
   bool Predict(const sensor_msgs::Imu & msg);
   // Internal method
   bool Update(const hive::ViveLight & msg);
+  // Validity
+  bool Valid();
 private:
   // State
   Eigen::Vector3d position_;

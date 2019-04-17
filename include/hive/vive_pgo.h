@@ -25,16 +25,33 @@
 #include <string>
 
 
-class PoseGraph {
+class PoseGraph : public Solver {
 public:
-  PoseGraph();
+  // Constructor
+  PoseGraph(size_t window);
+  // Destructor
   ~PoseGraph();
-  bool AddLight();
-  bool AddImu();
-  bool Solve();
+  // New light data
+  void ProcessLight(const sensor_msgs::Imu::ConstPtr& msg);
+  // New Imu data
+  void ProcessImu(const hive::ViveLight::ConstPtr& msg);
+  // Get the tracker's pose
+  bool GetTransform(geometry_msgs::TransformStamped& msg);
+  // Prinst stuff
+  void PrintState();
 private:
+  // Light data
   std::vector<hive::ViveLight> light_data_;
+  // Inertial data
   std::vector<sensor_msgs::> imu_data_;
+  // Calibrated environment
+  Environment environment_;
+  // Tracker
+  Tracker tracker_;
+  // Lighthouses specs
+  std::map<std::string, Lighthouse> lighthouses_;
+  // Correction
+  bool correction_;
 };
 
 #endif
