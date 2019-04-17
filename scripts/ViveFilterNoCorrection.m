@@ -1,5 +1,4 @@
-% MATLAB file
-syms vQt_w vQt_x vQt_y vQt_z vPt_x vPt_y vPt_z tPs_x tPs_y tPs_z tW_x tW_y tW_z tA_x tA_y tA_z vPl_x vPl_y vPl_z vRl_11 vRl_12 vRl_13 vRl_21 vRl_22 vRl_23 vRl_31 vRl_32 vRl_33
+syms vQt_w vQt_x vQt_y vQt_z vPt_x vPt_y vPt_z tlPs_x tlPs_y tlPs_z tW_x tW_y tW_z tA_x tA_y tA_z vPl_x vPl_y vPl_z vRl_11 vRl_12 vRl_13 vRl_21 vRl_22 vRl_23 vRl_31 vRl_32 vRl_33
 syms vG_x vG_y vG_z tB_x tB_y tB_z
 syms tRtl_11 tRtl_12 tRtl_13 tRtl_21 tRtl_22 tRtl_23 tRtl_31 tRtl_32 tRtl_33 tPtl_x tPtl_y tPtl_z
 
@@ -28,7 +27,7 @@ r33 = 1-(txx+tyy);
 
 vRt = [r11 r12 r13;r21 r22 r23; r31 r32 r33];
 vPt = [vPt_x;vPt_y;vPt_z];
-tlPs = [tPs_x;tPs_y;tPs_z];
+tlPs = [tlPs_x;tlPs_y;tlPs_z];
 vPl = [vPl_x;vPl_y;vPl_z];
 vRl = [vRl_11 vRl_12 vRl_13;vRl_21 vRl_22 vRl_23;vRl_31 vRl_32 vRl_33];
 
@@ -53,16 +52,16 @@ lPs = lRt * (tRtl * tlPs + tPtl) + lPt;
 
 % Check if vG or -vG
 disp('d dot(V) / dq')
-diff(vRt * tA + vG,vQt_w)
-diff(vRt * tA + vG,vQt_x)
-diff(vRt * tA + vG,vQt_y)
-diff(vRt * tA + vG,vQt_z)
+ccode(diff(vRt * tA + vG,vQt_w))
+ccode(diff(vRt * tA + vG,vQt_x))
+ccode(diff(vRt * tA + vG,vQt_y))
+ccode(diff(vRt * tA + vG,vQt_z))
 
 disp('d dot(Q) / dQ')
-diff(0.5 * Omega * (tW-tB),vQt_w)
-diff(0.5 * Omega * (tW-tB),vQt_x)
-diff(0.5 * Omega * (tW-tB),vQt_y)
-diff(0.5 * Omega * (tW-tB),vQt_z)
+ccode(diff(0.5 * Omega * (tW-tB),vQt_w))
+ccode(diff(0.5 * Omega * (tW-tB),vQt_x))
+ccode(diff(0.5 * Omega * (tW-tB),vQt_y))
+ccode(diff(0.5 * Omega * (tW-tB),vQt_z))
 
 alphaH = atan(lPs(1)/lPs(3));
 alphaV = atan(lPs(2)/lPs(3));
