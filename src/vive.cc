@@ -815,7 +815,7 @@ hive::ViveLight ViveModel::GetHorizontalLightMeasures() {
 
 hive::ViveLight ViveModel::GetVerticalLightMeasures() {
   hive::ViveLight msg;
-  msg.lighthouse = "vive";
+  msg.lighthouse = "lh1";
   msg.axis = VERTICAL;
   msg.header.frame_id = tracker_.serial;
   for (auto sensor : tracker_.sensors) {

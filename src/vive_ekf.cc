@@ -4,7 +4,7 @@
 #define STATE_SIZE 13
 #define NOISE_SIZE 9
 #define SENSORS_SIZE 5
-#define DT 0.01
+#define DT 0.005
 
 namespace ekf {
   Eigen::Vector3d ConvertMessage(geometry_msgs::Vector3 msg) {
@@ -75,12 +75,12 @@ ViveEKF::ViveEKF() {
   // Bias initialization
   bias_ = Eigen::Vector3d(0.0, 0.0, 0.0);
   // Model covariance
-  model_covariance_ = 1e1 * Eigen::MatrixXd::Identity(STATE_SIZE,STATE_SIZE);
+  model_covariance_ = 1e1 * Eigen::MatrixXd::Identity(NOISE_SIZE,NOISE_SIZE);
   // Measure covariance - assuming 3 sensors for now
-  measure_covariance_ = 1e-1 * Eigen::MatrixXd::Identity(2 * SENSORS_SIZE,
+  measure_covariance_ = 1e-4 * Eigen::MatrixXd::Identity(2 * SENSORS_SIZE,
     2 * SENSORS_SIZE);
   // Aux variables
-  covariance_ = model_covariance_;
+  covariance_ = 1e0 * Eigen::MatrixXd::Identity(STATE_SIZE,STATE_SIZE);
   // Virtual tracker
   tracker_.serial = "virtual";
   geometry_msgs::Point sensor0;
@@ -124,6 +124,24 @@ ViveEKF::ViveEKF() {
   tracker_.imu_transform.rotation.x = 0.0;
   tracker_.imu_transform.rotation.y = 0.0;
   tracker_.imu_transform.rotation.z = 0.0;
+  // Environment
+  Transform lh1;
+  lh1.translation.x = 0.0;
+  lh1.translation.y = 0.0;
+  lh1.translation.z = 0.0;
+  lh1.rotation.w = 1.0;
+  lh1.rotation.x = 0.0;
+  lh1.rotation.y = 0.0;
+  lh1.rotation.z = 0.0;
+  lh1.parent_frame = "vive";
+  lh1.child_frame = "lh1";
+  environment_.lighthouses["lh1"] = lh1;
+  // Gravity
+  environment_.gravity.x = 0.0;
+  environment_.gravity.y = 0.0;
+  environment_.gravity.z = 0.0;
+
+  valid_ = true;
   return;
 }
 
@@ -141,10 +159,11 @@ ViveEKF::ViveEKF(geometry_msgs::TransformStamped & pose,
   tracker_ = tracker;
   lighthouses_ = lighthouses;
   environment_ = environment;
+  valid_ = false;
   correction_ = correction;
-  model_covariance_ = Eigen::MatrixXd(STATE_SIZE, STATE_SIZE);
-  for (size_t i = 0; i < STATE_SIZE; i++) {
-    for (size_t j = 0; j < STATE_SIZE; j++) {
+  model_covariance_ = Eigen::MatrixXd(NOISE_SIZE, NOISE_SIZE);
+  for (size_t i = 0; i < model_covariance_.rows(); i++) {
+    for (size_t j = 0; j < model_covariance_.cols(); j++) {
       model_covariance_(i,j) = model_covariance[i][j];
     }
   }
@@ -155,6 +174,7 @@ ViveEKF::ViveEKF(geometry_msgs::TransformStamped & pose,
       measure_covariance_(i,j) = measure_covariance[i][j];
     }
   }
+  covariance_ = Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE);
   return;
 }
 
@@ -163,7 +183,7 @@ ViveEKF::~ViveEKF() {
 }
 
 void ViveEKF::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
-  if (msg == NULL) {
+  if (msg == NULL || !valid_) {
     return;
   }
   Predict(*msg);
@@ -172,9 +192,12 @@ void ViveEKF::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
 
 void ViveEKF::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   if (msg == NULL) {
-    return;
+    // Nothing happens
+  } else if (!valid_) {
+    // Call a solver
+  } else {
+    Update(*msg);
   }
-  Update(*msg);
   return;
 }
 
@@ -217,7 +240,7 @@ Eigen::MatrixXd GetF(Eigen::Quaterniond rotation,
   double tB_z = bias(2);
 
   // Set matrix
-  Eigen::Matrix<double, STATE_SIZE, STATE_SIZE> F;
+  Eigen::MatrixXd F(STATE_SIZE, STATE_SIZE);
   F.block<3,3>(0,0) = Eigen::Matrix3d::Zero();
   F.block<3,3>(0,3) = Eigen::Matrix3d::Identity();
   F.block<3,4>(0,6) = Eigen::MatrixXd::Zero(3,4);
@@ -282,7 +305,7 @@ Eigen::MatrixXd GetHorizontalH(Eigen::Vector3d translation,
   Transform lhTransform,
   Lighthouse lhSpecs,
   bool correction) {
-  Eigen::MatrixXd H = Eigen::MatrixXd(sensors.size(), STATE_SIZE);
+  Eigen::MatrixXd H(sensors.size(), STATE_SIZE);
   // Position of the tracker in the vive frame
   double vPt_x = translation(0);
   double vPt_y = translation(1);
@@ -466,20 +489,20 @@ Eigen::MatrixXd GetG(Eigen::Quaterniond rotation) {
 }
 
 // Vector that represents the evolution of the system is continuous time
-Eigen::MatrixXd GetDState(Eigen::Vector3d velocity,
+Eigen::VectorXd GetDState(Eigen::Vector3d velocity,
   Eigen::Quaterniond rotation,
   Eigen::Vector3d linear_acceleration,
   Eigen::Vector3d angular_velocity,
   Eigen::Vector3d gravity,
   Eigen::Vector3d bias) {
-  Eigen::VectorXd dotX = Eigen::VectorXd(STATE_SIZE);
+  Eigen::VectorXd dotX(STATE_SIZE);
   // Position
   dotX.segment<3>(0) = velocity;
   // Velocity - assumed constant
   dotX.segment<3>(3) = rotation.toRotationMatrix() * linear_acceleration + gravity;
   // Orientation
   Eigen::MatrixXd Omega = ekf::GetOmega(rotation);
-  dotX.segment<4>(6) = 0.5 * (Omega * angular_velocity - bias);
+  dotX.segment<4>(6) = 0.5 * (Omega * (angular_velocity - bias));
   dotX.segment<3>(10) = Eigen::VectorXd::Zero(3);
   return dotX;
 }
@@ -588,21 +611,22 @@ bool ViveEKF::Predict(const sensor_msgs::Imu & msg) {
   double dT = DT;//(msg.header.stamp - time_).toSec();
 
   // Derivative of the state in time
-  Eigen::MatrixXd dState = GetDState(velocity_,
+  Eigen::VectorXd dState = GetDState(velocity_,
     rotation_,
     linear_acceleration,
     angular_velocity,
     gravity,
     bias_);
   // Old state
-  Eigen::Matrix<double, STATE_SIZE, 1> oldX;
-  oldX.block<3,1>(0,0) = position_;
-  oldX.block<3,1>(3,0) = velocity_;
-  oldX.block<4,1>(6,0) = Eigen::Vector4d(
+  Eigen::VectorXd oldX(STATE_SIZE);
+  oldX.segment<3>(0) = position_;
+  oldX.segment<3>(3) = velocity_;
+  oldX.segment<4>(6) = Eigen::Vector4d(
     rotation_.w(),
     rotation_.x(),
     rotation_.y(),
     rotation_.z());
+  oldX.segment<3>(10) = bias_;
 
   // Covariance update
   Eigen::MatrixXd oldP = covariance_;
@@ -614,18 +638,18 @@ bool ViveEKF::Predict(const sensor_msgs::Imu & msg) {
   Eigen::MatrixXd Q = model_covariance_;
   Eigen::MatrixXd I = Eigen::MatrixXd::Identity(STATE_SIZE,
     STATE_SIZE);
-  // std::cout << "F: " << F << std::endl;
-  // std::cout << "Q: " << Q << std::endl;
-  // std::cout << "oldP: " << oldP << std::endl;
+
   Eigen::MatrixXd newP = (I + dT * F) *
-  oldP * (I + dT * F).transpose() + dT * dT * G * Q * G.transpose();
+    oldP * (I + dT * F).transpose() + (dT * dT) * (G * Q * G.transpose()) + 1.0 * I;
+    // This term increases the uncertainty
 
   // New state
-  Eigen::MatrixXd newX = oldX + dT * dState;
-  position_ = newX.block<3,1>(0,0);
-  velocity_ = newX.block<3,1>(3,0);
+  Eigen::VectorXd newX = oldX + dT * dState;
+  position_ = newX.segment<3>(0);
+  velocity_ = newX.segment<3>(3);
   rotation_ = Eigen::Quaterniond(newX(6), newX(7), newX(8),
     newX(9)).normalized();
+  bias_ = newX.segment<3>(10);
   covariance_ = newP;
   time_ = msg.header.stamp;
   return true;
@@ -659,6 +683,7 @@ bool ViveEKF::Update(const hive::ViveLight & msg) {
     rotation_.x(),
     rotation_.y(),
     rotation_.z());
+  oldX.segment<3>(10) = bias_;
   oldP = covariance_;
 
   // Choose the model according to the orientation
@@ -675,6 +700,9 @@ bool ViveEKF::Update(const hive::ViveLight & msg) {
     R = SliceR(measure_covariance_.block<SENSORS_SIZE,
       SENSORS_SIZE>(SENSORS_SIZE*HORIZONTAL,
       SENSORS_SIZE*HORIZONTAL), sensors);
+    // std::cout << "HORIZONTAL" << std::endl;
+    // std::cout << "Z: " << Z.transpose() << std::endl;
+    // std::cout << "Y: " << Y.transpose() << std::endl;
   } else {
     // Derivative of measurement model
     H = GetVerticalH(position_, rotation_, sensors,
@@ -688,12 +716,19 @@ bool ViveEKF::Update(const hive::ViveLight & msg) {
     R = SliceR(measure_covariance_.block<SENSORS_SIZE,
       SENSORS_SIZE>(SENSORS_SIZE*VERTICAL,
       SENSORS_SIZE*VERTICAL), sensors);
+    // std::cout << "VERTICAL" << std::endl;
+    // std::cout << "Z: " << Z.transpose() << std::endl;
+    // std::cout << "Y: " << Y.transpose() << std::endl;
   }
 
   // Kalman Gain
   K = oldP * H.transpose() * (H * oldP * H.transpose() + R).inverse();
   newX = oldX + K * Y;
   newP = (Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE) - K * H) * oldP;
+  // std::cout << "K: " << K << std::endl;
+  // std::cout << "oldP: " << oldP << std::endl;
+  // std::cout << "H: " << H << std::endl;
+  // std::cout << "R: " << R << std::endl;
 
   // Save new state
   position_ = newX.segment<3>(0);
@@ -702,6 +737,7 @@ bool ViveEKF::Update(const hive::ViveLight & msg) {
     newX(7),
     newX(8),
     newX(9)).normalized();
+  bias_ = newX.segment<3>(10);
   covariance_ = newP;
   time_ = msg.header.stamp;
 
@@ -727,7 +763,10 @@ void ViveEKF::PrintState() {
     << bias_(1) << ", "
     << bias_(2) << std::endl;
   std::cout << "Covariance: "
-    << covariance_ << std::endl;
+    << covariance_.block<3,3>(0,0).trace() << ", "
+    << covariance_.block<3,3>(3,3).trace() << ", "
+    << covariance_.block<4,4>(6,6).trace() << ", "
+    << covariance_.block<3,3>(10,10).trace() << std::endl;
   return;
 }
 
@@ -737,47 +776,42 @@ int main(int argc, char ** argv)
 
   ViveEKF filter = ViveEKF();
   ViveModel model = ViveModel();
-  // Eigen::Vector3d linear_acceleration(0.0, 0.0, 0.0);
-  // Eigen::Vector3d angular_velocity(0.0, 0.0, 0.0);
-  // model.Update(linear_acceleration, angular_velocity, 0.1);
-  // return 0;
   std::cout << "***MODEL***" << std::endl;
   model.PrintState();
   std::cout << "***FILTER***" << std::endl;
   filter.PrintState();
-  for (size_t i = 0; i < 40; i++) {
+
+  for (size_t i = 0; i < 80; i++) {
     { // Inertial message
       Eigen::Vector3d linear_acceleration(0.0, 0.0, 0.0);
       Eigen::Vector3d angular_velocity(0.0, 0.0, 1.0);
       model.Update(linear_acceleration, angular_velocity, DT);
     }
+
+      std::cout << "MODEL" << std::endl;
+      model.PrintState();
     { // Inertial update
-      std::cout << "INERTIAL" << std::endl;
-      Eigen::Vector3d linear_acceleration(0.0, 0.0, 0.0);
-      Eigen::Vector3d angular_velocity(0.0, 0.0, 0.0);
       sensor_msgs::Imu msg;
       msg = model.GetInertialMeasures();
+      std::cout << "INERTIAL FILTER" << std::endl;
       // Prediction based on inertial data
       filter.Predict(msg);
-      std::cout << "***MODEL***" << std::endl;
-      model.PrintState();
-      std::cout << "***FILTER***" << std::endl;
       filter.PrintState();
     }
+
     { // Light update
-      std::cout << "LIGHT" << std::endl;
       hive::ViveLight msg;
-      if (i % 2 == 0)
+      if (i % 2 == 0) {
         msg = model.GetHorizontalLightMeasures();
-      else
+      } else {
         msg = model.GetVerticalLightMeasures();
-      // Prediction based on inertial data
+      }
+      std::cout << "LIGHT FILTER" << std::endl;
+      // Prediction based on light data
       filter.Update(msg);
-      std::cout << "***MODEL***" << std::endl;
-      model.PrintState();
-      std::cout << "***FILTER***" << std::endl;
       filter.PrintState();
     }
+    std::cout << std::endl;
   }
   return 0;
 }
