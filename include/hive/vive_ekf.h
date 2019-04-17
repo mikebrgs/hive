@@ -85,6 +85,8 @@ private:
   bool correction_;
   // Validity of current state
   bool valid_;
+  // Optimizing solver
+  Solver * solver_;
 };
 
 #endif  // HIVE_VIVE_EKF_H_

@@ -143,13 +143,6 @@ struct Environment {
   geometry_msgs::Vector3 gravity; // registred gravity in calibration
 };
 
-// struct CalibrationData {
-//   std::map<std::string, Tracker> trackers;
-//   std::map<std::string, Lighthouse> lighthouses;
-//   LightSpecs light_specs;
-//   Environment environment;
-// };
-
 struct Light {
   int sensor_id;
   double timecode;
