@@ -11,6 +11,10 @@ namespace ekf {
     return Eigen::Vector3d(msg.x, msg.y, msg.z);
   }
 
+  Eigen::Vector3d ConvertMessage(geometry_msgs::Point msg) {
+    return Eigen::Vector3d(msg.x, msg.y, msg.z);
+  }
+
   Eigen::Quaterniond ConvertMessage(geometry_msgs::Quaternion msg) {
     return Eigen::Quaterniond(msg.w, msg.x, msg.y, msg.z);
   }
@@ -70,8 +74,6 @@ ViveEKF::ViveEKF() {
   rotation_ = Eigen::Quaterniond(1.0, 0.0, 0.0, 0.0);
   // Bias initialization
   bias_ = Eigen::Vector3d(0.0, 0.0, 0.0);
-  // Gravity
-  gravity_ = Eigen::Vector3d(0.0, 0.0, -9.8);
   // Model covariance
   model_covariance_ = 1e1 * Eigen::MatrixXd::Identity(STATE_SIZE,STATE_SIZE);
   // Measure covariance - assuming 3 sensors for now
@@ -127,18 +129,13 @@ ViveEKF::ViveEKF() {
 
 ViveEKF::ViveEKF(geometry_msgs::TransformStamped & pose,
   Tracker & tracker,
-  std::vector<Lighthouse> & lighthouses,
+  std::map<std::string, Lighthouse> & lighthouses,
   Environment & environment,
   double ** model_covariance, // time update
   double ** measure_covariance, // measurements
   bool correction) {
-  position_ = Eigen::Vector3d(pose.transform.translation.x,
-    pose.transform.translation.y,
-    pose.transform.translation.z);
-  rotation_ = Eigen::Quaterniond(pose.transform.rotation.w,
-    pose.transform.rotation.x,
-    pose.transform.rotation.y,
-    pose.transform.rotation.z);
+  position_ = ekf::ConvertMessage(pose.transform.translation);
+  rotation_ = ekf::ConvertMessage(pose.transform.rotation);
   velocity_ = Eigen::Vector3d::Zero();
   bias_ = Eigen::Vector3d::Zero();
   tracker_ = tracker;
@@ -182,6 +179,7 @@ void ViveEKF::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
 }
 
 bool ViveEKF::GetTransform(geometry_msgs::TransformStamped& msg) {
+  // Change to this to be in the light frame
   msg.transform.translation.x = position_(0);
   msg.transform.translation.y = position_(1);
   msg.transform.translation.z = position_(2);
@@ -279,40 +277,86 @@ Eigen::MatrixXd GetF(Eigen::Quaterniond rotation,
 // Derivative of the measurement model - Horizontal measures
 Eigen::MatrixXd GetHorizontalH(Eigen::Vector3d translation,
   Eigen::Quaterniond rotation,
-  std::vector<Eigen::Vector3d> photodiodes) {
-  Eigen::MatrixXd H = Eigen::MatrixXd(photodiodes.size(), STATE_SIZE);
-  // Convert to shorter notation
-  double Px = translation(0),
-    Py = translation(1),
-    Pz = translation(2);
-  double qw = rotation.w(),
-    qx = rotation.x(),
-    qy = rotation.y(),
-    qz = rotation.z();
+  std::vector<int> sensors,
+  Tracker tracker,
+  Transform lhTransform,
+  Lighthouse lhSpecs,
+  bool correction) {
+  Eigen::MatrixXd H = Eigen::MatrixXd(sensors.size(), STATE_SIZE);
+  // Position of the tracker in the vive frame
+  double vPt_x = translation(0);
+  double vPt_y = translation(1);
+  double vPt_z = translation(2);
+  // Orientation of the tracker in the vive frame
+  double vQt_w = rotation.w();
+  double vQt_x = rotation.x();
+  double vQt_y = rotation.y();
+  double vQt_z = rotation.z();
+  // Get transform from light frame to imu frame
+  Eigen::Vector3d light_P_imu = ekf::ConvertMessage(
+    tracker.imu_transform.translation);
+  Eigen::Quaterniond light_Q_imu = ekf::ConvertMessage(
+    tracker.imu_transform.rotation);
+  Eigen::Vector3d imu_P_light =
+    - light_Q_imu.toRotationMatrix().transpose() * light_P_imu;
+  Eigen::Matrix3d imu_R_light = light_Q_imu.toRotationMatrix().transpose();
+  // Position of the tracker's light frame in the IMU frame (default)
+  double tPtl_x = imu_P_light(0);
+  double tPtl_y = imu_P_light(1);
+  double tPtl_z = imu_P_light(2);
+  // Orientation of the tracker's light frame in the IMU frame (default)
+  double tRtl_11 = imu_R_light(0,0);
+  double tRtl_12 = imu_R_light(0,1);
+  double tRtl_13 = imu_R_light(0,2);
+  double tRtl_21 = imu_R_light(1,0);
+  double tRtl_22 = imu_R_light(1,1);
+  double tRtl_23 = imu_R_light(1,2);
+  double tRtl_31 = imu_R_light(2,0);
+  double tRtl_32 = imu_R_light(2,1);
+  double tRtl_33 = imu_R_light(2,2);
+  // Convert lighthouse orientation
+  Eigen::Matrix3d vRl = ekf::ConvertMessage(
+    lhTransform.rotation).toRotationMatrix();
+  // Position of the lighthouse in vive
+  double vPl_x = lhTransform.translation.x;
+  double vPl_y = lhTransform.translation.y;
+  double vPl_z = lhTransform.translation.z;
+  // Orientation of the lighthouse in vive
+  double vRl_11 = vRl(0,0);
+  double vRl_12 = vRl(0,1);
+  double vRl_13 = vRl(0,2);
+  double vRl_21 = vRl(1,0);
+  double vRl_22 = vRl(1,1);
+  double vRl_23 = vRl(1,2);
+  double vRl_31 = vRl(2,0);
+  double vRl_32 = vRl(2,1);
+  double vRl_33 = vRl(2,2);
+
   size_t row = 0;
   // Iterate over all photodiodes
-  for (auto photodiode : photodiodes) {
-    double ppx = photodiode(0),
-      ppy = photodiode(1),
-      ppz = photodiode(2);
+  for (auto sensor : sensors) {
+    // Position of the photodiode in the tracker's light frame
+    double tlPs_x = tracker.sensors[sensor].position.x;
+    double tlPs_y = tracker.sensors[sensor].position.y;
+    double tlPs_z = tracker.sensors[sensor].position.z;
     // d alpha / d Px
-    H(row, 0) = 1.0/((pow(Px-ppx*((qy*qy)*2.0+(qz*qz)*2.0-1.0)-ppy*(qw*qz*2.0-qx*qy*2.0)+ppz*(qw*qy*2.0+qx*qz*2.0),2.0)*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0)+1.0)*(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0)));
+    H(row, 0) = -(vRl_11/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-vRl_13*(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // d alpha / d Py
-    H(row, 1) = 0.0;
+    H(row, 1) = -(vRl_21/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-vRl_23*(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // d alpha / d Pz
-    H(row, 2) = -((Px-ppx*((qy*qy)*2.0+(qz*qz)*2.0-1.0)-ppy*(qw*qz*2.0-qx*qy*2.0)+ppz*(qw*qy*2.0+qx*qz*2.0))*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0))/(pow(Px-ppx*((qy*qy)*2.0+(qz*qz)*2.0-1.0)-ppy*(qw*qz*2.0-qx*qy*2.0)+ppz*(qw*qy*2.0+qx*qz*2.0),2.0)*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0)+1.0);
+    H(row, 2) = -(vRl_31/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-vRl_33*(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // d alpha / d V
     H(row, 3) = 0.0;
     H(row, 4) = 0.0;
     H(row, 5) = 0.0;
     // d alpha / d Qw
-    H(row, 6) = ((ppz*qy*2.0-ppy*qz*2.0)/(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0))-(ppy*qx*2.0-ppx*qy*2.0)*(Px-ppx*((qy*qy)*2.0+(qz*qz)*2.0-1.0)-ppy*(qw*qz*2.0-qx*qy*2.0)+ppz*(qw*qy*2.0+qx*qz*2.0))*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0))/(pow(Px-ppx*((qy*qy)*2.0+(qz*qz)*2.0-1.0)-ppy*(qw*qz*2.0-qx*qy*2.0)+ppz*(qw*qy*2.0+qx*qz*2.0),2.0)*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0)+1.0);
+    H(row, 6) = -(((vQt_z*vRl_21*2.0-vQt_y*vRl_31*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)-(vQt_z*vRl_11*2.0-vQt_x*vRl_31*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vQt_y*vRl_11*2.0-vQt_x*vRl_21*2.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-((vQt_z*vRl_23*2.0-vQt_y*vRl_33*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)-(vQt_z*vRl_13*2.0-vQt_x*vRl_33*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vQt_y*vRl_13*2.0-vQt_x*vRl_23*2.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // d alpha / d Qx
-    H(row, 7) = ((ppy*qy*2.0+ppz*qz*2.0)/(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0))-(ppy*qw*2.0-ppz*qx*4.0+ppx*qz*2.0)*(Px-ppx*((qy*qy)*2.0+(qz*qz)*2.0-1.0)-ppy*(qw*qz*2.0-qx*qy*2.0)+ppz*(qw*qy*2.0+qx*qz*2.0))*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0))/(pow(Px-ppx*((qy*qy)*2.0+(qz*qz)*2.0-1.0)-ppy*(qw*qz*2.0-qx*qy*2.0)+ppz*(qw*qy*2.0+qx*qz*2.0),2.0)*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0)+1.0);
+    H(row, 7) = -(((vQt_y*vRl_21*2.0+vQt_z*vRl_31*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vQt_y*vRl_11*2.0-vQt_x*vRl_21*4.0+vQt_w*vRl_31*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)-(vQt_z*vRl_11*-2.0+vQt_w*vRl_21*2.0+vQt_x*vRl_31*4.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-((vQt_y*vRl_23*2.0+vQt_z*vRl_33*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vQt_y*vRl_13*2.0-vQt_x*vRl_23*4.0+vQt_w*vRl_33*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)-(vQt_z*vRl_13*-2.0+vQt_w*vRl_23*2.0+vQt_x*vRl_33*4.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // d alpha / d Qy
-    H(row, 8) = ((ppz*qw*2.0+ppy*qx*2.0-ppx*qy*4.0)/(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0))+(ppx*qw*2.0+ppz*qy*4.0-ppy*qz*2.0)*(Px-ppx*((qy*qy)*2.0+(qz*qz)*2.0-1.0)-ppy*(qw*qz*2.0-qx*qy*2.0)+ppz*(qw*qy*2.0+qx*qz*2.0))*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0))/(pow(Px-ppx*((qy*qy)*2.0+(qz*qz)*2.0-1.0)-ppy*(qw*qz*2.0-qx*qy*2.0)+ppz*(qw*qy*2.0+qx*qz*2.0),2.0)*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0)+1.0);
+    H(row, 8) = -(((vQt_x*vRl_11*2.0+vQt_z*vRl_31*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)-(vQt_y*vRl_11*4.0-vQt_x*vRl_21*2.0+vQt_w*vRl_31*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vQt_w*vRl_11*2.0+vQt_z*vRl_21*2.0-vQt_y*vRl_31*4.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-((vQt_x*vRl_13*2.0+vQt_z*vRl_33*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)-(vQt_y*vRl_13*4.0-vQt_x*vRl_23*2.0+vQt_w*vRl_33*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vQt_w*vRl_13*2.0+vQt_z*vRl_23*2.0-vQt_y*vRl_33*4.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // d alpha / d Qz
-    H(row, 9) = -((ppy*qw*2.0-ppz*qx*2.0+ppx*qz*4.0)/(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0))+(ppx*qx*2.0+ppy*qy*2.0)*(Px-ppx*((qy*qy)*2.0+(qz*qz)*2.0-1.0)-ppy*(qw*qz*2.0-qx*qy*2.0)+ppz*(qw*qy*2.0+qx*qz*2.0))*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0))/(pow(Px-ppx*((qy*qy)*2.0+(qz*qz)*2.0-1.0)-ppy*(qw*qz*2.0-qx*qy*2.0)+ppz*(qw*qy*2.0+qx*qz*2.0),2.0)*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0)+1.0);
+    H(row, 9) = -(((vQt_x*vRl_11*2.0+vQt_y*vRl_21*2.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z)+(vQt_z*vRl_11*-4.0+vQt_w*vRl_21*2.0+vQt_x*vRl_31*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)-(vQt_w*vRl_11*2.0+vQt_z*vRl_21*4.0-vQt_y*vRl_31*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z))/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-((vQt_x*vRl_13*2.0+vQt_y*vRl_23*2.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z)+(vQt_z*vRl_13*-4.0+vQt_w*vRl_23*2.0+vQt_x*vRl_33*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)-(vQt_w*vRl_13*2.0+vQt_z*vRl_23*4.0-vQt_y*vRl_33*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z))*(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_11+vPl_y*vRl_21+vPl_z*vRl_31-vPt_x*vRl_11-vPt_y*vRl_21-vPt_z*vRl_31+(vRl_11*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_21*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_31*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_21*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_11*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_31*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_31*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_11*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_21*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // row
     row++;
   }
@@ -322,38 +366,86 @@ Eigen::MatrixXd GetHorizontalH(Eigen::Vector3d translation,
 // Derivative of the measurement model - Vertical measures
 Eigen::MatrixXd GetVerticalH(Eigen::Vector3d translation,
   Eigen::Quaterniond rotation,
-  std::vector<Eigen::Vector3d> photodiodes) {
-  Eigen::MatrixXd H = Eigen::MatrixXd(photodiodes.size(), STATE_SIZE);
-  double Px = translation(0),
-    Py = translation(1),
-    Pz = translation(2);
-  double qw = rotation.w(),
-    qx = rotation.x(),
-    qy = rotation.y(),
-    qz = rotation.z();
+  std::vector<int> sensors,
+  Tracker tracker,
+  Transform lhTransform,
+  Lighthouse lhSpecs,
+  bool correction) {
+  Eigen::MatrixXd H = Eigen::MatrixXd(sensors.size(), STATE_SIZE);
+  // Position of the tracker in the vive frame
+  double vPt_x = translation(0);
+  double vPt_y = translation(1);
+  double vPt_z = translation(2);
+  // Orientation of the tracker in the vive frame
+  double vQt_w = rotation.w();
+  double vQt_x = rotation.x();
+  double vQt_y = rotation.y();
+  double vQt_z = rotation.z();
+  // Get transform from light frame to imu frame
+  Eigen::Vector3d light_P_imu = ekf::ConvertMessage(
+    tracker.imu_transform.translation);
+  Eigen::Quaterniond light_Q_imu = ekf::ConvertMessage(
+    tracker.imu_transform.rotation);
+  Eigen::Vector3d imu_P_light =
+    - light_Q_imu.toRotationMatrix().transpose() * light_P_imu;
+  Eigen::Matrix3d imu_R_light = light_Q_imu.toRotationMatrix().transpose();
+  // Position of the tracker's light frame in the IMU frame (default)
+  double tPtl_x = imu_P_light(0);
+  double tPtl_y = imu_P_light(1);
+  double tPtl_z = imu_P_light(2);
+  // Orientation of the tracker's light frame in the IMU frame (default)
+  double tRtl_11 = imu_R_light(0,0);
+  double tRtl_12 = imu_R_light(0,1);
+  double tRtl_13 = imu_R_light(0,2);
+  double tRtl_21 = imu_R_light(1,0);
+  double tRtl_22 = imu_R_light(1,1);
+  double tRtl_23 = imu_R_light(1,2);
+  double tRtl_31 = imu_R_light(2,0);
+  double tRtl_32 = imu_R_light(2,1);
+  double tRtl_33 = imu_R_light(2,2);
+  // Convert lighthouse orientation
+  Eigen::Matrix3d vRl = ekf::ConvertMessage(
+    lhTransform.rotation).toRotationMatrix();
+  // Position of the lighthouse in vive
+  double vPl_x = lhTransform.translation.x;
+  double vPl_y = lhTransform.translation.y;
+  double vPl_z = lhTransform.translation.z;
+  // Orientation of the lighthouse in vive
+  double vRl_11 = vRl(0,0);
+  double vRl_12 = vRl(0,1);
+  double vRl_13 = vRl(0,2);
+  double vRl_21 = vRl(1,0);
+  double vRl_22 = vRl(1,1);
+  double vRl_23 = vRl(1,2);
+  double vRl_31 = vRl(2,0);
+  double vRl_32 = vRl(2,1);
+  double vRl_33 = vRl(2,2);
+
   size_t row = 0;
-  for (auto photodiode : photodiodes) {
-    double ppx = photodiode(0),
-      ppy = photodiode(1),
-      ppz = photodiode(2);
+  // Iterate over all photodiodes
+  for (auto sensor : sensors) {
+    // Position of the photodiode in the tracker's light frame
+    double tlPs_x = tracker.sensors[sensor].position.x;
+    double tlPs_y = tracker.sensors[sensor].position.y;
+    double tlPs_z = tracker.sensors[sensor].position.z;
     // d alpha / d Px
-    H(row, 0) = 0.0;
+    H(row, 0) = -(vRl_12/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-vRl_13*(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // d alpha / d Py
-    H(row, 1) = 1.0/((pow(Py-ppy*((qx*qx)*2.0+(qz*qz)*2.0-1.0)+ppx*(qw*qz*2.0+qx*qy*2.0)-ppz*(qw*qx*2.0-qy*qz*2.0),2.0)*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0)+1.0)*(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0)));
+    H(row, 1) = -(vRl_22/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-vRl_23*(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // d alpha / d Pz
-    H(row, 2) = -((Py-ppy*((qx*qx)*2.0+(qz*qz)*2.0-1.0)+ppx*(qw*qz*2.0+qx*qy*2.0)-ppz*(qw*qx*2.0-qy*qz*2.0))*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0))/(pow(Py-ppy*((qx*qx)*2.0+(qz*qz)*2.0-1.0)+ppx*(qw*qz*2.0+qx*qy*2.0)-ppz*(qw*qx*2.0-qy*qz*2.0),2.0)*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0)+1.0);
+    H(row, 2) = -(vRl_32/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-vRl_33*(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // d alpha / d V
     H(row, 3) = 0.0;
     H(row, 4) = 0.0;
     H(row, 5) = 0.0;
     // d alpha / d Qw
-    H(row, 6) = -((ppz*qx*2.0-ppx*qz*2.0)/(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0))+(ppy*qx*2.0-ppx*qy*2.0)*(Py-ppy*((qx*qx)*2.0+(qz*qz)*2.0-1.0)+ppx*(qw*qz*2.0+qx*qy*2.0)-ppz*(qw*qx*2.0-qy*qz*2.0))*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0))/(pow(Py-ppy*((qx*qx)*2.0+(qz*qz)*2.0-1.0)+ppx*(qw*qz*2.0+qx*qy*2.0)-ppz*(qw*qx*2.0-qy*qz*2.0),2.0)*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0)+1.0);
+    H(row, 6) = -(((vQt_z*vRl_22*2.0-vQt_y*vRl_32*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)-(vQt_z*vRl_12*2.0-vQt_x*vRl_32*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vQt_y*vRl_12*2.0-vQt_x*vRl_22*2.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-((vQt_z*vRl_23*2.0-vQt_y*vRl_33*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)-(vQt_z*vRl_13*2.0-vQt_x*vRl_33*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vQt_y*vRl_13*2.0-vQt_x*vRl_23*2.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // d alpha / d Qx
-    H(row, 7) = -((ppz*qw*2.0+ppy*qx*4.0-ppx*qy*2.0)/(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0))+(ppy*qw*2.0-ppz*qx*4.0+ppx*qz*2.0)*(Py-ppy*((qx*qx)*2.0+(qz*qz)*2.0-1.0)+ppx*(qw*qz*2.0+qx*qy*2.0)-ppz*(qw*qx*2.0-qy*qz*2.0))*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0))/(pow(Py-ppy*((qx*qx)*2.0+(qz*qz)*2.0-1.0)+ppx*(qw*qz*2.0+qx*qy*2.0)-ppz*(qw*qx*2.0-qy*qz*2.0),2.0)*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0)+1.0);
+    H(row, 7) = -(((vQt_y*vRl_22*2.0+vQt_z*vRl_32*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vQt_y*vRl_12*2.0-vQt_x*vRl_22*4.0+vQt_w*vRl_32*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)-(vQt_z*vRl_12*-2.0+vQt_w*vRl_22*2.0+vQt_x*vRl_32*4.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-((vQt_y*vRl_23*2.0+vQt_z*vRl_33*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vQt_y*vRl_13*2.0-vQt_x*vRl_23*4.0+vQt_w*vRl_33*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)-(vQt_z*vRl_13*-2.0+vQt_w*vRl_23*2.0+vQt_x*vRl_33*4.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // d alpha / d Qy
-    H(row, 8) = ((ppx*qx*2.0+ppz*qz*2.0)/(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0))+(ppx*qw*2.0+ppz*qy*4.0-ppy*qz*2.0)*(Py-ppy*((qx*qx)*2.0+(qz*qz)*2.0-1.0)+ppx*(qw*qz*2.0+qx*qy*2.0)-ppz*(qw*qx*2.0-qy*qz*2.0))*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0))/(pow(Py-ppy*((qx*qx)*2.0+(qz*qz)*2.0-1.0)+ppx*(qw*qz*2.0+qx*qy*2.0)-ppz*(qw*qx*2.0-qy*qz*2.0),2.0)*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0)+1.0);
+    H(row, 8) = -(((vQt_x*vRl_12*2.0+vQt_z*vRl_32*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)-(vQt_y*vRl_12*4.0-vQt_x*vRl_22*2.0+vQt_w*vRl_32*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vQt_w*vRl_12*2.0+vQt_z*vRl_22*2.0-vQt_y*vRl_32*4.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-((vQt_x*vRl_13*2.0+vQt_z*vRl_33*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)-(vQt_y*vRl_13*4.0-vQt_x*vRl_23*2.0+vQt_w*vRl_33*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vQt_w*vRl_13*2.0+vQt_z*vRl_23*2.0-vQt_y*vRl_33*4.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // d alpha / d Qz
-    H(row, 9) = ((ppx*qw*2.0+ppz*qy*2.0-ppy*qz*4.0)/(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0))-(ppx*qx*2.0+ppy*qy*2.0)*(Py-ppy*((qx*qx)*2.0+(qz*qz)*2.0-1.0)+ppx*(qw*qz*2.0+qx*qy*2.0)-ppz*(qw*qx*2.0-qy*qz*2.0))*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0))/(pow(Py-ppy*((qx*qx)*2.0+(qz*qz)*2.0-1.0)+ppx*(qw*qz*2.0+qx*qy*2.0)-ppz*(qw*qx*2.0-qy*qz*2.0),2.0)*1.0/pow(Pz-ppz*((qx*qx)*2.0+(qy*qy)*2.0-1.0)-ppx*(qw*qy*2.0-qx*qz*2.0)+ppy*(qw*qx*2.0+qy*qz*2.0),2.0)+1.0);
+    H(row, 9) = -(((vQt_x*vRl_12*2.0+vQt_y*vRl_22*2.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z)+(vQt_z*vRl_12*-4.0+vQt_w*vRl_22*2.0+vQt_x*vRl_32*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)-(vQt_w*vRl_12*2.0+vQt_z*vRl_22*4.0-vQt_y*vRl_32*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z))/(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))-((vQt_x*vRl_13*2.0+vQt_y*vRl_23*2.0)*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z)+(vQt_z*vRl_13*-4.0+vQt_w*vRl_23*2.0+vQt_x*vRl_33*2.0)*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)-(vQt_w*vRl_13*2.0+vQt_z*vRl_23*4.0-vQt_y*vRl_33*2.0)*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z))*(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z))*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0))/(pow(vPl_x*vRl_12+vPl_y*vRl_22+vPl_z*vRl_32-vPt_x*vRl_12-vPt_y*vRl_22-vPt_z*vRl_32+(vRl_12*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_22*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_32*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_22*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_12*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_32*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_32*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_12*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_22*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)*1.0/pow(vPl_x*vRl_13+vPl_y*vRl_23+vPl_z*vRl_33-vPt_x*vRl_13-vPt_y*vRl_23-vPt_z*vRl_33+(vRl_13*((vQt_y*vQt_y)*2.0+(vQt_z*vQt_z)*2.0-1.0)-vRl_23*(vQt_w*vQt_z*2.0+vQt_x*vQt_y*2.0)+vRl_33*(vQt_w*vQt_y*2.0-vQt_x*vQt_z*2.0))*(tPtl_x+tRtl_11*tlPs_x+tRtl_12*tlPs_y+tRtl_13*tlPs_z)+(vRl_23*((vQt_x*vQt_x)*2.0+(vQt_z*vQt_z)*2.0-1.0)+vRl_13*(vQt_w*vQt_z*2.0-vQt_x*vQt_y*2.0)-vRl_33*(vQt_w*vQt_x*2.0+vQt_y*vQt_z*2.0))*(tPtl_y+tRtl_21*tlPs_x+tRtl_22*tlPs_y+tRtl_23*tlPs_z)+(vRl_33*((vQt_x*vQt_x)*2.0+(vQt_y*vQt_y)*2.0-1.0)-vRl_13*(vQt_w*vQt_y*2.0+vQt_x*vQt_z*2.0)+vRl_23*(vQt_w*vQt_x*2.0-vQt_y*vQt_z*2.0))*(tPtl_z+tRtl_31*tlPs_x+tRtl_32*tlPs_y+tRtl_33*tlPs_z),2.0)+1.0);
     // row
     row++;
   }
@@ -362,6 +454,14 @@ Eigen::MatrixXd GetVerticalH(Eigen::Vector3d translation,
 
 Eigen::MatrixXd GetG(Eigen::Quaterniond rotation) {
   Eigen::MatrixXd G = Eigen::MatrixXd(STATE_SIZE, NOISE_SIZE);
+  G.block<3,9>(0,0) = Eigen::MatrixXd::Zero(3,9);
+  G.block<3,3>(3,0) = Eigen::MatrixXd::Zero(3,3);
+  G.block<3,3>(3,3) = rotation.toRotationMatrix();
+  G.block<4,3>(6,0) = ekf::GetOmega(rotation);
+  G.block<4,3>(6,3) = Eigen::MatrixXd::Zero(4,3);
+  G.block<7,3>(3,6) = Eigen::MatrixXd::Zero(7,3);
+  G.block<3,6>(10,0) = Eigen::MatrixXd::Zero(3,6);
+  G.block<3,3>(10,6) = Eigen::MatrixXd::Identity(3,3);
   return G;
 }
 
@@ -369,15 +469,18 @@ Eigen::MatrixXd GetG(Eigen::Quaterniond rotation) {
 Eigen::MatrixXd GetDState(Eigen::Vector3d velocity,
   Eigen::Quaterniond rotation,
   Eigen::Vector3d linear_acceleration,
-  Eigen::Vector3d angular_velocity) {
-  Eigen::Matrix<double, STATE_SIZE, 1> dotX;
+  Eigen::Vector3d angular_velocity,
+  Eigen::Vector3d gravity,
+  Eigen::Vector3d bias) {
+  Eigen::VectorXd dotX = Eigen::VectorXd(STATE_SIZE);
   // Position
-  dotX.block<3,1>(0,0) = velocity;
+  dotX.segment<3>(0) = velocity;
   // Velocity - assumed constant
-  dotX.block<3,1>(3,0) = rotation.toRotationMatrix() * linear_acceleration;
+  dotX.segment<3>(3) = rotation.toRotationMatrix() * linear_acceleration + gravity;
   // Orientation
   Eigen::MatrixXd Omega = ekf::GetOmega(rotation);
-  dotX.block<4,1>(6,0) = 0.5 * (Omega * angular_velocity);
+  dotX.segment<4>(6) = 0.5 * (Omega * angular_velocity - bias);
+  dotX.segment<3>(10) = Eigen::VectorXd::Zero(3);
   return dotX;
 }
 
@@ -385,13 +488,36 @@ Eigen::MatrixXd GetDState(Eigen::Vector3d velocity,
 // system's state
 Eigen::MatrixXd GetHorizontalZ(Eigen::Vector3d position,
   Eigen::Quaterniond rotation,
-  std::vector<Eigen::Vector3d> photodiodes) {
+  std::vector<int> sensors,
+  Tracker tracker,
+  Transform lhTransform,
+  Lighthouse lhSpecs,
+  bool correction) {
   // Declaring measurements vector
-  Eigen::MatrixXd Z = Eigen::MatrixXd(photodiodes.size(),1);
+  Eigen::VectorXd Z = Eigen::VectorXd(sensors.size());
+
+  // Data conversion
+  Eigen::Vector3d vPt = position;
+  Eigen::Matrix3d vRt = rotation.toRotationMatrix();
+  Eigen::Vector3d vPl = ekf::ConvertMessage(lhTransform.translation);
+  Eigen::Matrix3d vRl = ekf::ConvertMessage(lhTransform.rotation).toRotationMatrix();
+  Eigen::Vector3d lPv = - vRl.transpose() * vPl;
+  Eigen::Matrix3d lRv = vRl.transpose();
+  // lightPimu - transform the imu frame to the light frame
+  Eigen::Vector3d tlPt = ekf::ConvertMessage(
+    tracker.imu_transform.translation);
+  // lightRimu - transform the imu frame to the light frame
+  Eigen::Matrix3d tlRt = ekf::ConvertMessage(
+    tracker.imu_transform.rotation).toRotationMatrix();
+  // conversion from tlTt to tTtl
+  Eigen::Vector3d tPtl = - tlRt.transpose() * tlPt;
+  Eigen::Matrix3d tRtl = tlRt.transpose();
+
   size_t row = 0;
-  for (auto photodiode : photodiodes) {
-    Eigen::MatrixXd lPp = rotation.toRotationMatrix() * photodiode + position;
-    Z(row) = atan2(lPp(0),lPp(2));
+  for (auto sensor : sensors) {
+    Eigen::Vector3d tlPs = ekf::ConvertMessage(tracker.sensors[sensor].position);
+    Eigen::Vector3d lPs = lRv * ( vRt * (tRtl * tlPs + tPtl) + vPt ) + lPv;
+    Z(row) = atan2(lPs(0),lPs(2));
     row++;
   }
   return Z;
@@ -401,63 +527,39 @@ Eigen::MatrixXd GetHorizontalZ(Eigen::Vector3d position,
 // system's state
 Eigen::MatrixXd GetVerticalZ(Eigen::Vector3d position,
   Eigen::Quaterniond rotation,
-  std::vector<Eigen::Vector3d> photodiodes) {
+  std::vector<int> sensors,
+  Tracker tracker,
+  Transform lhTransform,
+  Lighthouse lhSpecs,
+  bool correction) {
   // Declaring measurements vector
-  Eigen::MatrixXd Z = Eigen::MatrixXd(photodiodes.size(),1);
+  Eigen::VectorXd Z = Eigen::VectorXd(sensors.size());
+
+  // Data conversion
+  Eigen::Vector3d vPt = position;
+  Eigen::Matrix3d vRt = rotation.toRotationMatrix();
+  Eigen::Vector3d vPl = ekf::ConvertMessage(lhTransform.translation);
+  Eigen::Matrix3d vRl = ekf::ConvertMessage(lhTransform.rotation).toRotationMatrix();
+  Eigen::Vector3d lPv = - vRl.transpose() * vPl;
+  Eigen::Matrix3d lRv = vRl.transpose();
+  // lightPimu - transform the imu frame to the light frame
+  Eigen::Vector3d tlPt = ekf::ConvertMessage(
+    tracker.imu_transform.translation);
+  // lightRimu - transform the imu frame to the light frame
+  Eigen::Matrix3d tlRt = ekf::ConvertMessage(
+    tracker.imu_transform.rotation).toRotationMatrix();
+  // conversion from tlTt to tTtl
+  Eigen::Vector3d tPtl = - tlRt.transpose() * tlPt;
+  Eigen::Matrix3d tRtl = tlRt.transpose();
+
   size_t row = 0;
-  for (auto photodiode : photodiodes) {
-    Eigen::MatrixXd lPp = rotation.toRotationMatrix() * photodiode + position;
-    Z(row) = atan2(lPp(1),lPp(2));
+  for (auto sensor : sensors) {
+    Eigen::Vector3d tlPs = ekf::ConvertMessage(tracker.sensors[sensor].position);
+    Eigen::Vector3d lPs = lRv * ( vRt * (tRtl * tlPs + tPtl) + vPt ) + lPv;
+    Z(row) = atan2(lPs(1),lPs(2));
     row++;
   }
   return Z;
-}
-
-// Time update (Inertial data)
-bool ViveEKF::Predict(const sensor_msgs::Imu & msg) {
-  // Convert measurements
-  Eigen::Vector3d linear_acceleration = ekf::ConvertMessage(msg.linear_acceleration);
-  Eigen::Vector3d angular_velocity = ekf::ConvertMessage(msg.angular_velocity);
-
-  // Time difference TODO change this
-  double dT = DT;//(msg.header.stamp - time_).toSec();
-
-  // Derivative of the state in time
-  Eigen::MatrixXd dState = GetDState(velocity_,
-    rotation_,
-    linear_acceleration,
-    angular_velocity);
-  // Old state
-  Eigen::Matrix<double, STATE_SIZE, 1> oldX;
-  oldX.block<3,1>(0,0) = position_;
-  oldX.block<3,1>(3,0) = velocity_;
-  oldX.block<4,1>(6,0) = Eigen::Vector4d(
-    rotation_.w(),
-    rotation_.x(),
-    rotation_.y(),
-    rotation_.z());
-
-  // Covariance update
-  Eigen::MatrixXd oldP = covariance_;
-  Eigen::MatrixXd F = GetF(rotation_,
-    linear_acceleration,
-    angular_velocity,
-    bias_);
-  Eigen::MatrixXd Q = model_covariance_;
-  // std::cout << "F: " << F << std::endl;
-  // std::cout << "Q: " << Q << std::endl;
-  // std::cout << "oldP: " << oldP << std::endl;
-  Eigen::MatrixXd newP = (Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE) + dT * F) *
-  oldP * (Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE) + dT * F).transpose() + Q;
-
-  // New state
-  Eigen::MatrixXd newX = oldX + dT * dState;
-  position_ = newX.block<3,1>(0,0);
-  velocity_ = newX.block<3,1>(3,0);
-  rotation_ = Eigen::Quaterniond(newX(6), newX(7), newX(8),
-    newX(9)).normalized();
-  covariance_ = newP;
-  return true;
 }
 
 Eigen::MatrixXd SliceR(Eigen::MatrixXd R,
@@ -474,6 +576,59 @@ Eigen::MatrixXd SliceR(Eigen::MatrixXd R,
     row++;
   }
   return slicedR;
+}
+
+// Time update (Inertial data)
+bool ViveEKF::Predict(const sensor_msgs::Imu & msg) {
+  // Convert measurements
+  Eigen::Vector3d linear_acceleration = ekf::ConvertMessage(msg.linear_acceleration);
+  Eigen::Vector3d angular_velocity = ekf::ConvertMessage(msg.angular_velocity);
+  Eigen::Vector3d gravity = ekf::ConvertMessage(environment_.gravity);
+  // Time difference TODO change this
+  double dT = DT;//(msg.header.stamp - time_).toSec();
+
+  // Derivative of the state in time
+  Eigen::MatrixXd dState = GetDState(velocity_,
+    rotation_,
+    linear_acceleration,
+    angular_velocity,
+    gravity,
+    bias_);
+  // Old state
+  Eigen::Matrix<double, STATE_SIZE, 1> oldX;
+  oldX.block<3,1>(0,0) = position_;
+  oldX.block<3,1>(3,0) = velocity_;
+  oldX.block<4,1>(6,0) = Eigen::Vector4d(
+    rotation_.w(),
+    rotation_.x(),
+    rotation_.y(),
+    rotation_.z());
+
+  // Covariance update
+  Eigen::MatrixXd oldP = covariance_;
+  Eigen::MatrixXd F = GetF(rotation_,
+    linear_acceleration,
+    angular_velocity,
+    bias_);
+  Eigen::MatrixXd G = GetG(rotation_);
+  Eigen::MatrixXd Q = model_covariance_;
+  Eigen::MatrixXd I = Eigen::MatrixXd::Identity(STATE_SIZE,
+    STATE_SIZE);
+  // std::cout << "F: " << F << std::endl;
+  // std::cout << "Q: " << Q << std::endl;
+  // std::cout << "oldP: " << oldP << std::endl;
+  Eigen::MatrixXd newP = (I + dT * F) *
+  oldP * (I + dT * F).transpose() + dT * dT * G * Q * G.transpose();
+
+  // New state
+  Eigen::MatrixXd newX = oldX + dT * dState;
+  position_ = newX.block<3,1>(0,0);
+  velocity_ = newX.block<3,1>(3,0);
+  rotation_ = Eigen::Quaterniond(newX(6), newX(7), newX(8),
+    newX(9)).normalized();
+  covariance_ = newP;
+  time_ = msg.header.stamp;
+  return true;
 }
 
 // Measure upate (Light data)
@@ -505,32 +660,40 @@ bool ViveEKF::Update(const hive::ViveLight & msg) {
     rotation_.y(),
     rotation_.z());
   oldP = covariance_;
+
   // Choose the model according to the orientation
   if (msg.axis == HORIZONTAL) {
-    H = GetHorizontalH(position_, rotation_, photodiodes);
-    Y = Z - GetHorizontalZ(position_, rotation_, photodiodes);
+    // Derivative of measurement model
+    H = GetHorizontalH(position_, rotation_, sensors,
+      tracker_, environment_.lighthouses[msg.lighthouse],
+      lighthouses_[msg.lighthouse], correction_);
+    // Difference between prediction and real measures
+    Y = Z - GetHorizontalZ(position_, rotation_, sensors,
+      tracker_, environment_.lighthouses[msg.lighthouse],
+      lighthouses_[msg.lighthouse], correction_);
+    // Sliced measurement covariance matrix
     R = SliceR(measure_covariance_.block<SENSORS_SIZE,
       SENSORS_SIZE>(SENSORS_SIZE*HORIZONTAL,
       SENSORS_SIZE*HORIZONTAL), sensors);
   } else {
-    H = GetVerticalH(position_, rotation_, photodiodes);
-    Y = Z - GetVerticalZ(position_, rotation_, photodiodes);
-  R = SliceR(measure_covariance_.block<SENSORS_SIZE,
+    // Derivative of measurement model
+    H = GetVerticalH(position_, rotation_, sensors,
+      tracker_, environment_.lighthouses[msg.lighthouse],
+      lighthouses_[msg.lighthouse], correction_);
+    // Difference between prediction and real measures
+    Y = Z - GetVerticalZ(position_, rotation_, sensors,
+      tracker_, environment_.lighthouses[msg.lighthouse],
+      lighthouses_[msg.lighthouse], correction_);
+    // Sliced measurement covariance matrix
+    R = SliceR(measure_covariance_.block<SENSORS_SIZE,
       SENSORS_SIZE>(SENSORS_SIZE*VERTICAL,
       SENSORS_SIZE*VERTICAL), sensors);
   }
-  // std::cout << "Z " << Z.transpose() << std::endl;
-  // std::cout << "Y " << Y.transpose() << std::endl;
-  // S = H * oldP * H.transpose() + R;
-  // std::cout << "S " << S << std::endl;
+
   // Kalman Gain
   K = oldP * H.transpose() * (H * oldP * H.transpose() + R).inverse();
-  // std::cout << "K " << K << std::endl;
-  // std::cout << "K*Y " << (K*Y).transpose() << std::endl;
   newX = oldX + K * Y;
-  // std::cout << "newX " << newX.transpose() << std::endl;
   newP = (Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE) - K * H) * oldP;
-  // std::cout << "newP " << newP << std::endl;
 
   // Save new state
   position_ = newX.segment<3>(0);
@@ -540,6 +703,8 @@ bool ViveEKF::Update(const hive::ViveLight & msg) {
     newX(8),
     newX(9)).normalized();
   covariance_ = newP;
+  time_ = msg.header.stamp;
+
   return true;
 }
 
@@ -557,12 +722,12 @@ void ViveEKF::PrintState() {
     << rotation_.x() << ", "
     << rotation_.y() << ", "
     << rotation_.z() << std::endl;
-  // std::cout << "Bias: "
-  //   << bias_(0) << ", "
-  //   << bias_(1) << ", "
-  //   << bias_(2) << std::endl;
-  // std::cout << "Covariance: "
-  //   << covariance_ << std::endl;
+  std::cout << "Bias: "
+    << bias_(0) << ", "
+    << bias_(1) << ", "
+    << bias_(2) << std::endl;
+  std::cout << "Covariance: "
+    << covariance_ << std::endl;
   return;
 }
 

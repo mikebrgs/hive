@@ -31,21 +31,13 @@
 #include <thread>
 #include <string>
 
-// typedef struct State
-// {
-//   double position[3];
-//   double velocity[3];
-//   double orientation[4];
-//   double bias[3];
-// } State;
-
 class ViveEKF : public Solver{
 public:
   // Constructor
   ViveEKF(); // Initial template
   ViveEKF(geometry_msgs::TransformStamped & pose,
     Tracker & tracker,
-    std::vector<Lighthouse> & lighthouses,
+    std::map<std::string, Lighthouse> & lighthouses,
     Environment & environment,
     double ** model_covariance, // time update
     double ** measure_covariance, // measurements
@@ -83,13 +75,16 @@ private:
   // double * mu_covari>ance;
   // State covariance
   Eigen::MatrixXd covariance_;
-  // Other elements
-  std::vector<Lighthouse> lighthouses_;
-  Environment environment_; // TODO include gravity in Environment
-  Tracker tracker_; // TODO Include head and light transforms in tracker
+  // Lighthouse specifications
+  std::map<std::string, Lighthouse> lighthouses_;
+  // Calibration environment
+  Environment environment_;
+  // The tracker it's solving for
+  Tracker tracker_;
+  // If the correction parameters are to be used
   bool correction_;
-  // Temp
-  Eigen::Vector3d gravity_;
+  // Validity of current state
+  bool valid_;
 };
 
 #endif  // HIVE_VIVE_EKF_H_
