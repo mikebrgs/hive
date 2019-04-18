@@ -1,11 +1,13 @@
 #include <hive/vive_pgo.h>
 
 InertialCost::InertialCost(sensor_msgs::Imu imu,
-  hive::ViveLight prev,
-  hive::ViveLight next) {
+  geometry_msgs::TransformStamped prev_vTl,
+  geometry_msgs::TransformStamped next_vTl,
+  double time_step) {
   imu_ = imu;
-  prev_ = prev;
-  next_ = next;
+  prev_vTl_ = prev_vTl;
+  next_vTl_ = next_vTl;
+  time_step_ = time_step;
   return;
 }
 
@@ -16,10 +18,41 @@ InertialCost::~InertialCost() {
 
 template <typename T>
 bool InertialCost::operator()(const T* const prev_lTt,
-  const T* const prev_vTl,
   const T* const next_lTt,
-  const T* const next_vTl,
   T * residual) const {
+  // prev_lTt's state
+  Eigen::Matrix<T,3,1> prev_lPt;
+  Eigen::Matrix<T,3,1> prev_lVt;
+  Eigen::Matrix<T,3,3> prev_lRt;
+  // next_lTt's state
+  Eigen::Matrix<T,3,1> next_lPt;
+  Eigen::Matrix<T,3,1> next_lVt;
+  Eigen::Matrix<T,3,3> next_lRt;
+  // prev_vTl's pose
+  Eigen::Matrix<T,3,1> prev_vPl;
+  Eigen::Matrix<T,3,3> prev_vRl;
+  // prev_vTl's pose
+  Eigen::Matrix<T,3,1> next_vPl;
+  Eigen::Matrix<T,3,3> next_vRl;
+
+  Eigen::Matrix<T,3,1> prev_vPt;
+  Eigen::Matrix<T,3,3> prev_vRt;
+
+  Eigen::Matrix<T,3,1> next_vPt;
+  Eigen::Matrix<T,3,3> next_vRt;
+
+  Eigen::Matrix<T,3,1> est_vPt;
+  Eigen::Matrix<T,3,3> est_vRt;
+  est_vPt = prev_vPt + time_step_ * prev_vPt;
+
+  Eigen::Matrix<T,3,1> diff_vPt;
+  diff_vPt = next_lPt - est_vPt;
+
+  // Position cost
+  residual[0] = diff_vPt(0);
+  residual[1] = diff_vPt(0);
+  residual[2] = diff_vPt(0);
+
   // Do all the costs
   return true;
 }

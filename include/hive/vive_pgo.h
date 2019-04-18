@@ -67,18 +67,23 @@ private:
 // Inertial cost function
 class InertialCost {
 public:
-  InertialCost(sensor_msgs::Imu imu);
+  InertialCost(sensor_msgs::Imu imu,
+    geometry_msgs::TransformStamped prev_vTl,
+    geometry_msgs::TransformStamped next_vTl,
+    double time_step);
   ~InertialCost();
   template <typename T> bool operator()(const T* const prev_lTt,
-    const T* const prev_vTl,
     const T* const next_lTt,
-    const T* const next_vTl,
     T * residual) const;
 private:
   // Inertial data
   sensor_msgs::Imu imu_;
   // Light data
   hive::ViveLight prev_, next_;
+  // Environment transforms
+  geometry_msgs::TransformStamped prev_vTl_, next_vTl_;
+  // Time step
+  double time_step_;
 };
 
 #endif // HIVE_VIVE_PGO
