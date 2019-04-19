@@ -18,9 +18,12 @@
 #include <ceres/ceres.h>
 #include <ceres/rotation.h>
 
-// Eigen C++ includes
+// Eigen includes
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
+#include <unsupported/Eigen/MatrixFunctions>
+
+// Eigen C++ includes
 #include <vector>
 #include <map>
 #include <string>
@@ -30,7 +33,11 @@ class PoseGraph : public Solver {
 public:
   // Constructor
   PoseGraph();
-  PoseGraph(size_t window);
+  PoseGraph(Environment environment,
+  Tracker tracker,
+  std::map<std::string, Lighthouse> lighthouses,
+  size_t window,
+  bool correction);
   // Destructor
   ~PoseGraph();
   // New light data
@@ -43,6 +50,7 @@ public:
   bool Solve();
   // Prinst stuff
   void PrintState();
+  
 private:
   // The pose
   geometry_msgs::TransformStamped pose_;
@@ -64,26 +72,71 @@ private:
   bool valid_;
 };
 
+// Light cost - Cost using the poses in the vive frame
+class ViveHorizontalCost
+{
+public:
+  // Constructor
+  ViveHorizontalCost(hive::ViveLight data,
+    geometry_msgs::Transform lTv,
+    Tracker tracker,
+    Motor lighthouse,
+    bool correction);
+  // Destructor
+  ~ViveHorizontalCost();
+  // Ceres operator
+  template <typename T> bool operator()(const T* const * parameters,
+    T* residual) const;
+private:
+  bool correction_;
+  Tracker tracker_;
+  Motor lighthouse_;
+  hive::ViveLight data_;
+  geometry_msgs::Transform lTv_;
+};
+
+class ViveVerticalCost
+{
+public:
+  // Constructor
+  ViveVerticalCost(hive::ViveLight data,
+    geometry_msgs::Transform lTv,
+    Tracker tracker,
+    Motor lighthouse,
+    bool correction);
+  // Destructor
+  ~ViveVerticalCost();
+  // Ceres operator
+  template <typename T> bool operator()(const T* const * parameters,
+    T* residual) const;
+private:
+  bool correction_;
+  Tracker tracker_;
+  Motor lighthouse_;
+  hive::ViveLight data_;
+  geometry_msgs::Transform lTv_;
+};
+
 // Inertial cost function
 class InertialCost {
 public:
   InertialCost(sensor_msgs::Imu imu,
-    geometry_msgs::TransformStamped prev_vTl,
-    geometry_msgs::TransformStamped next_vTl,
-    double time_step);
+    geometry_msgs::Transform imu_T,
+    double time_step,
+    double trust_weight);
   ~InertialCost();
-  template <typename T> bool operator()(const T* const prev_lTt,
-    const T* const next_lTt,
+  template <typename T> bool operator()(const T* const prev_vTt,
+    const T* const next_vTt,
     T * residual) const;
 private:
   // Inertial data
   sensor_msgs::Imu imu_;
   // Light data
   hive::ViveLight prev_, next_;
-  // Environment transforms
-  geometry_msgs::TransformStamped prev_vTl_, next_vTl_;
-  // Time step
-  double time_step_;
+  // Environment and tracker transforms
+  geometry_msgs::Transform imu_T_;
+  // Time step and weight
+  double time_step_, trust_weight_;
 };
 
 #endif // HIVE_VIVE_PGO
