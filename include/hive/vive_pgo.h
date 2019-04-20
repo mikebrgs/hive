@@ -42,8 +42,12 @@ public:
   ~PoseGraph();
   // New light data
   void ProcessLight(const hive::ViveLight::ConstPtr& msg);
+  // Aux method
+  void RemoveLight();
   // New Imu data
   void ProcessImu(const sensor_msgs::Imu::ConstPtr& msg);
+  // Aux method
+  void RemoveImu();
   // Get the tracker's pose
   bool GetTransform(geometry_msgs::TransformStamped& msg);
   // Solve the problem
@@ -70,6 +74,8 @@ private:
   size_t window_;
   // Validity
   bool valid_;
+  // Internal
+  std::vector<double*> poses_;
 };
 
 // Light cost - Cost using the poses in the vive frame
