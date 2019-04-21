@@ -1,23 +1,5 @@
-/* Copyright (c) 2017, United States Government, as represented by the
- * Administrator of the National Aeronautics and Space Administration.
- * 
- * All rights reserved.
- * 
- * The Astrobee platform is licensed under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with the
- * License. You may obtain a copy of the License at
- * 
- *     http://www.apache.org/licenses/LICENSE-2.0
- * 
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations
- * under the License.
- */
-
 // Includes
-#include <hive/vive_calibrate.h>
+#include <hive/hive_calibrator.h>
 
 namespace calibrate {
   double start_pose[6] = {0, 0, 1, 0, 0, 0};
@@ -33,33 +15,46 @@ typedef std::map<std::string, PosesMap> PosesMapMap;
 typedef std::map<std::string, std::vector<LightData> > LightDataVector;
 
 // Constructor just sets the callback function
-ViveCalibrate::ViveCalibrate(CallbackFn cb) : cb_(cb), active_(false) {
-  mutex_ = new std::mutex();
+ViveCalibrate::ViveCalibrate(Calibration & calibration,
+  bool correction) {
+  active_ = false;
+  calibration_ = calibration;
+  correction_ = correction;
+  return;
+}
+
+// Constructor just sets the callback function
+ViveCalibrate::~ViveCalibrate() {
+  // Do nothing
+  return;
 }
 
 // Reset
 bool ViveCalibrate::Reset() {
-  if (!mutex_->try_lock()) return false;
+  // old format
   data_pair_map_.clear();
-  mutex_->unlock();
+  // new format
+  imu_data_.clear();
+  light_data_.clear();
   return true;
 }
 
 // Add an IMU measurement
 bool ViveCalibrate::AddImu(const sensor_msgs::Imu::ConstPtr& msg) {
-  if (!mutex_->try_lock()) return false;
   data_pair_map_[msg->header.frame_id].second.push_back(*msg);
-  mutex_->unlock();
+  // new data format
+  imu_data_.push_back(*msg);
   return true;
 }
 
 // Add a light measurement
 bool ViveCalibrate::AddLight(const hive::ViveLight::ConstPtr& msg) {
-  if (!mutex_->try_lock()) return false;
-
   if (msg == NULL) {
     return false;
   }
+
+  // new data format
+  light_data_.push_back(*msg);
 
   Sweep sweep;
   // Iterate sensors
@@ -82,53 +77,37 @@ bool ViveCalibrate::AddLight(const hive::ViveLight::ConstPtr& msg) {
   sweep.lighthouse = msg->lighthouse;
   sweep.axis = msg->axis;
 
-  // std::cout << sweep.lighthouse << " " << sweep.axis << " " << msg->header.frame_id << std::endl;
-
   // Store the data
   if (msg->samples.size() > 0) {
     data_pair_map_[msg->header.frame_id].first.push_back(sweep);
   }
 
-  mutex_->unlock();
   return true;
 }
 
-bool ViveCalibrate::Initialize(Calibration & calibration) {
-  if (!mutex_->try_lock()) return false;
-  calibration_ = calibration;
-  mutex_->unlock();
+bool ViveCalibrate::Update(const hive::ViveCalibrationTrackerArray2::ConstPtr& msg) {
+  calibration_.SetTrackers(*msg);
   return true;
 }
 
-bool ViveCalibrate::Update(LighthouseMap  const& lh_extrinsics) {
-  calibration_.lighthouses = lh_extrinsics;
+bool ViveCalibrate::Update(const hive::ViveCalibrationTrackerArray::ConstPtr& msg) {
+  calibration_.SetTrackers(*msg);
   return true;
 }
 
+bool ViveCalibrate::Update(const hive::ViveCalibrationLighthouseArray::ConstPtr& msg) {
+  calibration_.SetLighthouses(*msg);
+  return true;
+}
 
-void ViveCalibrate::PrintStuff(){
-  for (auto tr_it = calibration_.trackers.begin(); tr_it != calibration_.trackers.end(); tr_it++) {
-    // std::cout << "SENSOR SIZE " << tr_it->second.sensors.size() << std::endl;
-  }
+// Return the calibration object
+Calibration ViveCalibrate::GetCalibration() {
+  return calibration_;
+}
+
+void ViveCalibrate::Print(){
+  std::cout << "Calibration ... " << std::endl;
   return;
-}
-
-// Start solving in a parallel thread
-bool ViveCalibrate::Solve() {
-  // Notify any previous solution
-  if (active_) return false;
-  active_ = true;
-
-  // Wait for thread to join, in case of old solution
-  std::thread thread = std::thread(ViveCalibrate::WorkerThread,
-    cb_,
-    mutex_,
-    data_pair_map_,
-    calibration_);
-  thread.join();
-
-  active_ = false;
-  return true;
 }
 
 struct CalibHorizontalAngle{
@@ -172,25 +151,6 @@ struct CalibHorizontalAngle{
       parameters[EXTRINSICS][3*horizontal_observations_[i].sensor_id + 1],
       parameters[EXTRINSICS][3*horizontal_observations_[i].sensor_id + 2];
       Eigen::Matrix<T, 3, 1> lPs = lRw * (wRt * tPs + wPt) + lPw;
-      // std::cout << "wRt: "
-      //   << wRt(0,0) << ", "
-      //   << wRt(0,1) << ", "
-      //   << wRt(0,2) << ", "
-      //   << wRt(1,0) << ", "
-      //   << wRt(1,1) << ", "
-      //   << wRt(1,2) << ", "
-      //   << wRt(2,0) << ", "
-      //   << wRt(2,1) << ", "
-      //   << wRt(2,2) << std::endl;
-      // std::cout << "lPs: "
-      //   << lPs(0) << ", "
-      //   << lPs(1) << ", "
-      //   << lPs(2) << std::endl;
-      // residual[i] = T(-horizontal_observations_[i].angle) - atan(lPs(1)/lPs(2));
-      // std::cout << horizontal_observations_[i].sensor_id << " - "
-      //   << parameters[EXTRINSICS][3*horizontal_observations_[i].sensor_id + 0] << ", "
-      //   << parameters[EXTRINSICS][3*horizontal_observations_[i].sensor_id + 1] << ", "
-      //   << parameters[EXTRINSICS][3*horizontal_observations_[i].sensor_id + 2] << std::endl;
 
       T ang; // The final angle
       T x = (lPs(0)/lPs(2)); // Horizontal angle
@@ -200,12 +160,7 @@ struct CalibHorizontalAngle{
       T gib_phase = parameters[LH_EXTRINSICS-1][GIB_PHASE];
       T gib_mag = parameters[LH_EXTRINSICS-1][GIB_MAG];
       T curve = parameters[LH_EXTRINSICS-1][CURVE];
-      // std::cout << "HExt "
-      //   << parameters[LH_EXTRINSICS-1][PHASE] << ", "
-      //   << parameters[LH_EXTRINSICS-1][TILT] << ", "
-      //   << parameters[LH_EXTRINSICS-1][GIB_PHASE] << ", "
-      //   << parameters[LH_EXTRINSICS-1][GIB_MAG] << ", "
-      //   << parameters[LH_EXTRINSICS-1][CURVE] << std::endl;
+
       if (correction_) {
         // Distortion correction
         ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
@@ -221,6 +176,7 @@ struct CalibHorizontalAngle{
   }
 
  private:
+  // hive::ViveLight horizontal_observations_;
   LightVec horizontal_observations_;
   PoseVM world_tracker_transforms_;
   bool correction_;
@@ -730,20 +686,6 @@ bool BundleObservations(PoseLighthouses * world_lighthouses,
 
     for (auto lh_it = bundle_lighthouses_world.begin();
       lh_it != bundle_lighthouses_world.end(); lh_it++) {
-      // Eigen::Vector3d wPl(lh_it->second[0], lh_it->second[1], lh_it->second[2]);
-      // Eigen::Vector3d wAAl(lh_it->second[3], lh_it->second[4], lh_it->second[5]);
-      // Eigen::Matrix3d wRl = Eigen::AngleAxisd(wAAl.norm(), wAAl / wAAl.norm()).toRotationMatrix();
-
-      // Eigen::AngleAxisd lAAw(wRl.transpose());
-      // Eigen::Vector3d lPw = -wRl.transpose() * wPl;
-
-      // std::cout << lh_it->first << " - NEW POSE: "
-      //   << lPw(0) << ", "
-      //   << lPw(1) << ", "
-      //   << lPw(2) << ", "
-      //   << lAAw.axis()(0) * lAAw.angle() << ", "
-      //   << lAAw.axis()(1) * lAAw.angle() << ", "
-      //   << lAAw.axis()(2) * lAAw.angle() << std::endl;
 
       std::cout << lh_it->first << " - POSE: "
       << lh_it->second[0] << ", "
@@ -753,22 +695,6 @@ bool BundleObservations(PoseLighthouses * world_lighthouses,
       << lh_it->second[4] << ", "
       << lh_it->second[5] << std::endl;
     }
-
-    // ceres::Problem::EvaluateOptions pe_options;
-    // double total_cost = 0.0;
-    // std::vector<double> residuals;
-    // pe_options.residual_blocks = h_residual_block_ids;
-    // problem.Evaluate(pe_options, &total_cost, &residuals, nullptr, nullptr);
-    // std::cout << "Horizontal Residuals" << std::endl;
-    // for (size_t i = 0; i < residuals.size(); i++) {
-    //   std::cout << i << ": " << residuals[i] << std::endl;
-    // }
-    // pe_options.residual_blocks = v_residual_block_ids;
-    // problem.Evaluate(pe_options, &total_cost, &residuals, nullptr, nullptr);
-    // std::cout << "Vertical Residuals" << std::endl;
-    // for (size_t i = 0; i < residuals.size(); i++) {
-    //   std::cout << i << ": " << residuals[i] << std::endl;
-    // }
 
     for (auto lh_it = bundle_lighthouses_world.begin();
       lh_it != bundle_lighthouses_world.end(); lh_it++) {
@@ -805,14 +731,6 @@ bool GetLhTransformInVive(Calibration * calibration,
   (*calibration).environment.vive.rotation.z = vive_quaternion.z();
   (*calibration).environment.vive.rotation.w = vive_quaternion.w();
 
-  // std::cout << "VIVE " << vive_pose.first(0) << ", "
-  //   << vive_pose.first(1) << ", "
-  //   << vive_pose.first(2) << ", "
-  //   << vive_quaternion.w() << ", "
-  //   << vive_quaternion.x() << ", "
-  //   << vive_quaternion.y() << ", "
-  //   << vive_quaternion.z() << std::endl;
-
   // Clear past lighthouse data
   (*calibration).environment.lighthouses.clear();
   // Compute all lighthouse vive poses and saving them
@@ -832,14 +750,6 @@ bool GetLhTransformInVive(Calibration * calibration,
     vive_tf_lh.rotation.x = vive_lighthouse.second.x();
     vive_tf_lh.rotation.y = vive_lighthouse.second.y();
     vive_tf_lh.rotation.z = vive_lighthouse.second.z();
-
-  // std::cout << "LH " << vive_lighthouse.first(0) << ", "
-  //   << vive_lighthouse.first(1) << ", "
-  //   << vive_lighthouse.first(2) << ", "
-  //   << vive_lighthouse.second.w() << ", "
-  //   << vive_lighthouse.second.x() << ", "
-  //   << vive_lighthouse.second.y() << ", "
-  //   << vive_lighthouse.second.z() << std::endl;
 
     (*calibration).environment.lighthouses[lh_it->first] = vive_tf_lh;
   }
@@ -890,37 +800,35 @@ bool GetGravity(Calibration * cal,
 
 
 // Worker thread
-void ViveCalibrate::WorkerThread(CallbackFn cb,
-  std::mutex * calibration_mutex,
-  DataPairMap data_pair_map,
-  Calibration calibration) {
+bool ViveCalibrate::Solve() {
+
+  if (active_) return false;
+  active_ = true;
+
   PoseLighthouses world_lighthouses;
   PoseTrackers body_transforms;
   std::string calibration_body;
   PoseMap poses;
 
   // Prevent data from being modified outside this thread
-  calibration_mutex->lock();
 
   // Get the body frames
   std::cout << "GetBodyTransformsInW" << std::endl;
   if (!GetBodyTransformsInW(&body_transforms,
     &calibration_body,
-    calibration)) {
-    calibration_mutex->unlock();
-    return;
+    calibration_)) {
+    return false;
   }
   // Now we have wRt and wPt
 
   // Organize the data of each tracker in groups of lighthouses and axis and solve
   std::cout << "GetLhTransformsInTr" << std::endl;
   if (!GetLhTransformsInTr(&poses,
-    data_pair_map,
+    data_pair_map_,
     body_transforms,
-    calibration,
+    calibration_,
     calibration_body)) {
-    calibration_mutex->unlock();
-    return;
+    return false;
   }
   // Now we have tRl and tPl
 
@@ -929,8 +837,7 @@ void ViveCalibrate::WorkerThread(CallbackFn cb,
   if (!GetLhTransformInW(&world_lighthouses,
     body_transforms,
     poses)) {
-    calibration_mutex->unlock();
-    return;
+    return false;
   }
   // Now we have wRl and wPl
 
@@ -938,33 +845,25 @@ void ViveCalibrate::WorkerThread(CallbackFn cb,
   std::cout << "BundleObservations" << std::endl;
   if (!BundleObservations(&world_lighthouses,
     body_transforms,
-    data_pair_map,
-    calibration)) {
-    calibration_mutex->unlock();
-    return;
+    data_pair_map_,
+    calibration_)) {
+    return false;
   }
 
   // Choose the vive frame and convert everything to this frame //
   std::cout << "GetLhTransformInVive" << std::endl;
-  if (!GetLhTransformInVive(&calibration,
+  if (!GetLhTransformInVive(&calibration_,
     world_lighthouses)) {
-    calibration_mutex->unlock();
-    return;
+    return false;
   }
 
-  // Get the gravity vector
-  // calibration_mutex->unlock();
+  // // Get the gravity vector
   // std::cout << "GetGravity" << std::endl;
-  // if (!GetGravity(&calibration,
-  //   data_pair_map)) {
-  //   calibration_mutex->unlock();
+  // if (!GetGravity(&calibration_,
+  //   data_pair_map_)) {
   //   return;
   // }
 
-  // Callback
-  std::cout << "cb" << std::endl;
-  cb(calibration);
-
-  std::cout << "return" << std::endl;
-  return;
+  active_ = false;
+  return true;
 }

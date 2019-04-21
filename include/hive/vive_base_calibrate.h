@@ -42,6 +42,7 @@ struct Sweep {
   uint8_t axis;
 };
 typedef std::vector<Sweep> SweepVec;
+typedef std::vector<sensor_msgs::Imu> ImuVec;
 typedef std::pair<SweepVec, ImuVec> DataPair;         // pair of Light data and Imu data - change imu
 typedef std::map<std::string, DataPair> DataPairMap;         // map of trackers
 

@@ -34,6 +34,7 @@
 #include <hive/ViveLightSample.h>
 #include <hive/ViveCalibration.h>
 #include <hive/ViveCalibrationLighthouseArray.h>
+#include <hive/ViveCalibrationTrackerArray2.h>
 #include <hive/ViveCalibrationTrackerArray.h>
 #include <hive/ViveCalibrationGeneral.h>
 
@@ -155,7 +156,7 @@ struct Imu {
   geometry_msgs::Vector3 gyro;
 };
 
-typedef std::vector<Imu> ImuVec;
+// typedef std::vector<Imu> ImuVec;
 
 typedef std::vector<Light> LightVec;
 
@@ -191,8 +192,14 @@ class Calibration {
   // Sets the tracker structure from a ViveCalibrationTrackerArray message.
   bool SetTrackers(hive::ViveCalibrationTrackerArray const& msg);
 
+  // Sets the tracker structure from a ViveCalibrationTrackerArray message.
+  bool SetTrackers(hive::ViveCalibrationTrackerArray2 const& msg);
+
   // Puts the tracker data into a ViveCalibrationTrackerArray message.
   bool GetTrackers(hive::ViveCalibrationTrackerArray * msg);
+
+  // Puts the tracker data into a ViveCalibrationTrackerArray message.
+  bool GetTrackers(hive::ViveCalibrationTrackerArray2 * msg);
 
   void Print();
 

@@ -401,6 +401,53 @@ bool Calibration::SetTrackers(hive::ViveCalibrationTrackerArray const& msg) {
   return true;
 }
 
+bool Calibration::SetTrackers(hive::ViveCalibrationTrackerArray2 const& msg) {
+  for (auto tr_it = msg.trackers.begin();
+    tr_it != msg.trackers.end(); tr_it++) {
+
+    trackers[tr_it->serial].serial = tr_it->serial;
+
+    // Acc bias
+    trackers[tr_it->serial].acc_bias.x = tr_it->acc_bias.x;
+    trackers[tr_it->serial].acc_bias.y = tr_it->acc_bias.y;
+    trackers[tr_it->serial].acc_bias.z = tr_it->acc_bias.z;
+
+    // Acc scale
+    trackers[tr_it->serial].acc_scale.x = tr_it->acc_scale.x;
+    trackers[tr_it->serial].acc_scale.y = tr_it->acc_scale.y;
+    trackers[tr_it->serial].acc_scale.z = tr_it->acc_scale.z;
+
+    // Gyr bias
+    trackers[tr_it->serial].gyr_bias.x = tr_it->gyr_bias.x;
+    trackers[tr_it->serial].gyr_bias.y = tr_it->gyr_bias.y;
+    trackers[tr_it->serial].gyr_bias.z = tr_it->gyr_bias.z;
+
+    // Gyr scale
+    trackers[tr_it->serial].gyr_scale.x = tr_it->gyr_scale.x;
+    trackers[tr_it->serial].gyr_scale.y = tr_it->gyr_scale.y;
+    trackers[tr_it->serial].gyr_scale.z = tr_it->gyr_scale.z;
+
+    // Internal transforms
+    trackers[tr_it->serial].imu_transform = tr_it->imu_transform;
+    trackers[tr_it->serial].head_transform = tr_it->head_transform;
+
+    for (std::vector<hive::ViveExtrinsics>::const_iterator ss_it = tr_it->extrinsics.begin();
+      ss_it != tr_it->extrinsics.end(); ss_it++) {
+      // Sensor positions
+      trackers[tr_it->serial].sensors[ss_it->id].position.x = ss_it->position.x;
+      trackers[tr_it->serial].sensors[ss_it->id].position.y = ss_it->position.y;
+      trackers[tr_it->serial].sensors[ss_it->id].position.z = ss_it->position.z;
+      // Sensors normal
+      trackers[tr_it->serial].sensors[ss_it->id].normal.x = ss_it->normal.x;
+      trackers[tr_it->serial].sensors[ss_it->id].normal.y = ss_it->normal.y;
+      trackers[tr_it->serial].sensors[ss_it->id].normal.z = ss_it->normal.z;
+    }
+  }
+
+
+  return true;
+}
+
 bool Calibration::GetTrackers(hive::ViveCalibrationTrackerArray * msg) {
   for (std::map<std::string, Tracker>::iterator tr_it = trackers.begin();
     tr_it != trackers.end(); tr_it++) {
@@ -445,6 +492,56 @@ bool Calibration::GetTrackers(hive::ViveCalibrationTrackerArray * msg) {
   }
   return true;
 }
+
+bool Calibration::GetTrackers(hive::ViveCalibrationTrackerArray2 * msg) {
+  for (std::map<std::string, Tracker>::iterator tr_it = trackers.begin();
+    tr_it != trackers.end(); tr_it++) {
+    hive::ViveCalibrationTracker2 tracker_msg;
+    tracker_msg.serial = tr_it->first;
+
+    // Acc bias
+    tracker_msg.acc_bias.x = tr_it->second.acc_bias.x;
+    tracker_msg.acc_bias.y = tr_it->second.acc_bias.y;
+    tracker_msg.acc_bias.z = tr_it->second.acc_bias.z;
+
+    // Acc scale
+    tracker_msg.acc_scale.x = tr_it->second.acc_scale.x;
+    tracker_msg.acc_scale.y = tr_it->second.acc_scale.y;
+    tracker_msg.acc_scale.z = tr_it->second.acc_scale.z;
+
+    // Gyr bias
+    tracker_msg.gyr_bias.x = tr_it->second.gyr_bias.x;
+    tracker_msg.gyr_bias.y = tr_it->second.gyr_bias.y;
+    tracker_msg.gyr_bias.z = tr_it->second.gyr_bias.z;
+
+    // Gyr scale
+    tracker_msg.gyr_scale.x = tr_it->second.gyr_scale.x;
+    tracker_msg.gyr_scale.y = tr_it->second.gyr_scale.y;
+    tracker_msg.gyr_scale.z = tr_it->second.gyr_scale.z;
+
+    // Intern transforms
+    tracker_msg.imu_transform = tr_it->second.imu_transform;
+    tracker_msg.head_transform = tr_it->second.head_transform;
+
+    for (std::map<uint8_t, Sensor>::iterator ss_it = tr_it->second.sensors.begin();
+      ss_it != tr_it->second.sensors.end(); ss_it++) {
+      hive::ViveExtrinsics sensor_msg;
+      sensor_msg.id = ss_it->first;
+      // Sensor positions
+      sensor_msg.position.x = ss_it->second.position.x;
+      sensor_msg.position.y = ss_it->second.position.y;
+      sensor_msg.position.z = ss_it->second.position.z;
+      // Sensor normal
+      sensor_msg.normal.x = ss_it->second.normal.x;
+      sensor_msg.normal.y = ss_it->second.normal.y;
+      sensor_msg.normal.z = ss_it->second.normal.z;
+      tracker_msg.extrinsics.push_back(sensor_msg);
+    }
+    (*msg).trackers.push_back(tracker_msg);
+  }
+  return true;
+}
+
 
 JsonParser::JsonParser(const char * filename) {
   FILE * fp = fopen(filename, "r");

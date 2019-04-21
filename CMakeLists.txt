@@ -65,6 +65,8 @@ add_message_files(
   ViveCalibrationLighthouseArray.msg
   ViveCalibrationTracker.msg
   ViveCalibrationTrackerArray.msg
+  ViveCalibrationTracker2.msg
+  ViveCalibrationTrackerArray2.msg
   ViveExtrinsics.msg
   ViveLight.msg
   ViveLightSample.msg
@@ -131,6 +133,7 @@ include_directories(
 add_executable(hive_server src/vive_server.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc src/vive_calibrate.cc)
 add_executable(hive_base_solve src/vive_base_solve.cc src/vive_base.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc)
 add_executable(hive_base_calibrate src/vive_base_calibrate.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc)
+add_executable(hive_calibrate src/hive_calibrate.cc src/vive.cc src/vive_solve.cc src/hive_calibrator.cc)
 add_executable(hive_print tools/vive_print.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc src/vive_calibrate.cc)
 add_executable(hive_tool tools/vive_tool.cc)
 add_executable(hive_optimize tools/vive_optimize.cc src/vive.cc src/vive_solve.cc)
@@ -156,6 +159,7 @@ add_dependencies(hive_offset hive_generate_messages_cpp)
 add_dependencies(hive_refine hive_generate_messages_cpp)
 add_dependencies(hive_ekf hive_generate_messages_cpp)
 add_dependencies(hive_pgo hive_generate_messages_cpp)
+add_dependencies(hive_calibrate hive_generate_messages_cpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(hive_server
@@ -214,6 +218,12 @@ target_link_libraries(hive_ekf
 )
 
 target_link_libraries(hive_pgo
+  ${catkin_LIBRARIES}
+  ${CERES_LIBRARIES}
+  ${EIGEN_LIBRARIES}
+)
+
+target_link_libraries(hive_calibrate
   ${catkin_LIBRARIES}
   ${CERES_LIBRARIES}
   ${EIGEN_LIBRARIES}

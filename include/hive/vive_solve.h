@@ -170,7 +170,6 @@ private:
   hive::ViveLight data_;
 };
 
-
 // Computes the full pose of a tracker for each lighthouse
 bool ComputeTransform(AxisLightVec observations,
   SolvedPose * pose_tracker,

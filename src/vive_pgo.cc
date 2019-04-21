@@ -177,10 +177,12 @@ bool ViveVerticalCost::operator()(const T* const * parameters,
 
 InertialCost::InertialCost(sensor_msgs::Imu imu,
   geometry_msgs::Transform imu_T, // from imu frame to light frame
+  geometry_msgs::Vector3 gravity,
   double time_step,
   double trust_weight) {
   imu_ = imu;
   imu_T_ = imu_T;
+  gravity_ = gravity;
   time_step_ = time_step;
   trust_weight_ = trust_weight;
   return;
@@ -205,8 +207,13 @@ bool InertialCost::operator()(const T* const prev_vTt,
   prev_vVt << prev_vTt[3],
     prev_vTt[4],
     prev_vTt[5];
-  Eigen::Matrix<T,3,3> prev_vRt;
-  ceres::AngleAxisToRotationMatrix(&prev_vTt[6], prev_vRt.data());
+  T paux_vQt[3];
+  ceres::AngleAxisToQuaternion(&prev_vTt[6], paux_vQt);
+  Eigen::Quaternion<T> prev_vQt(paux_vQt[0],
+    paux_vQt[1],
+    paux_vQt[2],
+    paux_vQt[3]);
+  Eigen::Matrix<T,3,3> prev_vRt = prev_vQt.toRotationMatrix();
 
   // next_vTt's state
   Eigen::Matrix<T,3,1> next_vPt;
@@ -217,8 +224,13 @@ bool InertialCost::operator()(const T* const prev_vTt,
   next_vVt << next_vTt[3],
     next_vTt[4],
     next_vTt[5];
-  Eigen::Matrix<T,3,3> next_vRt;
-  ceres::AngleAxisToRotationMatrix(&next_vTt[6], next_vRt.data());
+  T naux_vQt[3];
+  ceres::AngleAxisToQuaternion(&next_vTt[6], naux_vQt);
+  Eigen::Quaternion<T> next_vQt(paux_vQt[0],
+    paux_vQt[1],
+    paux_vQt[2],
+    paux_vQt[3]);
+  Eigen::Matrix<T,3,3> next_vRt = next_vQt.toRotationMatrix();
 
   // Tracker's imu frame
   Eigen::Matrix<T,3,1> tPi;
@@ -232,33 +244,46 @@ bool InertialCost::operator()(const T* const prev_vTt,
     T(imu_T_.rotation.z)).toRotationMatrix();
 
   // Inertial measurements
-  Eigen::Matrix<T,3,1> iW; // Maybe this is not needed
-  iW << imu_.angular_velocity.x,
-    imu_.angular_velocity.y,
-    imu_.angular_velocity.z;
-  Eigen::Matrix<T,3,1> tW = tRi * iW;
-  Eigen::Matrix<T,3,3> iSqueW;
-  iSqueW << 0.0,  -iW(2), iW(1),
-            iW(2), 0.0,  -iW(0),
-           -iW(1), iW(0), 0.0;
-  Eigen::Matrix<T,3,3> tSqueW;
-  tSqueW << 0.0,  -tW(2), tW(1),
-            tW(2), 0.0,  -tW(0),
-           -tW(1), tW(0), 0.0;
+  Eigen::Matrix<T,3,1> iW;
+  iW << T(imu_.angular_velocity.x),
+    T(imu_.angular_velocity.y),
+    T(imu_.angular_velocity.z);
   Eigen::Matrix<T,3,1> iA;
   iA << T(imu_.linear_acceleration.x),
     T(imu_.linear_acceleration.y),
     T(imu_.linear_acceleration.z);
-  Eigen::Matrix<T,3,1> vA = prev_vRt * (tRi * iA + tPi) + prev_vPt;
+
+  // Gravity
+  Eigen::Matrix<T,3,1> vG;
+  vG << T(gravity_.x),
+    T(gravity_.y),
+    T(gravity_.z);
 
   // Inertial predictions
   Eigen::Matrix<T,3,1> est_vPt;
-  Eigen::Matrix<T,3,1> est_vVt;
-  Eigen::Matrix<T,3,3> est_vRt;
   est_vPt = prev_vPt + (T(time_step_) * prev_vVt);
-  est_vVt = prev_vTt + (T(time_step_) * vA);
-  // Using rotation matrices
-  est_vRt = prev_vRt * (T(time_step_) * tSqueW).exp().transpose();
+  Eigen::Matrix<T,3,1> est_vVt;
+  est_vVt = prev_vVt + (T(time_step_) * prev_vRt * (tRi * 
+    iA) + vG);
+  Eigen::Matrix<T,4,3> Omega;
+  Omega << -prev_vQt.x(), -prev_vQt.y(), -prev_vQt.z(),
+    prev_vQt.w(), -prev_vQt.z(), prev_vQt.y(),
+    prev_vQt.z(), prev_vQt.w(), -prev_vQt.x(),
+    -prev_vQt.y(), prev_vQt.x(), prev_vQt.w();
+  Eigen::Matrix<T,4,1> trev_vQt; // temporary previous
+  trev_vQt << prev_vQt.w(),
+    prev_vQt.x(),
+    prev_vQt.y(),
+    prev_vQt.z();
+  Eigen::Matrix<T,4,1> text_vQt; // temporary next
+  text_vQt = trev_vQt + T(time_step_) * T(0.5) * Omega * tRi * iW; // Wrong -- change the tracking to the imu
+  // this way we would have to had the influence of w to the linear velocity
+  Eigen::Quaternion<T> est_vQt(text_vQt(0),
+    text_vQt(1),
+    text_vQt(2),
+    text_vQt(3));
+  est_vQt.normalize();
+  Eigen::Matrix<T,3,3> est_vRt = est_vQt.toRotationMatrix();
 
   Eigen::Matrix<T,3,1> dP;
   Eigen::Matrix<T,3,1> dV;
@@ -316,18 +341,15 @@ PoseGraph::~PoseGraph() {
 void PoseGraph::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   light_data_.push_back(*msg);
   poses_.push_back(new double[6]);
+  ProcessPose();
   if (light_data_.size() > window_) {
     // Erase first element
     RemoveLight();
-    // light_data_.erase(light_data_.begin());
-    // poses_.erase(poses.begin());
   }
   while (imu_data_.size() != 0 &&
     light_data_.front().header.stamp > imu_data_.front().header.stamp) {
     // Erase out of window IMU msg
     RemoveImu();
-    // imu_data_.erase(imu_data_.begin());
-    // poses_.erase(poses.begin());
   }
   // Solve the problem
   Solve();
@@ -344,6 +366,26 @@ void PoseGraph::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
   // Save the inertial data
   imu_data_.push_back(*msg);
   poses_.push_back(new double[6]);
+  ProcessPose();
+  return;
+}
+
+void PoseGraph::ProcessPose() {
+  if (poses_.size() == 1) {
+    poses_.back()[0] = 0.0;
+    poses_.back()[1] = 0.0;
+    poses_.back()[2] = 1.0;
+    poses_.back()[3] = 0.0;
+    poses_.back()[4] = 0.0;
+    poses_.back()[5] = 0.0;
+  } else {
+    poses_.back()[0] = poses_.front()[0];
+    poses_.back()[1] = poses_.front()[1];
+    poses_.back()[2] = poses_.front()[2];
+    poses_.back()[3] = poses_.front()[3];
+    poses_.back()[4] = poses_.front()[4];
+    poses_.back()[5] = poses_.front()[5];
+  }
   return;
 }
 
@@ -438,6 +480,7 @@ bool PoseGraph::Solve() {
         new ceres::AutoDiffCostFunction<InertialCost, 4, 6, 6>
         (new InertialCost(*imu_it,
           tracker_.imu_transform,
+          environment_.gravity,
           DT,
           TRUST));
       problem.AddResidualBlock(cost, NULL, prev_pose, next_pose);

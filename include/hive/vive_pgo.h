@@ -50,6 +50,8 @@ public:
   void RemoveImu();
   // Get the tracker's pose
   bool GetTransform(geometry_msgs::TransformStamped& msg);
+  // 
+  void ProcessPose();
   // Solve the problem
   bool Solve();
   // Prinst stuff
@@ -128,6 +130,7 @@ class InertialCost {
 public:
   InertialCost(sensor_msgs::Imu imu,
     geometry_msgs::Transform imu_T,
+    geometry_msgs::Vector3 gravity,
     double time_step,
     double trust_weight);
   ~InertialCost();
@@ -141,6 +144,8 @@ private:
   hive::ViveLight prev_, next_;
   // Environment and tracker transforms
   geometry_msgs::Transform imu_T_;
+  // Gravity
+  geometry_msgs::Vector3 gravity_;
   // Time step and weight
   double time_step_, trust_weight_;
 };

@@ -1,23 +1,5 @@
-/* Copyright (c) 2017, United States Government, as represented by the
- * Administrator of the National Aeronautics and Space Administration.
- * 
- * All rights reserved.
- * 
- * The Astrobee platform is licensed under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with the
- * License. You may obtain a copy of the License at
- * 
- *     http://www.apache.org/licenses/LICENSE-2.0
- * 
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations
- * under the License.
- */
-
-#ifndef HIVE_VIVE_CALIBRATE_H_
-#define HIVE_VIVE_CALIBRATE_H_
+#ifndef HIVE_HIVE_CALIBRATE_H_
+#define HIVE_HIVE_CALIBRATE_H_
 
 #include <ros/ros.h>
 
@@ -30,6 +12,9 @@
 #include <sensor_msgs/Imu.h>
 #include <hive/ViveLight.h>
 #include <hive/ViveCalibration.h>
+#include <hive/ViveCalibrationTrackerArray.h>
+#include <hive/ViveCalibrationTrackerArray2.h>
+#include <hive/ViveCalibrationLighthouseArray.h>
 
 // Ceres and logging
 #include <ceres/ceres.h>
@@ -43,10 +28,6 @@
 #include <thread>
 #include <mutex>
 #include <string>
-
-// Calibration callback function
-typedef std::function<void(Calibration const&)> CallbackFn;
-
 
 // Internal datatypes
 namespace calibrate {
@@ -65,7 +46,13 @@ using namespace calibrate;
 
 class ViveCalibrate {
  public:
-  explicit ViveCalibrate(CallbackFn cb);
+
+  // Constructor
+  ViveCalibrate(Calibration & calibration,
+    bool correction);
+
+  // Destructor
+  ~ViveCalibrate();
 
   // Reset the solver
   bool Reset();
@@ -76,29 +63,37 @@ class ViveCalibrate {
   // Process a light measurement
   bool AddLight(const hive::ViveLight::ConstPtr& msg);
 
-  // Send all the necessary information in a single structure
-  bool Initialize(Calibration & calibration);
-
   // Solve the problem based on the assumption tge body of tracker's is still.
   bool Solve();
 
-  // Update lighthouse parameters
-  bool Update(LighthouseMap  const& lh_extrinsics);
+  // New tracker data
+  bool Update(const hive::ViveCalibrationTrackerArray2::ConstPtr& msg);
 
-  void PrintStuff();
+  // Old tracker data
+  bool Update(const hive::ViveCalibrationTrackerArray::ConstPtr& msg);
 
-  // Thread that solves
-  static void WorkerThread(CallbackFn cb,
-    std::mutex * calibration_mutex,
-    DataPairMap data_pair_map,
-    Calibration calibration);
+  // New lighthouse data
+  bool Update(const hive::ViveCalibrationLighthouseArray::ConstPtr& msg);
+
+  // Debug method
+  void Print();
+
+  // Get the calibration struct
+  Calibration GetCalibration();
+
+  // // Thread that solves
+  // static void WorkerThread(CallbackFn cb,
+  //   std::mutex * calibration_mutex,
+  //   DataPairMap data_pair_map,
+  //   Calibration calibration);
 
  private:
+  std::vector<sensor_msgs::Imu> imu_data_;
+  std::vector<hive::ViveLight> light_data_;
   DataPairMap data_pair_map_;   // Input data
-  CallbackFn cb_;               // Solution callback
-  std::mutex * mutex_;            // Mutex for data access
+  bool correction_;
   bool active_;                 // If the calibration procedure is active
   Calibration calibration_;     // Structure that saves all the data
 };
 
-#endif  // VIVE_VIVE_CALIBRATE_H_
+#endif  // VIVE_HIVE_CALIBRATE_H_
