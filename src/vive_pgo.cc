@@ -338,13 +338,16 @@ PoseGraph::~PoseGraph() {
   return;
 }
 
+// The number of poses is not correct
+
 void PoseGraph::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   light_data_.push_back(*msg);
-  poses_.push_back(new double[6]);
-  ProcessPose();
+  if (poses_.size() > imu_data_.size() + 1)
+  // poses_.push_back(new double[6]);
+  AddPose();
   if (light_data_.size() > window_) {
     // Erase first element
-    RemoveLight();
+    RemoveLight(); // TODO check this
   }
   while (imu_data_.size() != 0 &&
     light_data_.front().header.stamp > imu_data_.front().header.stamp) {
@@ -365,27 +368,29 @@ void PoseGraph::RemoveLight() {
 void PoseGraph::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
   // Save the inertial data
   imu_data_.push_back(*msg);
-  poses_.push_back(new double[6]);
-  ProcessPose();
+  // poses_.push_back(new double[6]);
+  AddPose(); // TODO check this
   return;
 }
 
-void PoseGraph::ProcessPose() {
+void PoseGraph::AddPose() {
+  double * new_pose = new double[6];
   if (poses_.size() == 1) {
-    poses_.back()[0] = 0.0;
-    poses_.back()[1] = 0.0;
-    poses_.back()[2] = 1.0;
-    poses_.back()[3] = 0.0;
-    poses_.back()[4] = 0.0;
-    poses_.back()[5] = 0.0;
+    new_pose[0] = 0.0;
+    new_pose[1] = 0.0;
+    new_pose[2] = 1.0;
+    new_pose[3] = 0.0;
+    new_pose[4] = 0.0;
+    new_pose[5] = 0.0;
   } else {
-    poses_.back()[0] = poses_.front()[0];
-    poses_.back()[1] = poses_.front()[1];
-    poses_.back()[2] = poses_.front()[2];
-    poses_.back()[3] = poses_.front()[3];
-    poses_.back()[4] = poses_.front()[4];
-    poses_.back()[5] = poses_.front()[5];
+    new_pose[0] = poses_.back()[0];
+    new_pose[1] = poses_.back()[1];
+    new_pose[2] = poses_.back()[2];
+    new_pose[3] = poses_.back()[3];
+    new_pose[4] = poses_.back()[4];
+    new_pose[5] = poses_.back()[5];
   }
+  poses_.push_back(new_pose);
   return;
 }
 

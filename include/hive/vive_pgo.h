@@ -51,7 +51,7 @@ public:
   // Get the tracker's pose
   bool GetTransform(geometry_msgs::TransformStamped& msg);
   // 
-  void ProcessPose();
+  void AddPose();
   // Solve the problem
   bool Solve();
   // Prinst stuff
