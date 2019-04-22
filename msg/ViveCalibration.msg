@@ -22,3 +22,4 @@ Header header                                  # Tracker ID - probably not neede
 geometry_msgs/Transform calibration            # World -> Vive frame
 geometry_msgs/TransformStamped[] lighthouse    # Lighthouse #Id -> Vive frame
 geometry_msgs/TransformStamped[] body          # Poses of the body frame in the tracker's frames
+geometry_msgs/Vector3 gravity                  # Gravity vector

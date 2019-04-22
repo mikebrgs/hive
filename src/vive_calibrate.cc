@@ -952,7 +952,7 @@ void ViveCalibrate::WorkerThread(CallbackFn cb,
     return;
   }
 
-  // Get the gravity vector
+  // // Get the gravity vector
   // calibration_mutex->unlock();
   // std::cout << "GetGravity" << std::endl;
   // if (!GetGravity(&calibration,

@@ -30,16 +30,25 @@ bool ViveUtils::WriteConfig(std::string file_name, Calibration const& calibratio
     return false;
   }
 
-  hive::ViveCalibration vive_calibration;
+  // ofs.write((char*)&(calibration.environment),
+  //   sizeof(calibration.environment));
+  // ofs.close();
+
+  hive::ViveCalibration environment_calibration;
 
   // Environment
-  vive_calibration.calibration.translation.x = calibration.environment.vive.translation.x;
-  vive_calibration.calibration.translation.y = calibration.environment.vive.translation.y;
-  vive_calibration.calibration.translation.z = calibration.environment.vive.translation.z;
-  vive_calibration.calibration.rotation.w = calibration.environment.vive.rotation.w;
-  vive_calibration.calibration.rotation.x = calibration.environment.vive.rotation.x;
-  vive_calibration.calibration.rotation.y = calibration.environment.vive.rotation.y;
-  vive_calibration.calibration.rotation.z = calibration.environment.vive.rotation.z;
+  environment_calibration.calibration.translation.x = calibration.environment.vive.translation.x;
+  environment_calibration.calibration.translation.y = calibration.environment.vive.translation.y;
+  environment_calibration.calibration.translation.z = calibration.environment.vive.translation.z;
+  environment_calibration.calibration.rotation.w = calibration.environment.vive.rotation.w;
+  environment_calibration.calibration.rotation.x = calibration.environment.vive.rotation.x;
+  environment_calibration.calibration.rotation.y = calibration.environment.vive.rotation.y;
+  environment_calibration.calibration.rotation.z = calibration.environment.vive.rotation.z;
+
+  // Gravity
+  environment_calibration.gravity.x = calibration.environment.gravity.x;
+  environment_calibration.gravity.y = calibration.environment.gravity.y;
+  environment_calibration.gravity.z = calibration.environment.gravity.z;
 
   // Lighthouses
   for (std::map<std::string, Transform>::const_iterator lh_it = calibration.environment.lighthouses.begin();
@@ -54,13 +63,13 @@ bool ViveUtils::WriteConfig(std::string file_name, Calibration const& calibratio
     lighthouse.transform.rotation.x = lh_it->second.rotation.x;
     lighthouse.transform.rotation.y = lh_it->second.rotation.y;
     lighthouse.transform.rotation.z = lh_it->second.rotation.z;
-    vive_calibration.lighthouse.push_back(lighthouse);
+    environment_calibration.lighthouse.push_back(lighthouse);
   }
 
-  uint32_t serial_size = ros::serialization::serializationLength(vive_calibration);
+  uint32_t serial_size = ros::serialization::serializationLength(environment_calibration);
   boost::shared_array<uint8_t> obuffer(new uint8_t[serial_size]);
   ros::serialization::OStream ostream(obuffer.get(), serial_size);
-  ros::serialization::serialize(ostream, vive_calibration);
+  ros::serialization::serialize(ostream, environment_calibration);
   ofs.write(reinterpret_cast<char*>(obuffer.get()), serial_size);
   ofs.close();
   return true;
@@ -68,11 +77,12 @@ bool ViveUtils::WriteConfig(std::string file_name, Calibration const& calibratio
 
 bool ViveUtils::ReadConfig(std::string file_name, Calibration * calibration) {
   std::ifstream ifs(file_name.c_str(), std::ios::in | std::ios::binary);
-  hive::ViveCalibration vive_calibration;
+  hive::ViveCalibration environment_calibration;
   if (!ifs.good()) {
     ROS_INFO_STREAM("Cannot read from file " << file_name);
     return false;
   }
+
   // Read data
   ifs.seekg(0, std::ios::end);
   std::streampos end = ifs.tellg();
@@ -82,25 +92,28 @@ bool ViveUtils::ReadConfig(std::string file_name, Calibration * calibration) {
   boost::shared_array<uint8_t> ibuffer(new uint8_t[file_size]);
   ifs.read(reinterpret_cast<char*>(ibuffer.get()), file_size);
   ros::serialization::IStream istream(ibuffer.get(), file_size);
-  ros::serialization::deserialize(istream, vive_calibration);
+  ros::serialization::deserialize(istream, environment_calibration);
   ifs.close();
 
-  // Converting
-
   // Environment
-  // Vive
   (*calibration).environment.vive.parent_frame = "world";
   (*calibration).environment.vive.child_frame = "vive";
-  (*calibration).environment.vive.translation.x = vive_calibration.calibration.translation.x;
-  (*calibration).environment.vive.translation.y = vive_calibration.calibration.translation.y;
-  (*calibration).environment.vive.translation.z = vive_calibration.calibration.translation.z;
-  (*calibration).environment.vive.rotation.w = vive_calibration.calibration.rotation.w;
-  (*calibration).environment.vive.rotation.x = vive_calibration.calibration.rotation.x;
-  (*calibration).environment.vive.rotation.y = vive_calibration.calibration.rotation.y;
-  (*calibration).environment.vive.rotation.z = vive_calibration.calibration.rotation.z;
+  (*calibration).environment.vive.translation.x = environment_calibration.calibration.translation.x;
+  (*calibration).environment.vive.translation.y = environment_calibration.calibration.translation.y;
+  (*calibration).environment.vive.translation.z = environment_calibration.calibration.translation.z;
+  (*calibration).environment.vive.rotation.w = environment_calibration.calibration.rotation.w;
+  (*calibration).environment.vive.rotation.x = environment_calibration.calibration.rotation.x;
+  (*calibration).environment.vive.rotation.y = environment_calibration.calibration.rotation.y;
+  (*calibration).environment.vive.rotation.z = environment_calibration.calibration.rotation.z;
+
+  // Gravity
+  (*calibration).environment.gravity.x = environment_calibration.gravity.x;
+  (*calibration).environment.gravity.y = environment_calibration.gravity.y;
+  (*calibration).environment.gravity.z = environment_calibration.gravity.z;
+
   // Lighthouses
-  for (std::vector<geometry_msgs::TransformStamped>::iterator lh_it = vive_calibration.lighthouse.begin();
-    lh_it != vive_calibration.lighthouse.end(); lh_it++) {
+  for (std::vector<geometry_msgs::TransformStamped>::iterator lh_it = environment_calibration.lighthouse.begin();
+    lh_it != environment_calibration.lighthouse.end(); lh_it++) {
     Transform lighthouse;
     lighthouse.parent_frame = lh_it->header.frame_id;
     lighthouse.child_frame = lh_it->child_frame_id;
@@ -384,6 +397,78 @@ bool Calibration::SetTrackers(hive::ViveCalibrationTrackerArray const& msg) {
     trackers[tr_it->serial].gyr_scale.x = tr_it->gyr_scale.x;
     trackers[tr_it->serial].gyr_scale.y = tr_it->gyr_scale.y;
     trackers[tr_it->serial].gyr_scale.z = tr_it->gyr_scale.z;
+
+    // Write imu and head transforms
+    if (tr_it->serial == "LHR-08DE963B") {
+      // IMU transform
+      trackers[tr_it->serial].imu_transform.translation.x = 0.0089908502996;
+      trackers[tr_it->serial].imu_transform.translation.y = 0.0193033590913;
+      trackers[tr_it->serial].imu_transform.translation.z = 0.063955232501;
+      trackers[tr_it->serial].imu_transform.rotation.w = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.z = 1.0;
+      // Head transform
+      trackers[tr_it->serial].imu_transform.translation.x = 0.0;
+      trackers[tr_it->serial].imu_transform.translation.y = 0.0397689975798;
+      trackers[tr_it->serial].imu_transform.translation.z = 0.0515097379684;
+      trackers[tr_it->serial].imu_transform.rotation.w = -1.0;
+      trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.z = 0.0;
+    } else if (tr_it->serial == "LHR-08DE340B") {
+      // IMU transform
+      trackers[tr_it->serial].imu_transform.translation.x = 0.0089908502996;
+      trackers[tr_it->serial].imu_transform.translation.y = 0.0193033590913;
+      trackers[tr_it->serial].imu_transform.translation.z = 0.063955232501;
+      trackers[tr_it->serial].imu_transform.rotation.w = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.z = 1.0;
+      // Head transform
+      trackers[tr_it->serial].imu_transform.translation.x = 0.0;
+      trackers[tr_it->serial].imu_transform.translation.y = 0.0397689975798;
+      trackers[tr_it->serial].imu_transform.translation.z = 0.0515097379684;
+      trackers[tr_it->serial].imu_transform.rotation.w = -1.0;
+      trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.z = 0.0;
+    } else if (tr_it->serial == "LHR-08DDBC05") {
+      // IMU transform
+      trackers[tr_it->serial].imu_transform.translation.x = 0.0089908502996;
+      trackers[tr_it->serial].imu_transform.translation.y = 0.0193033590913;
+      trackers[tr_it->serial].imu_transform.translation.z = 0.063955232501;
+      trackers[tr_it->serial].imu_transform.rotation.w = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.z = 1.0;
+      // Head transform
+      trackers[tr_it->serial].imu_transform.translation.x = 0.0;
+      trackers[tr_it->serial].imu_transform.translation.y = 0.0397689975798;
+      trackers[tr_it->serial].imu_transform.translation.z = 0.0515097379684;
+      trackers[tr_it->serial].imu_transform.rotation.w = -1.0;
+      trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.z = 0.0;
+    } else {
+      // tr_it->serial == "LHR-FD35B946"
+      // IMU transform
+      trackers[tr_it->serial].imu_transform.translation.x = -0.00663009984419;
+      trackers[tr_it->serial].imu_transform.translation.y = -0.050469700247;
+      trackers[tr_it->serial].imu_transform.translation.z = -0.0236250199378;
+      trackers[tr_it->serial].imu_transform.rotation.w = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.z = 1.0;
+      // Head transform
+      trackers[tr_it->serial].imu_transform.translation.x = 0.0;
+      trackers[tr_it->serial].imu_transform.translation.y = 0.0710000023246;
+      trackers[tr_it->serial].imu_transform.translation.z = -0.0309999994934;
+      trackers[tr_it->serial].imu_transform.rotation.w = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.x = 0.725374400616;
+      trackers[tr_it->serial].imu_transform.rotation.y = -0.688354551792;
+      trackers[tr_it->serial].imu_transform.rotation.z = 0.0;
+    }
 
     for (std::vector<hive::ViveExtrinsics>::const_iterator ss_it = tr_it->extrinsics.begin();
       ss_it != tr_it->extrinsics.end(); ss_it++) {

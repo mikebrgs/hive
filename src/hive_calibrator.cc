@@ -350,7 +350,8 @@ bool GetLhTransformsInTr(PoseMap * poses,
   DataPairMap data_pair_map,
   PoseTrackers body_transforms,
   Calibration calibration,
-  std::string calibration_body) {
+  std::string calibration_body,
+  bool correction) {
   PosesMapMap poses_vector;
   // LightDataVector good_observations;
   for (DataPairMap::iterator tr_it = data_pair_map.begin(); tr_it != data_pair_map.end(); tr_it++) {
@@ -384,7 +385,8 @@ bool GetLhTransformsInTr(PoseMap * poses,
           &auxstring,
           &extrinsics,
           &solvemutex,
-          &lh_extrinsics)) {
+          &lh_extrinsics,
+          correction)) {
           Eigen::Vector3d tmV = Eigen::Vector3d(solvedpose.transform[3],
             solvedpose.transform[4],
             solvedpose.transform[5]);
@@ -513,7 +515,8 @@ bool GetLhTransformInW(PoseLighthouses * world_lighthouses,
 bool BundleObservations(PoseLighthouses * world_lighthouses,
   PoseTrackers body_transforms,
   DataPairMap data_pair_map,
-  Calibration calibration) {
+  Calibration calibration,
+  bool correction) {
   // if (data_pair_map.size() > 9 * (*world_lighthouses).size()) {
   std::map<std::string, double[5]> lh_horizontal_extrinsics;
   std::map<std::string, double[5]> lh_vertical_extrinsics;
@@ -539,17 +542,17 @@ bool BundleObservations(PoseLighthouses * world_lighthouses,
           continue;
         }
 
-        bool correction = false;
+        // bool correction = false;
         // double lh_horizontal_extrinsics[5] = {0,0,0,0,0};
         // double lh_vertical_extrinsics[5] = {0,0,0,0,0};
         // auto lh_it = calibration.lighthouses.begin();
-        if (calibration.lighthouses.find(sw_it->lighthouse) != calibration.lighthouses.end()
-          && CORRECTION) {
+        // if (calibration.lighthouses.find(sw_it->lighthouse) != calibration.lighthouses.end()
+        //   && correction) {
           // std::cout << "correctionON" << std::endl;
-          correction = true;
-        } else {
+        //   correction = true;
+        // } else {
           // std::cout << "correctionOFF" << std::endl;
-        }
+        // }
         // correction = false;
 
         // World in lighthouse frame
@@ -791,6 +794,7 @@ bool GetGravity(Calibration * cal,
     g_count++;
   }
   vG = vG / g_count;
+  std::cout << vG.transpose() << std::endl;
   cal->environment.gravity.x = vG(0);
   cal->environment.gravity.y = vG(1);
   cal->environment.gravity.z = vG(2);
@@ -827,7 +831,8 @@ bool ViveCalibrate::Solve() {
     data_pair_map_,
     body_transforms,
     calibration_,
-    calibration_body)) {
+    calibration_body,
+    correction_)) {
     return false;
   }
   // Now we have tRl and tPl
@@ -846,7 +851,8 @@ bool ViveCalibrate::Solve() {
   if (!BundleObservations(&world_lighthouses,
     body_transforms,
     data_pair_map_,
-    calibration_)) {
+    calibration_,
+    correction_)) {
     return false;
   }
 
@@ -857,12 +863,12 @@ bool ViveCalibrate::Solve() {
     return false;
   }
 
-  // // Get the gravity vector
-  // std::cout << "GetGravity" << std::endl;
-  // if (!GetGravity(&calibration_,
-  //   data_pair_map_)) {
-  //   return;
-  // }
+  // Get the gravity vector
+  std::cout << "GetGravity" << std::endl;
+  if (!GetGravity(&calibration_,
+    data_pair_map_)) {
+    return false;
+  }
 
   active_ = false;
   return true;

@@ -813,16 +813,8 @@ int main(int argc, char ** argv)
 
   // Start JSON parser
   JsonParser jp = JsonParser(HIVE_CONFIG_FILE);
-  // Get current calibration
-  if (!ViveUtils::ReadConfig(HIVE_BASE_CALIBRATION_FILE, &calibration)) {
-    jp.GetCalibration(&calibration);
-    ROS_WARN("Reading JSON file.");
-  } else {
-    jp.GetBody(&calibration);
-    ROS_INFO("Read calibration file.");
-  }
-  std::cout << "Bodies: " <<
-    calibration.environment.bodies.size() << std::endl;
+  ROS_WARN("Reading JSON file.");
+  jp.GetBody(&calibration);
 
   // Lighthouses
   rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));

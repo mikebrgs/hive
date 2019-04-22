@@ -11,6 +11,6 @@ if len(args) < 2:
 bag = rosbag.Bag(args[1], "r")
 
 print("Starting")
-for topic, msg, t in bag.read_messages(topics=["/loc/vive/trackers"]):
+for topic, msg, t in bag.read_messages(topics=["/trackers"]):
     print(msg)
 print("Ending")

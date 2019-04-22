@@ -549,6 +549,17 @@ bool ComputeTransform(AxisLightVec observations,
   Extrinsics * extrinsics,
   std::mutex * solveMutex,
   Lighthouse * lh_extrinsics) {
+  return ComputeTransform(observations, pose_tracker, last_lh_pose,
+  extrinsics, solveMutex, lh_extrinsics, false);
+}
+
+bool ComputeTransform(AxisLightVec observations,
+  SolvedPose * pose_tracker,
+  std::string * last_lh_pose,
+  Extrinsics * extrinsics,
+  std::mutex * solveMutex,
+  Lighthouse * lh_extrinsics,
+  bool correction) {
   solveMutex->lock();
   ceres::Problem problem;
   double pose[6], lighthouseZeros[6];
@@ -558,15 +569,15 @@ bool ComputeTransform(AxisLightVec observations,
   }
   solveMutex->unlock();
 
-  bool correction = false;
+  // bool correction = false;
   double lh_horizontal_extrinsics[5] = {0.0,0.0,0.0,0.0,0.0};
   double lh_vertical_extrinsics[5] = {0.0,0.0,0.0,0.0,0.0};
-  if (lh_extrinsics != NULL && CORRECTION) {
-    correction = true;
-  } else {
-    // pass
-  }
-  // correction = false;
+  // if (lh_extrinsics != NULL && CORRECTION) {
+  //   correction = true;
+  // } else {
+  //   // pass
+  // }
+  // // correction = false;
 
   if (correction) {
     // Horizontal correction parameters

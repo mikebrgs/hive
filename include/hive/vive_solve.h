@@ -171,12 +171,22 @@ private:
 };
 
 // Computes the full pose of a tracker for each lighthouse
+// Correction off
 bool ComputeTransform(AxisLightVec observations,
   SolvedPose * pose_tracker,
   std::string * last_lh_pose,
   Extrinsics * extrinsics,
   std::mutex * solveMutex,
   Lighthouse * lh_extrinsics);
+
+// Computes the full pose of a tracker for each lighthouse
+bool ComputeTransform(AxisLightVec observations,
+  SolvedPose * pose_tracker,
+  std::string * last_lh_pose,
+  Extrinsics * extrinsics,
+  std::mutex * solveMutex,
+  Lighthouse * lh_extrinsics,
+  bool correction);
 
 // Computes the full pose of a tracker for all lighthouse - handles poses in the vive frame
 bool ComputeTransformBundle(LightData observations,

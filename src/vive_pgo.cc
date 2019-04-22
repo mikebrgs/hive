@@ -549,7 +549,7 @@ int main(int argc, char ** argv) {
   }
 
   // Calibration
-  if (!ViveUtils::ReadConfig(HIVE_BASE_CALIBRATION_FILE, &cal)) {
+  if (!ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE, &cal)) {
     ROS_FATAL("Can't find calibration file.");
     return -1;
   } else {
@@ -583,19 +583,27 @@ int main(int argc, char ** argv) {
 
   size_t counter = 0;
   // Light data
-  rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
+  std::vector<std::string> run_topics; 
+  run_topics.push_back("/loc/vive/light");
+  run_topics.push_back("/loc/vive/imu/");
+  run_topics.push_back("/loc/vive/imu");
+  rosbag::View view_li(rbag, rosbag::TopicQuery(run_topics));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-    smap[vl->header.frame_id].ProcessLight(vl);
-    counter++;
+    if (vl != NULL) {
+      std::cout << "LIGHT" << std::endl;
+      smap[vl->header.frame_id].ProcessLight(vl);
+      counter++;
+    }
+    const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();
+    if (vi != NULL) {
+      std::cout << "IMU" << std::endl;
+      smap[vi->header.frame_id].ProcessImu(vi);
+      counter++;
+    }
     if (counter >= 100) break;
   }
   ROS_INFO("Data processment complete.");
-
-  // Solve the refinement
-  // for (auto solver : smap)
-  //   solver.second.Solve();
-
 
   return 0;
 }

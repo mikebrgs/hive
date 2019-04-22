@@ -27,8 +27,6 @@
 #include <mutex>
 #include <string>
 
-// Hive includes
-
 // Main function
 int main(int argc, char ** argv) {
   // Data
@@ -46,23 +44,18 @@ int main(int argc, char ** argv) {
 
   // Start JSON parser
   JsonParser jp = JsonParser(HIVE_CONFIG_FILE);
-  // Get current calibration
-  if (!ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE, &calibration)) {
-    jp.GetCalibration(&calibration);
-    ROS_WARN("Reading JSON file.");
-  } else {
-    jp.GetBody(&calibration);
-    ROS_INFO("Read calibration file.");
-  }
 
-  ViveCalibrate calibrator(calibration, false);
+  // Get current calibration
+  ROS_INFO("Reading JSON file.");
+  jp.GetBody(&calibration);
+
+  ViveCalibrate calibrator(calibration, true);
 
   // Lighthouses
   rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
   for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
     const hive::ViveCalibrationLighthouseArray::ConstPtr vl =
       bag_it->instantiate<hive::ViveCalibrationLighthouseArray>();
-    // calibration.SetLighthouses(*vl);
     calibrator.Update(vl);
   }
   ROS_INFO("Lighthouses' setup complete.");
@@ -72,25 +65,40 @@ int main(int argc, char ** argv) {
   for (auto bag_it = view_tr.begin(); bag_it != view_tr.end(); bag_it++) {
     const hive::ViveCalibrationTrackerArray::ConstPtr vt =
       bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
-    // calibration.SetTrackers(*vt);
     calibrator.Update(vt);
   }
   ROS_INFO("Trackers' setup complete.");
 
+  // Light data
+  size_t counter = 0;
+  std::vector<std::string> imu_topics;
+  imu_topics.push_back("/loc/vive/imu");
+  imu_topics.push_back("/loc/vive/imu/");
+  rosbag::View view_imu(rbag, rosbag::TopicQuery(imu_topics));
+  for (auto bag_it = view_imu.begin(); bag_it != view_imu.end(); bag_it++) {
+    const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();
+    calibrator.AddImu(vi);
+    ROS_INFO("ADDED IMU");
+    counter++;
+    if (counter >= 20) break;
+  }
+  ROS_INFO("Imu read complete.");
 
   // Light data
-  // size_t counter = 0;
+  counter = 0;
   rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
     calibrator.AddLight(vl);
+    counter++;
+    if (counter >= 20) break;
   }
+  ROS_INFO("Light read complete.");
   rbag.close();
 
   calibrator.Solve();
   ViveUtils::WriteConfig(HIVE_CALIBRATION_FILE,
     calibrator.GetCalibration());
 
-  // ros::shutdown();
   return 0;
 }
