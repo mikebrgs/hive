@@ -136,7 +136,8 @@ public:
   InertialCost(sensor_msgs::Imu imu,
     geometry_msgs::Vector3 gravity,
     double time_step,
-    double trust_weight);
+    double trust_weight,
+    bool verbose = false);
   ~InertialCost();
   template <typename T> bool operator()(const T* const prev_vTi,
     const T* const next_vTi,
@@ -150,6 +151,8 @@ private:
   geometry_msgs::Vector3 gravity_;
   // Time step and weight
   double time_step_, trust_weight_;
+  // Other
+  bool verbose_;
 };
 
 #endif // HIVE_VIVE_PGO

@@ -1,6 +1,6 @@
 #include <hive/vive_pgo.h>
 
-#define TRUST 1e-5
+#define TRUST 0.005
 
 enum DataType {imu, light};
 
@@ -217,11 +217,13 @@ bool ViveVerticalCost::operator()(const T* const * parameters,
 InertialCost::InertialCost(sensor_msgs::Imu imu,
     geometry_msgs::Vector3 gravity,
   double time_step,
-  double trust_weight) {
+  double trust_weight,
+  bool verbose) {
   imu_ = imu;
   gravity_ = gravity;
   time_step_ = time_step;
   trust_weight_ = trust_weight;
+  verbose_ = verbose;
   return;
 }
 
@@ -307,8 +309,17 @@ bool InertialCost::operator()(const T* const prev_vTi,
   est_vPi = prev_vPi + (T(time_step_) * prev_vVi);
   // Velocity prediction
   Eigen::Matrix<T,3,1> est_vVi;
-  est_vVi = prev_vVi + (T(time_step_) * prev_vRi * iA + vG);
-  // std::cout << vG(0) << ", " << vG(1) << ", " << vG(2) << std::endl;
+  est_vVi = prev_vVi + T(time_step_) * (prev_vRi * iA - vG);
+  if (verbose_) {
+    std::cout << "vA" << " "
+      << (prev_vRi * iA)(0) << ", "
+      << (prev_vRi * iA)(1) << ", "
+      << (prev_vRi * iA)(2) << std::endl;
+    std::cout << "vG" << " "
+      << vG(0) << ", "
+      << vG(1) << ", "
+      << vG(2) << std::endl;
+  }
   // std::cout << (prev_vRi * iA)(0) << ", " << (prev_vRi * iA)(1) << ", " << (prev_vRi * iA)(2) << std::endl;
   // Quaternion derivative matrix
   Eigen::Matrix<T,4,3> Omega;
@@ -706,6 +717,17 @@ bool PoseGraph::Solve() {
       << pose[7] << ", "
       << pose[8] << std::endl;
       counter++;
+    Eigen::Vector3d vAi(pose[6], pose[7], pose[8]);
+    Eigen::AngleAxisd vAAi(vAi.norm(), vAi.normalized());
+    Eigen::Matrix3d vRi = vAAi.toRotationMatrix();
+    Eigen::Vector3d iA(imu_data_.begin()->linear_acceleration.x,
+      imu_data_.begin()->linear_acceleration.y,
+      imu_data_.begin()->linear_acceleration.z);
+    std::cout << (vRi * iA).transpose() << std::endl;
+    Eigen::Vector3d vG(environment_.gravity.x,
+      environment_.gravity.y,
+      environment_.gravity.z);
+    std::cout << vG.transpose() << std::endl;
   }
 
   std::cout << std::endl;
