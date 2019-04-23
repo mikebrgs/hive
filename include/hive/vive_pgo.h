@@ -51,7 +51,9 @@ public:
   // Get the tracker's pose
   bool GetTransform(geometry_msgs::TransformStamped& msg);
   // 
-  void AddPose();
+  void AddPoseBack();
+  void AddPoseFront();
+  void ApplyLimits();
   // Solve the problem
   bool Solve();
   // Prinst stuff
@@ -78,15 +80,17 @@ private:
   bool valid_;
   // Internal
   std::vector<double*> poses_;
+  bool lastposewasimu_;
 };
 
-// Light cost - Cost using the poses in the vive frame
+// Light cost - Cost using the poses in the imu frame
 class ViveHorizontalCost
 {
 public:
   // Constructor
   ViveHorizontalCost(hive::ViveLight data,
-    geometry_msgs::Transform lTv,
+    geometry_msgs::Transform lTv, // vive to lighthouse
+    geometry_msgs::Transform tTi, // IMU to light
     Tracker tracker,
     Motor lighthouse,
     bool correction);
@@ -100,7 +104,7 @@ private:
   Tracker tracker_;
   Motor lighthouse_;
   hive::ViveLight data_;
-  geometry_msgs::Transform lTv_;
+  geometry_msgs::Transform lTv_, tTi_;
 };
 
 class ViveVerticalCost
@@ -108,7 +112,8 @@ class ViveVerticalCost
 public:
   // Constructor
   ViveVerticalCost(hive::ViveLight data,
-    geometry_msgs::Transform lTv,
+    geometry_msgs::Transform lTv, // Vive to lighthouse
+    geometry_msgs::Transform tTi, // IMU to light
     Tracker tracker,
     Motor lighthouse,
     bool correction);
@@ -122,28 +127,25 @@ private:
   Tracker tracker_;
   Motor lighthouse_;
   hive::ViveLight data_;
-  geometry_msgs::Transform lTv_;
+  geometry_msgs::Transform lTv_, tTi_;
 };
 
 // Inertial cost function
 class InertialCost {
 public:
   InertialCost(sensor_msgs::Imu imu,
-    geometry_msgs::Transform imu_T,
     geometry_msgs::Vector3 gravity,
     double time_step,
     double trust_weight);
   ~InertialCost();
-  template <typename T> bool operator()(const T* const prev_vTt,
-    const T* const next_vTt,
+  template <typename T> bool operator()(const T* const prev_vTi,
+    const T* const next_vTi,
     T * residual) const;
 private:
   // Inertial data
   sensor_msgs::Imu imu_;
   // Light data
   hive::ViveLight prev_, next_;
-  // Environment and tracker transforms
-  geometry_msgs::Transform imu_T_;
   // Gravity
   geometry_msgs::Vector3 gravity_;
   // Time step and weight

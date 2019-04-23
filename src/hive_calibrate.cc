@@ -49,7 +49,7 @@ int main(int argc, char ** argv) {
   ROS_INFO("Reading JSON file.");
   jp.GetBody(&calibration);
 
-  ViveCalibrate calibrator(calibration, true);
+  ViveCalibrate calibrator(calibration, false);
 
   // Lighthouses
   rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
@@ -91,7 +91,7 @@ int main(int argc, char ** argv) {
     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
     calibrator.AddLight(vl);
     counter++;
-    if (counter >= 20) break;
+    if (counter >= 100) break;
   }
   ROS_INFO("Light read complete.");
   rbag.close();
