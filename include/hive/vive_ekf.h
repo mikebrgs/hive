@@ -6,7 +6,9 @@
 
 // Hive includes
 #include <hive/vive.h>
+#include <hive/vive_cost.h>
 #include <hive/vive_solver.h>
+#include <hive/vive_general.h>
 
 // Incoming measurements
 #include <hive/ViveLight.h>
@@ -31,17 +33,26 @@
 #include <thread>
 #include <string>
 
+typedef std::map<std::string,
+  std::pair<hive::ViveLight*,hive::ViveLight*>> LightMap;
+
 class ViveEKF : public Solver{
 public:
   // Constructor
   ViveEKF(); // Initial template
-  ViveEKF(geometry_msgs::TransformStamped & pose,
-    Tracker & tracker,
+  // ViveEKF(geometry_msgs::TransformStamped & pose,
+  //   Tracker & tracker,
+  //   std::map<std::string, Lighthouse> & lighthouses,
+  //   Environment & environment,
+  //   double ** model_covariance, // time update
+  //   double ** measure_covariance, // measurements
+  //   Solver * solver,
+  //   bool correction);
+  ViveEKF(Tracker & tracker,
     std::map<std::string, Lighthouse> & lighthouses,
     Environment & environment,
-    double ** model_covariance, // time update
-    double ** measure_covariance, // measurements
-    Solver * solver,
+    double model_noise,
+    double measure_noise,
     bool correction);
   // Destructor
   ~ViveEKF();
@@ -88,8 +99,8 @@ private:
   bool correction_;
   // Validity of current state
   bool valid_;
-  // Optimizing solver
-  Solver * solver_;
+  // Old data for initializer
+  LightMap ldata_;
 };
 
 #endif  // HIVE_VIVE_EKF_H_

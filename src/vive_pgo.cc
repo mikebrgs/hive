@@ -315,10 +315,10 @@ bool InertialCost::operator()(const T* const prev_vTi,
   // Inertial predictions
   // Position prediction
   Eigen::Matrix<T,3,1> est_vPi;
-  est_vPi = prev_vPi + T(time_step_) * prev_vVi + T(time_step_ * time_step_) * (prev_vRi * - (iA - vG));
+  est_vPi = prev_vPi + T(time_step_) * prev_vVi + T(time_step_ * time_step_) * (vG - prev_vRi * iA);
   // Velocity prediction
   Eigen::Matrix<T,3,1> est_vVi;
-  est_vVi = prev_vVi + T(time_step_) * (prev_vRi * - (iA - vG));
+  est_vVi = prev_vVi + T(time_step_) * (vG - (prev_vRi * iA));
   if (verbose_) {
     std::cout << "vA" << " "
       << (prev_vRi * iA)(0) << ", "
@@ -386,6 +386,7 @@ PoseGraph::PoseGraph(Environment environment,
   Tracker tracker,
   std::map<std::string, Lighthouse> lighthouses,
   size_t window,
+  double trust,
   bool correction) {
   if (window < 2) {
     std::cout << "Bad window size. Using 2." << std::endl;
@@ -396,6 +397,7 @@ PoseGraph::PoseGraph(Environment environment,
   valid_ = false;
   lastposewasimu_ = false;
   correction_ = correction;
+  trust_ = trust;
   tracker_ = tracker;
   environment_ = environment;
   lighthouses_ = lighthouses;
@@ -566,31 +568,6 @@ bool PoseGraph::Solve() {
 
   double * thepose = poses_.back();
 
-  // size_t counter = 0;
-  // for (auto pose : poses_) {
-  //   pose[0] = -0.034557;
-  //   pose[1] = 0.045337;
-  //   pose[2] = 1.51708;
-  //   pose[3] = 0;
-  //   pose[4] = 0;
-  //   pose[5] = 0;
-  //   pose[6] = 0.312864;
-  //   pose[7] = -0.78895;
-  //   pose[8] = -0.875096;
-    // std::cout << counter << " "
-    //   << summary.final_cost <<  " - "
-    //   << pose[0] << ", "
-    //   << pose[1] << ", "
-    //   << pose[2] << ", "
-    //   << pose[3] << ", "
-    //   << pose[4] << ", "
-    //   << pose[5] << ", "
-    //   << pose[6] << ", "
-    //   << pose[7] << ", "
-    //   << pose[8] << std::endl;
-    //   counter++;
-  // }
-
   // Iterate over light data
   auto li_it = light_data_.begin();
   auto imu_it = imu_data_.begin();
@@ -654,7 +631,7 @@ bool PoseGraph::Solve() {
           environment_.gravity,
           tracker_.gyr_bias,
           dt,
-          TRUST));
+          trust_));
       problem.AddResidualBlock(cost, NULL, prev_pose, next_pose);
       pose_it++;
       pose_counter++;
@@ -682,11 +659,7 @@ bool PoseGraph::Solve() {
 
     // Cost related to light measurements
     if (li_it->axis == HORIZONTAL) {
-      // std::cout << "LIGHT H " << li_it->lighthouse << " ";
       std::cout << "ViveHorizontalCost " << next_counter << std::endl;
-      // for (auto sample : li_it->samples) {
-      //   std::cout << "S" << sample.sensor << " " << sample.angle << std::endl;
-      // }
       ceres::DynamicAutoDiffCostFunction<ViveHorizontalCost, 4> * hcost =
         new ceres::DynamicAutoDiffCostFunction<ViveHorizontalCost, 4>
         (new ViveHorizontalCost(*li_it,
@@ -699,11 +672,7 @@ bool PoseGraph::Solve() {
       hcost->SetNumResiduals(li_it->samples.size());
       problem.AddResidualBlock(hcost, NULL, next_pose); // replace with next_pose
     } else if (li_it->axis == VERTICAL) {
-      // std::cout << "LIGHT V " << li_it->lighthouse << " ";
       std::cout << "ViveVerticalCost " << next_counter << std::endl;
-      // for (auto sample : li_it->samples) {
-      //   std::cout << "S" << sample.sensor << " " << sample.angle << std::endl;
-      // }
       ceres::DynamicAutoDiffCostFunction<ViveVerticalCost, 4> * vcost =
         new ceres::DynamicAutoDiffCostFunction<ViveVerticalCost, 4>
         (new ViveVerticalCost(*li_it,
@@ -776,16 +745,6 @@ bool PoseGraph::Solve() {
         pointer_pose++;
       }
       last_pre_pointer = pose_it + 1;
- 
-
-      // for (auto pose : poses_) {
-      //   std::cout << "Pre Pose " << pre_summary.final_cost << " : ";
-      //   for (size_t i = 0; i < 9; i++) {
-      // //     pose[i] = pre_pose[i];
-      //     std::cout << pose[i] << " ";
-      //   }
-      //   std::cout << std::endl;
-      // }
     }
 
     // Next pose
@@ -824,20 +783,20 @@ bool PoseGraph::Solve() {
       << pose[7] << ", "
       << pose[8] << std::endl;
       counter++;
-    Eigen::Vector3d vAi(pose[6], pose[7], pose[8]);
-    Eigen::AngleAxisd vAAi(vAi.norm(), vAi.normalized());
-    Eigen::Matrix3d vRi = vAAi.toRotationMatrix();
-    Eigen::Vector3d iA(imu_data_.begin()->linear_acceleration.x,
-      imu_data_.begin()->linear_acceleration.y,
-      imu_data_.begin()->linear_acceleration.z);
-    std::cout << "vA: " << (vRi * iA).transpose() << std::endl;
-    Eigen::Vector3d vG(environment_.gravity.x,
-      environment_.gravity.y,
-      environment_.gravity.z);
-    std::cout << "vG: " << vG.transpose() << std::endl;
+    // Eigen::Vector3d vAi(pose[6], pose[7], pose[8]);
+    // Eigen::AngleAxisd vAAi(vAi.norm(), vAi.normalized());
+    // Eigen::Matrix3d vRi = vAAi.toRotationMatrix();
+    // Eigen::Vector3d iA(imu_data_.begin()->linear_acceleration.x,
+    //   imu_data_.begin()->linear_acceleration.y,
+    //   imu_data_.begin()->linear_acceleration.z);
+    // std::cout << "vA: " << (vRi * iA).transpose() << std::endl;
+    // Eigen::Vector3d vG(environment_.gravity.x,
+    //   environment_.gravity.y,
+    //   environment_.gravity.z);
+    // std::cout << "vG: " << vG.transpose() << std::endl;
   }
 
-  std::cout << std::endl;
+  // std::cout << std::endl;
   // std::cout << summary.final_cost <<  " - "
   //   << poses_.back()[0] << ", "
   //   << poses_.back()[1] << ", "
@@ -854,22 +813,40 @@ bool PoseGraph::Solve() {
   //   // do something here
   // }
 
-  // // Save pose
-  // pose_.header.stamp = li_it->header.stamp;
-  // pose_.header.frame_id = "vive";
-  // pose_.child_frame_id = tracker_.serial;
-  // pose_.transform.translation.x = poses_.back()[0];
-  // pose_.transform.translation.y = poses_.back()[1];
-  // pose_.transform.translation.z = poses_.back()[2];
-  // Eigen::Vector3d A(poses_.back()[3],
-  //   poses_.back()[4],
-  //   poses_.back()[5]);
-  // Eigen::AngleAxisd AA(A.angle(), A.axis());
-  // Eigen::Quaterniond Q(AA);
-  // pose_.transform.rotation.w = Q.w();
-  // pose_.transform.rotation.x = Q.x();
-  // pose_.transform.rotation.y = Q.y();
-  // pose_.transform.rotation.z = Q.z();
+  // Save pose
+  pose_.header.stamp = li_it->header.stamp;
+  pose_.header.frame_id = "vive";
+  pose_.child_frame_id = tracker_.serial;
+  // The computed pose
+  Eigen::Vector3d vPi(poses_.back()[0],
+    poses_.back()[1],
+    poses_.back()[2]);
+  Eigen::Vector3d vAi(poses_.back()[6],
+    poses_.back()[7],
+    poses_.back()[8]);
+  Eigen::AngleAxisd vAAi(vAi.norm(), vAi.normalized());
+  Eigen::Matrix3d vRi = vAAi.toRotationMatrix();
+  // Imu to light
+  Eigen::Vector3d tPi(tracker_.imu_transform.translation.x,
+    tracker_.imu_transform.translation.y,
+    tracker_.imu_transform.translation.z);
+  Eigen::Quaterniond tQi(tracker_.imu_transform.rotation.w,
+    tracker_.imu_transform.rotation.x,
+    tracker_.imu_transform.rotation.y,
+    tracker_.imu_transform.rotation.z);
+  Eigen::Matrix3d tRi = tQi.toRotationMatrix();
+  // Convert frames
+  Eigen::Vector3d vPt = vRi * ( - tRi.transpose() * tPi ) + tPi;
+  Eigen::Matrix3d vRt = vRi * tRi.transpose();
+  Eigen::Quaterniond vQt(vRt);
+  // Save to ROS msg
+  pose_.transform.translation.x = vPt(0);
+  pose_.transform.translation.y = vPt(1);
+  pose_.transform.translation.z = vPt(2);
+  pose_.transform.rotation.w = vQt.w();
+  pose_.transform.rotation.x = vQt.x();
+  pose_.transform.rotation.y = vQt.y();
+  pose_.transform.rotation.z = vQt.z();
 
   return true;
 }
@@ -920,7 +897,7 @@ int main(int argc, char ** argv) {
       smap[tr.serial] = PoseGraph(cal.environment,
         cal.trackers[tr.serial],
         cal.lighthouses,
-        4, true);
+        4, TRUST, true);
     }
   }
   ROS_INFO("Trackers' setup complete.");

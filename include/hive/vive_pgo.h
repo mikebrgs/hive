@@ -7,6 +7,7 @@
 // Hive includes
 #include <hive/vive_general.h>
 #include <hive/vive_solve.h>
+// #include <hive/vive_cost.h>
 #include <hive/vive.h>
 
 // Hive msgs
@@ -37,6 +38,7 @@ public:
   Tracker tracker,
   std::map<std::string, Lighthouse> lighthouses,
   size_t window,
+  double trust,
   bool correction);
   // Destructor
   ~PoseGraph();
@@ -76,6 +78,11 @@ private:
   bool correction_;
   // Optimization window
   size_t window_;
+  /*Trust on the inertial measurements
+    -> Too high - the noice may take over
+    -> Too low - consecutive poses will pushed apart
+  */
+  double trust_;
   // Validity
   bool valid_;
   // Internal
