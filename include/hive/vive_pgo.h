@@ -135,6 +135,7 @@ class InertialCost {
 public:
   InertialCost(sensor_msgs::Imu imu,
     geometry_msgs::Vector3 gravity,
+    geometry_msgs::Vector3 gyr_bias,
     double time_step,
     double trust_weight,
     bool verbose = false);
@@ -148,7 +149,7 @@ private:
   // Light data
   hive::ViveLight prev_, next_;
   // Gravity
-  geometry_msgs::Vector3 gravity_;
+  geometry_msgs::Vector3 gravity_, gyr_bias_;
   // Time step and weight
   double time_step_, trust_weight_;
   // Other

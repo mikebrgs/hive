@@ -1,6 +1,6 @@
 #include <hive/vive_pgo.h>
 
-#define TRUST 0.005
+#define TRUST 0.8
 
 enum DataType {imu, light};
 
@@ -215,7 +215,8 @@ bool ViveVerticalCost::operator()(const T* const * parameters,
 
 
 InertialCost::InertialCost(sensor_msgs::Imu imu,
-    geometry_msgs::Vector3 gravity,
+  geometry_msgs::Vector3 gravity,
+  geometry_msgs::Vector3 gyr_bias,
   double time_step,
   double trust_weight,
   bool verbose) {
@@ -223,6 +224,7 @@ InertialCost::InertialCost(sensor_msgs::Imu imu,
   gravity_ = gravity;
   time_step_ = time_step;
   trust_weight_ = trust_weight;
+  gyr_bias_ = gyr_bias;
   verbose_ = verbose;
   return;
 }
@@ -297,6 +299,12 @@ bool InertialCost::operator()(const T* const prev_vTi,
     T(imu_.linear_acceleration.y),
     T(imu_.linear_acceleration.z);
 
+  // Inertial bias
+  Eigen::Matrix<T,3,1> iB;
+  iB << T(gyr_bias_.x),
+    T(gyr_bias_.y),
+    T(gyr_bias_.z);
+
   // Gravity
   Eigen::Matrix<T,3,1> vG;
   vG << T(gravity_.x),
@@ -309,7 +317,7 @@ bool InertialCost::operator()(const T* const prev_vTi,
   est_vPi = prev_vPi + (T(time_step_) * prev_vVi);
   // Velocity prediction
   Eigen::Matrix<T,3,1> est_vVi;
-  est_vVi = prev_vVi + T(time_step_) * (prev_vRi * iA - vG);
+  est_vVi = prev_vVi + T(time_step_) * (prev_vRi * - (iA - vG));
   if (verbose_) {
     std::cout << "vA" << " "
       << (prev_vRi * iA)(0) << ", "
@@ -335,7 +343,7 @@ bool InertialCost::operator()(const T* const prev_vTi,
     prev_vQi.z();
   Eigen::Matrix<T,4,1> text_vQi; // temporary next
   // Temporary next orientation in vector
-  text_vQi = trev_vQi + T(time_step_) * T(0.5) * Omega * iW;
+  text_vQi = trev_vQi + T(time_step_) * T(0.5) * Omega * (iW - iB);
   // text_vQi.normalize(); // maybe remove
   // Fix small errors
   Eigen::Quaternion<T> est_vQi(text_vQi(0),
@@ -344,21 +352,13 @@ bool InertialCost::operator()(const T* const prev_vTi,
     text_vQi(3));
   Eigen::Matrix<T,3,3> est_vRi = est_vQi.toRotationMatrix();
 
+  // Estimated from inertia vs next
   Eigen::Matrix<T,3,1> dP;
   Eigen::Matrix<T,3,1> dV;
   Eigen::Matrix<T,3,3> dR;
   dP = next_vPi - est_vPi;
   dV = next_vVi - est_vVi;
   dR = next_vRi.transpose() * est_vRi;
-  // dP = next_vPi - prev_vPi;
-  // std::cout << dP(0,0) << ", "
-  //   << dP(1,0) << ", "
-  //   << dP(2,0) << std::endl;
-  // dV = next_vVi - prev_vVi;
-  // dR = next_vRi.transpose() * prev_vRi;
-  // std::cout << dR(0,0) << ", " << dR(0,1) << ", " << dR(0,2) << std::endl;
-  // std::cout << dR(1,0) << ", " << dR(1,1) << ", " << dR(1,2) << std::endl;
-  // std::cout << dR(2,0) << ", " << dR(2,1) << ", " << dR(2,2) << std::endl;
 
   // Position cost
   residual[0] = T(trust_weight_) * dP(0);
@@ -376,7 +376,7 @@ bool InertialCost::operator()(const T* const prev_vTi,
   ceres::RotationMatrixToAngleAxis(dR.data(), aa);
   // std::cout << aa[0] << ", " << aa[1] << ", " << aa[2] << std::endl;
   residual[6] = T(trust_weight_) *
-    sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2] + 0.001); // WATCH OUT FOR THIS
+    (aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]); // WATCH OUT FOR THIS
     // Watch out for bias
   return true;
 }
@@ -562,22 +562,31 @@ bool PoseGraph::Solve() {
   ceres::Solver::Options options;
   ceres::Solver::Summary summary;
 
-  double * thepose = new double[6];
+  double * thepose = poses_.back();
 
   size_t counter = 0;
   for (auto pose : poses_) {
-    std::cout << counter << " "
-      << summary.final_cost <<  " - "
-      << pose[0] << ", "
-      << pose[1] << ", "
-      << pose[2] << ", "
-      << pose[3] << ", "
-      << pose[4] << ", "
-      << pose[5] << ", "
-      << pose[6] << ", "
-      << pose[7] << ", "
-      << pose[8] << std::endl;
-      counter++;
+    pose[0] = -0.034557;
+    pose[1] = 0.045337;
+    pose[2] = 1.51708;
+    pose[3] = 0;
+    pose[4] = 0;
+    pose[5] = 0;
+    pose[6] = 0.312864;
+    pose[7] = -0.78895;
+    pose[8] = -0.875096;
+    // std::cout << counter << " "
+    //   << summary.final_cost <<  " - "
+    //   << pose[0] << ", "
+    //   << pose[1] << ", "
+    //   << pose[2] << ", "
+    //   << pose[3] << ", "
+    //   << pose[4] << ", "
+    //   << pose[5] << ", "
+    //   << pose[6] << ", "
+    //   << pose[7] << ", "
+    //   << pose[8] << std::endl;
+    //   counter++;
   }
 
   // Iterate over light data
@@ -586,12 +595,78 @@ bool PoseGraph::Solve() {
   auto pose_it = poses_.begin();
   bool lastposewasimu = false;
   size_t next_counter = 0, prev_counter = 0, pose_counter = 0;
+
+  // Preliminary light data - first HORIZONTAL / second VERTICAL
+  std::map<std::string, std::pair<hive::ViveLight*,hive::ViveLight*>> pre_data;
+  double pre_pose[9];
+  pre_pose[0] = poses_.back()[0];
+  pre_pose[1] = poses_.back()[1];
+  pre_pose[2] = poses_.back()[2];
+  pre_pose[3] = poses_.back()[3];
+  pre_pose[4] = poses_.back()[4];
+  pre_pose[5] = poses_.back()[5];
+  pre_pose[6] = poses_.back()[6];
+  pre_pose[7] = poses_.back()[7];
+  pre_pose[8] = poses_.back()[8];
+
   // std::cout << "Poses: " << poses_.size() << std::endl;
   while (li_it != light_data_.end()) {
     prev_pose = next_pose;
     next_pose = *pose_it;
     prev_counter = next_counter;
     next_counter = pose_counter;
+
+    // Convert lighthouse to geometry_msgs
+    geometry_msgs::Transform lhTF;
+    lhTF.translation.x = environment_.lighthouses[li_it->lighthouse].translation.x;
+    lhTF.translation.y = environment_.lighthouses[li_it->lighthouse].translation.y;
+    lhTF.translation.z = environment_.lighthouses[li_it->lighthouse].translation.z;
+    lhTF.rotation.w = environment_.lighthouses[li_it->lighthouse].rotation.w;
+    lhTF.rotation.x = environment_.lighthouses[li_it->lighthouse].rotation.x;
+    lhTF.rotation.y = environment_.lighthouses[li_it->lighthouse].rotation.y;
+    lhTF.rotation.z = environment_.lighthouses[li_it->lighthouse].rotation.z;
+
+    // Preliminary solver data
+    if (li_it->axis == HORIZONTAL)
+      pre_data[li_it->lighthouse].first = &(*li_it);
+    else if (li_it->axis == VERTICAL)
+      pre_data[li_it->lighthouse].second = &(*li_it);
+    // Solve preliminary data
+    if (pre_data[li_it->lighthouse].first != NULL
+      && pre_data[li_it->lighthouse].second != NULL) {
+      ceres::Problem pre_problem;
+      ceres::Solver::Options pre_options;
+      ceres::Solver::Summary pre_summary;
+      // Horizontal data
+      ceres::DynamicAutoDiffCostFunction<ViveHorizontalCost, 4> * hcost =
+        new ceres::DynamicAutoDiffCostFunction<ViveHorizontalCost, 4>
+        (new ViveHorizontalCost(*pre_data[li_it->lighthouse].first,
+          lhTF,
+          tracker_.imu_transform,
+          tracker_,
+          lighthouses_[li_it->lighthouse].horizontal_motor,
+          correction_));
+      hcost->AddParameterBlock(9);
+      hcost->SetNumResiduals(pre_data[li_it->lighthouse].first->samples.size());
+      pre_problem.AddResidualBlock(hcost, NULL, pre_pose);
+      // Vertical data
+      ceres::DynamicAutoDiffCostFunction<ViveVerticalCost, 4> * vcost =
+        new ceres::DynamicAutoDiffCostFunction<ViveVerticalCost, 4>
+        (new ViveVerticalCost(*pre_data[li_it->lighthouse].second,
+          lhTF,
+          tracker_.imu_transform,
+          tracker_,
+          lighthouses_[li_it->lighthouse].horizontal_motor,
+          correction_));
+      vcost->AddParameterBlock(9);
+      vcost->SetNumResiduals(pre_data[li_it->lighthouse].second->samples.size());
+      pre_problem.AddResidualBlock(vcost, NULL, pre_pose);
+      pre_options.minimizer_progress_to_stdout = false;
+      pre_options.max_num_iterations = 1000;
+      ceres::Solve(pre_options, &pre_problem, &pre_summary);
+      // Copy paste
+      for (size_t i = 0; i < 9; i++) poses_.back()[i] = pre_pose[i];
+    }
 
     // Iterate IMU data
     while(li_it != light_data_.begin() &&
@@ -605,6 +680,7 @@ bool PoseGraph::Solve() {
         dt = 2 * (imu_it->header.stamp.toSec() - prev_time);
       else
         dt = 0.0;
+      // dt = 0.0;
       // Change to the next pose
       // Cost related to inertial measurements
       std::cout << "InertialCost " << prev_counter << " " << next_counter << std::endl;
@@ -612,6 +688,7 @@ bool PoseGraph::Solve() {
         new ceres::AutoDiffCostFunction<InertialCost, 7, 9, 9>
         (new InertialCost(*imu_it,
           environment_.gravity,
+          tracker_.gyr_bias,
           dt,
           TRUST));
       problem.AddResidualBlock(cost, NULL, prev_pose, next_pose);
@@ -639,15 +716,6 @@ bool PoseGraph::Solve() {
       next_counter = pose_counter;
     }
 
-    // Convert lighthouse to geometry_msgs
-    geometry_msgs::Transform lhTF;
-    lhTF.translation.x = environment_.lighthouses[li_it->lighthouse].translation.x;
-    lhTF.translation.y = environment_.lighthouses[li_it->lighthouse].translation.y;
-    lhTF.translation.z = environment_.lighthouses[li_it->lighthouse].translation.z;
-    lhTF.rotation.w = environment_.lighthouses[li_it->lighthouse].rotation.w;
-    lhTF.rotation.x = environment_.lighthouses[li_it->lighthouse].rotation.x;
-    lhTF.rotation.y = environment_.lighthouses[li_it->lighthouse].rotation.y;
-    lhTF.rotation.z = environment_.lighthouses[li_it->lighthouse].rotation.z;
     // Cost related to light measurements
     if (li_it->axis == HORIZONTAL) {
       // std::cout << "LIGHT H " << li_it->lighthouse << " ";
@@ -717,27 +785,27 @@ bool PoseGraph::Solve() {
       << pose[7] << ", "
       << pose[8] << std::endl;
       counter++;
-    Eigen::Vector3d vAi(pose[6], pose[7], pose[8]);
-    Eigen::AngleAxisd vAAi(vAi.norm(), vAi.normalized());
-    Eigen::Matrix3d vRi = vAAi.toRotationMatrix();
-    Eigen::Vector3d iA(imu_data_.begin()->linear_acceleration.x,
-      imu_data_.begin()->linear_acceleration.y,
-      imu_data_.begin()->linear_acceleration.z);
-    std::cout << (vRi * iA).transpose() << std::endl;
-    Eigen::Vector3d vG(environment_.gravity.x,
-      environment_.gravity.y,
-      environment_.gravity.z);
-    std::cout << vG.transpose() << std::endl;
+    // Eigen::Vector3d vAi(pose[6], pose[7], pose[8]);
+    // Eigen::AngleAxisd vAAi(vAi.norm(), vAi.normalized());
+    // Eigen::Matrix3d vRi = vAAi.toRotationMatrix();
+    // Eigen::Vector3d iA(imu_data_.begin()->linear_acceleration.x,
+    //   imu_data_.begin()->linear_acceleration.y,
+    //   imu_data_.begin()->linear_acceleration.z);
+    // std::cout << (vRi * iA).transpose() << std::endl;
+    // Eigen::Vector3d vG(environment_.gravity.x,
+    //   environment_.gravity.y,
+    //   environment_.gravity.z);
+    // std::cout << vG.transpose() << std::endl;
   }
 
   std::cout << std::endl;
-    // std::cout << summary.final_cost <<  " - "
-    //   << poses_.back()[0] << ", "
-    //   << poses_.back()[1] << ", "
-    //   << poses_.back()[2] << ", "
-    //   << poses_.back()[3] << ", "
-    //   << poses_.back()[4] << ", "
-    //   << poses_.back()[5] << std::endl << std::endl;
+  // std::cout << summary.final_cost <<  " - "
+  //   << poses_.back()[0] << ", "
+  //   << poses_.back()[1] << ", "
+  //   << poses_.back()[2] << ", "
+  //   << poses_.back()[6] << ", "
+  //   << poses_.back()[7] << ", "
+  //   << poses_.back()[8] << std::endl;
   // ROS_INFO("OUT");
   // std::cout << std::endl;
   // std::cout << summary.BriefReport() << std::endl;
@@ -838,7 +906,7 @@ int main(int argc, char ** argv) {
       smap[vi->header.frame_id].ProcessImu(vi);
       counter++;
     }
-    if (counter >= 40) break;
+    // if (counter >= 200) break;
   }
   ROS_INFO("Data processment complete.");
 

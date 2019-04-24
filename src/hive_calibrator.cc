@@ -773,6 +773,7 @@ bool GetGravity(Calibration * cal,
       Eigen::Vector3d sample_iG(msg.linear_acceleration.x,
         msg.linear_acceleration.y,
         msg.linear_acceleration.z);
+      std::cout << "Sample: " << sample_iG.transpose() << std::endl;
       tracker_iG += sample_iG;
       t_count++;
     }
@@ -784,17 +785,33 @@ bool GetGravity(Calibration * cal,
       cal->environment.vive.rotation.x,
       cal->environment.vive.rotation.y,
       cal->environment.vive.rotation.z);
+    // imu to light transform
     Eigen::Quaterniond lQi(cal->trackers[tracker_data.first].imu_transform.rotation.w,
       cal->trackers[tracker_data.first].imu_transform.rotation.x,
       cal->trackers[tracker_data.first].imu_transform.rotation.y,
       cal->trackers[tracker_data.first].imu_transform.rotation.z);
+    // convert the gravity to the vive frame
     Eigen::Vector3d tracker_vG = wQv.toRotationMatrix().transpose() *
       lQi.toRotationMatrix() * tracker_iG;
+    std::cout << "Vive: " << tracker_vG.transpose() << std::endl;
     vG += tracker_vG;
     g_count++;
+
+    // Eigen::Vector3d wPv(cal->environment.vive.translation.x,
+    //   cal->environment.vive.translation.y,
+    //   cal->environment.vive.translation.z);
+    // Eigen::Vector3d tPi(cal->trackers[tracker_data.first].imu_transform.translation.x,
+    //   cal->trackers[tracker_data.first].imu_transform.translation.y,
+    //   cal->trackers[tracker_data.first].imu_transform.translation.z);
+    // Eigen::Matrix3d wRv = wQv.toRotationMatrix();
+    // Eigen::Matrix3d tRi = lQi.toRotationMatrix();
+
+    // Eigen::Vector3d vPi = wRv.transpose() * tPi - wRv.transpose() * wPv;
+    // std::cout << vPi.transpose() << std::endl;
   }
+  // Extra
+
   vG = vG / g_count;
-  std::cout << vG.transpose() << std::endl;
   cal->environment.gravity.x = vG(0);
   cal->environment.gravity.y = vG(1);
   cal->environment.gravity.z = vG(2);
