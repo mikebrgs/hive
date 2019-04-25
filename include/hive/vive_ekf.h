@@ -33,21 +33,20 @@
 #include <thread>
 #include <string>
 
+#define STATE_SIZE 13         // Size of the state vector
+#define NOISE_SIZE 9          // Size of the noise vector
+#define LIGHT_DATA_BUFFER 4   // Size of the light data vector
+
 typedef std::map<std::string,
   std::pair<hive::ViveLight*,hive::ViveLight*>> LightMap;
+
+typedef std::vector<hive::ViveLight> LightVector;
+
 
 class ViveEKF : public Solver{
 public:
   // Constructor
-  ViveEKF(); // Initial template
-  // ViveEKF(geometry_msgs::TransformStamped & pose,
-  //   Tracker & tracker,
-  //   std::map<std::string, Lighthouse> & lighthouses,
-  //   Environment & environment,
-  //   double ** model_covariance, // time update
-  //   double ** measure_covariance, // measurements
-  //   Solver * solver,
-  //   bool correction);
+  ViveEKF();
   ViveEKF(Tracker & tracker,
     std::map<std::string, Lighthouse> & lighthouses,
     Environment & environment,
@@ -71,6 +70,8 @@ public:
   bool Update(const hive::ViveLight & msg);
   // Validity
   bool Valid();
+  // Initialize estimates
+  bool Initialize(hive::ViveLight & msg);
 private:
   // State
   Eigen::Vector3d position_;
@@ -100,7 +101,9 @@ private:
   // Validity of current state
   bool valid_;
   // Old data for initializer
-  LightMap ldata_;
+  LightVector light_data_;
+  // Aux
+  bool lastmsgwasimu_;
 };
 
 #endif  // HIVE_VIVE_EKF_H_

@@ -1,6 +1,6 @@
 #include <hive/vive_cost.h>
 
-ViveHorizontalCost::ViveHorizontalCost(hive::ViveLight data,
+ViveHorizontalCostFunctor::ViveHorizontalCostFunctor(hive::ViveLight data,
     geometry_msgs::Transform lTv,
     Tracker tracker,
     Motor lighthouse,
@@ -13,13 +13,13 @@ ViveHorizontalCost::ViveHorizontalCost(hive::ViveLight data,
   return;
 }
 
-ViveHorizontalCost::~ViveHorizontalCost() {
+ViveHorizontalCostFunctor::~ViveHorizontalCostFunctor() {
   // Do nothing
   return;
 }
 
 template <typename T>
-bool ViveHorizontalCost::operator()(const T* const * parameters,
+bool ViveHorizontalCostFunctor::operator()(const T* const * parameters,
   T* residual) const {
   // Optimization parameters
   Eigen::Matrix<T, 3, 1> vPi;
@@ -102,7 +102,7 @@ bool ViveHorizontalCost::operator()(const T* const * parameters,
   return true;
 }
 
-ViveVerticalCost::ViveVerticalCost(hive::ViveLight data,
+ViveVerticalCostFunctor::ViveVerticalCostFunctor(hive::ViveLight data,
   geometry_msgs::Transform lTv,
   Tracker tracker,
   Motor lighthouse,
@@ -115,13 +115,13 @@ ViveVerticalCost::ViveVerticalCost(hive::ViveLight data,
   return;
 }
 
-ViveVerticalCost::~ViveVerticalCost() {
+ViveVerticalCostFunctor::~ViveVerticalCostFunctor() {
   // Do nothing
   return;
 }
 
 template <typename T>
-bool ViveVerticalCost::operator()(const T* const * parameters,
+bool ViveVerticalCostFunctor::operator()(const T* const * parameters,
   T* residual) const {
   // Optimization parameters
   Eigen::Matrix<T, 3, 1> vPi;
@@ -204,3 +204,12 @@ bool ViveVerticalCost::operator()(const T* const * parameters,
   }
   return true;
 }
+
+  
+template bool ViveHorizontalCostFunctor::operator()(const double* const * , double* ) const;
+template bool ViveHorizontalCostFunctor::operator()(const  ceres::Jet<double, 4>* const * ,  ceres::Jet<double, 4>* ) const;
+
+// template bool ViveHorizontalCostFunctor::operator()<double>(const double* const * parameters, double* residual);
+// template bool ViveHorizontalCostFunctor::operator()<float>(const float* const *, float*);
+// template bool ViveVerticalCostFunctor::operator()<double>(const double* const *, double*);
+// template bool ViveVerticalCostFunctor::operator()<float>(const float* const *, float*);

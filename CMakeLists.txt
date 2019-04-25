@@ -141,7 +141,7 @@ add_executable(hive_bridge src/vive_bridge.cc)
 add_executable(hive_beta tools/vive_beta.cc src/vive.cc src/vive_solve.cc)
 add_executable(hive_offset tools/vive_offset.cc src/vive.cc src/vive_base.cc)
 add_executable(hive_refine src/vive_refine.cc src/vive.cc src/vive_solve.cc)
-add_executable(hive_ekf src/vive_ekf.cc src/vive.cc src/vive_cost.cc)
+add_executable(hive_ekf src/vive_ekf.cc src/vive.cc)
 add_executable(hive_pgo src/vive_pgo.cc src/vive.cc)
 
 ## Add cmake target dependencies of the executable
@@ -214,6 +214,7 @@ target_link_libraries(hive_refine
 
 target_link_libraries(hive_ekf
   ${catkin_LIBRARIES}
+  ${CERES_LIBRARIES}
   ${EIGEN_LIBRARIES}
 )
 
