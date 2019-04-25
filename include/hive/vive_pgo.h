@@ -52,17 +52,22 @@ public:
   void RemoveImu();
   // Get the tracker's pose
   bool GetTransform(geometry_msgs::TransformStamped& msg);
-  // 
+private:
+  // Add new pose to the back
   void AddPoseBack();
+  // Add new pose to the front
   void AddPoseFront();
+  // Limit the vector of poses
   void ApplyLimits();
   // Solve the problem
   bool Solve();
+  // Validity of the pose
+  bool Valid();
   // Prinst stuff
   void PrintState();
   
 private:
-  // The pose
+  // The pose (light pose in vive frame)
   geometry_msgs::TransformStamped pose_;
   // Light data
   std::vector<hive::ViveLight> light_data_;

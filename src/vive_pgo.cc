@@ -315,7 +315,7 @@ bool InertialCost::operator()(const T* const prev_vTi,
   // Inertial predictions
   // Position prediction
   Eigen::Matrix<T,3,1> est_vPi;
-  est_vPi = prev_vPi + T(time_step_) * prev_vVi + T(time_step_ * time_step_) * (vG - prev_vRi * iA);
+  est_vPi = prev_vPi + T(time_step_) * prev_vVi;// + T(0.5 * time_step_ * time_step_) * (vG - prev_vRi * iA);
   // Velocity prediction
   Eigen::Matrix<T,3,1> est_vVi;
   est_vVi = prev_vVi + T(time_step_) * (vG - (prev_vRi * iA));
@@ -414,18 +414,99 @@ PoseGraph::~PoseGraph() {
   return;
 }
 
-// The number of poses is not correct
+
+bool PoseGraph::Valid() {
+  // Parameters to validate pose
+  double cost = 0;
+  double sample_counter = 0;
+  // Pose of the tracker in the vive frame
+  Eigen::Vector3d vPt(pose_.transform.translation.x,
+    pose_.transform.translation.y,
+    pose_.transform.translation.z);
+  Eigen::Quaterniond vQt(pose_.transform.rotation.w,
+    pose_.transform.rotation.x,
+    pose_.transform.rotation.y,
+    pose_.transform.rotation.z);
+  Eigen::Matrix3d vRt = vQt.toRotationMatrix();
+  for (auto light_sample : light_data_) {
+    // Lighthouse in the vive frame
+    Eigen::Vector3d vPl(
+      environment_.lighthouses[light_sample.lighthouse].translation.x,
+      environment_.lighthouses[light_sample.lighthouse].translation.y,
+      environment_.lighthouses[light_sample.lighthouse].translation.z);
+    Eigen::Quaterniond vQl(
+      environment_.lighthouses[light_sample.lighthouse].rotation.w,
+      environment_.lighthouses[light_sample.lighthouse].rotation.x,
+      environment_.lighthouses[light_sample.lighthouse].rotation.y,
+      environment_.lighthouses[light_sample.lighthouse].rotation.z);
+    Eigen::Matrix3d vRl = vQl.toRotationMatrix();
+    // Convert pose to lighthouse frame
+    Eigen::Vector3d lPt = vRl.transpose() * (vPt) + ( - vRl.transpose() * vPl);
+    Eigen::Matrix3d lRt = vRl.transpose() * vRt;
+    for (auto sample : light_sample.samples) {
+      Eigen::Vector3d tPs(tracker_.sensors[sample.sensor].position.x,
+        tracker_.sensors[sample.sensor].position.y,
+        tracker_.sensors[sample.sensor].position.z);
+      // Sensor in lighthouse frame
+      Eigen::Vector3d lPs = lRt * tPs + lPt;
+      // Horizontal Angle
+      if (light_sample.axis == HORIZONTAL) {
+        double ang;
+        double x = (lPs(0)/lPs(2)); // Horizontal angle
+        double y = (lPs(1)/lPs(2)); // Vertical angle
+        double phase = lighthouses_[light_sample.lighthouse].horizontal_motor.phase;
+        double tilt = lighthouses_[light_sample.lighthouse].horizontal_motor.tilt;
+        double gib_phase = lighthouses_[light_sample.lighthouse].horizontal_motor.gib_phase;
+        double gib_mag = lighthouses_[light_sample.lighthouse].horizontal_motor.gib_magnitude;
+        double curve = lighthouses_[light_sample.lighthouse].horizontal_motor.curve;
+        // Correction
+        if (correction_) {
+          ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
+        } else {
+          ang = atan(x);
+        }
+        // Adding to cost
+        cost += pow(sample.angle - ang,2);
+        sample_counter++;
+      // Vertical Angle
+      } else if (light_sample.axis == VERTICAL) {
+        double ang;
+        double x = (lPs(0)/lPs(2)); // Horizontal angle
+        double y = (lPs(1)/lPs(2)); // Vertical angle
+        double phase = lighthouses_[light_sample.lighthouse].vertical_motor.phase;
+        double tilt = lighthouses_[light_sample.lighthouse].vertical_motor.tilt;
+        double gib_phase = lighthouses_[light_sample.lighthouse].vertical_motor.gib_phase;
+        double gib_mag = lighthouses_[light_sample.lighthouse].vertical_motor.gib_magnitude;
+        double curve = lighthouses_[light_sample.lighthouse].vertical_motor.curve;
+        // Correction
+        if (correction_) {
+          ang = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
+        } else {
+          ang = atan(y);
+        }
+        // Adding to cost
+        cost += pow(sample.angle - ang,2);
+        sample_counter++;
+      }
+    }
+  }
+
+  if (cost > 1e-5 * sample_counter)
+    return false;
+
+  return true;
+}
 
 void PoseGraph::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   light_data_.push_back(*msg);
-  // ApplyLimits();
+
   if (!lastposewasimu_) {
     AddPoseBack();
   }
   lastposewasimu_ = false;
   if (light_data_.size() > window_) {
     // Erase first element
-    RemoveLight(); // TODO check this
+    RemoveLight();
   }
   // Add new pose for removal in  IMU cycle
   if (imu_data_.size() != 0 &&
@@ -439,6 +520,9 @@ void PoseGraph::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   }
   // Solve the problem
   Solve();
+
+  valid_ = Valid();
+
   return;
 }
 
@@ -475,11 +559,9 @@ void PoseGraph::RemoveLight() {
 void PoseGraph::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
   // Save the inertial data
   imu_data_.push_back(*msg);
-  // std::cout << "New Imu: " << imu_data_.size() << std::endl;
   lastposewasimu_ = true;
-  // poses_.push_back(new double[6]);
-  AddPoseBack(); // TODO check this
-  // std::cout << "IMU addel: " << poses_.size() << std::endl;
+  AddPoseBack();
+
   return;
 }
 
@@ -621,10 +703,9 @@ bool PoseGraph::Solve() {
         dt = 2 * (imu_it->header.stamp.toSec() - prev_time);
       else
         dt = 0.0;
-      // dt = 0.0;
       // Change to the next pose
       // Cost related to inertial measurements
-      std::cout << "InertialCost " << prev_counter << " " << next_counter << std::endl;
+      // std::cout << "InertialCost " << prev_counter << " " << next_counter << std::endl;
       ceres::CostFunction * cost =
         new ceres::AutoDiffCostFunction<InertialCost, 7, 9, 9>
         (new InertialCost(*imu_it,
@@ -659,7 +740,7 @@ bool PoseGraph::Solve() {
 
     // Cost related to light measurements
     if (li_it->axis == HORIZONTAL) {
-      std::cout << "ViveHorizontalCost " << next_counter << std::endl;
+      // std::cout << "ViveHorizontalCost " << next_counter << std::endl;
       ceres::DynamicAutoDiffCostFunction<ViveHorizontalCost, 4> * hcost =
         new ceres::DynamicAutoDiffCostFunction<ViveHorizontalCost, 4>
         (new ViveHorizontalCost(*li_it,
@@ -672,7 +753,7 @@ bool PoseGraph::Solve() {
       hcost->SetNumResiduals(li_it->samples.size());
       problem.AddResidualBlock(hcost, NULL, next_pose); // replace with next_pose
     } else if (li_it->axis == VERTICAL) {
-      std::cout << "ViveVerticalCost " << next_counter << std::endl;
+      // std::cout << "ViveVerticalCost " << next_counter << std::endl;
       ceres::DynamicAutoDiffCostFunction<ViveVerticalCost, 4> * vcost =
         new ceres::DynamicAutoDiffCostFunction<ViveVerticalCost, 4>
         (new ViveVerticalCost(*li_it,
@@ -760,61 +841,35 @@ bool PoseGraph::Solve() {
     li_it++;
   }
 
-  // ROS_INFO("OUT");
-
   options.minimizer_progress_to_stdout = false;
   options.max_num_iterations = 1000;
-  // options.minimizer_type = ceres::LINE_SEARCH;
-  // options.line_search_direction_type = ceres::STEEPEST_DESCENT;
   ceres::Solve(options, &problem, &summary);
-  // ROS_INFO("OUT");
 
-  size_t counter = 0;
-  for (auto pose : poses_) {
-    std::cout << counter << " "
-      << summary.final_cost <<  " - "
-      << pose[0] << ", "
-      << pose[1] << ", "
-      << pose[2] << ", "
-      << pose[3] << ", "
-      << pose[4] << ", "
-      << pose[5] << ", "
-      << pose[6] << ", "
-      << pose[7] << ", "
-      << pose[8] << std::endl;
-      counter++;
-    // Eigen::Vector3d vAi(pose[6], pose[7], pose[8]);
-    // Eigen::AngleAxisd vAAi(vAi.norm(), vAi.normalized());
-    // Eigen::Matrix3d vRi = vAAi.toRotationMatrix();
-    // Eigen::Vector3d iA(imu_data_.begin()->linear_acceleration.x,
-    //   imu_data_.begin()->linear_acceleration.y,
-    //   imu_data_.begin()->linear_acceleration.z);
-    // std::cout << "vA: " << (vRi * iA).transpose() << std::endl;
-    // Eigen::Vector3d vG(environment_.gravity.x,
-    //   environment_.gravity.y,
-    //   environment_.gravity.z);
-    // std::cout << "vG: " << vG.transpose() << std::endl;
-  }
-
-  // std::cout << std::endl;
-  // std::cout << summary.final_cost <<  " - "
-  //   << poses_.back()[0] << ", "
-  //   << poses_.back()[1] << ", "
-  //   << poses_.back()[2] << ", "
-  //   << poses_.back()[6] << ", "
-  //   << poses_.back()[7] << ", "
-  //   << poses_.back()[8] << std::endl;
-  // ROS_INFO("OUT");
-  // std::cout << std::endl;
-  // std::cout << summary.BriefReport() << std::endl;
-
-  // // Outlier checkers
-  // if (true) {
-  //   // do something here
+  // size_t counter = 0;
+  // for (auto pose : poses_) {
+  //   std::cout << counter << " "
+  //     << summary.final_cost <<  " - "
+  //     << pose[0] << ", "
+  //     << pose[1] << ", "
+  //     << pose[2] << ", "
+  //     << pose[3] << ", "
+  //     << pose[4] << ", "
+  //     << pose[5] << ", "
+  //     << pose[6] << ", "
+  //     << pose[7] << ", "
+  //     << pose[8] << std::endl;
+  //     counter++;
   // }
+  std::cout << summary.final_cost <<  " - "
+    << poses_.back()[0] << ", "
+    << poses_.back()[1] << ", "
+    << poses_.back()[2] << ", "
+    << poses_.back()[6] << ", "
+    << poses_.back()[7] << ", "
+    << poses_.back()[8] << std::endl;
 
-  // Save pose
-  pose_.header.stamp = li_it->header.stamp;
+  // Save pose -- light frame in the vive frame
+  pose_.header.stamp = light_data_.back().header.stamp;
   pose_.header.frame_id = "vive";
   pose_.child_frame_id = tracker_.serial;
   // The computed pose
