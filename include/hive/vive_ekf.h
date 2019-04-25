@@ -63,7 +63,7 @@ public:
   bool GetTransform(geometry_msgs::TransformStamped& msg);
   // Temporary
   void PrintState();
-// private: // temporary
+private: // temporary
   // Internal method
   bool Predict(const sensor_msgs::Imu & msg);
   // Internal method
@@ -71,23 +71,24 @@ public:
   // Validity
   bool Valid();
   // Initialize estimates
-  bool Initialize(hive::ViveLight & msg);
+  bool Initialize();
 private:
   // State
+  // Positon of the imu frame in the Vive frame
   Eigen::Vector3d position_;
-  // geometry_msgs::Vector3 position_;
+  // Velocity of the imu frame in the Vive frame
   Eigen::Vector3d velocity_;
-  // geometry_msgs::Vector3 velocity_;
+  // Orientation of the imu frame in the Vive frame
   Eigen::Quaterniond rotation_;
-  // geometry_msgs::Quaternion rotation_;
+  // Bias of the imu frame in the Vive frame
   Eigen::Vector3d bias_;
-  // geometry_msgs::Vector3 bias_;
+  // Last update to the solver
   ros::Time time_;
   // Covatiances
+  // Model covariance
   Eigen::MatrixXd model_covariance_;
-  // double * tu_covariance;
+  // Measurement covariance
   Eigen::MatrixXd measure_covariance_;
-  // double * mu_covari>ance;
   // State covariance
   Eigen::MatrixXd covariance_;
   // Lighthouse specifications
@@ -100,10 +101,12 @@ private:
   bool correction_;
   // Validity of current state
   bool valid_;
-  // Old data for initializer
-  LightVector light_data_;
+  // If the pose was already used
+  bool used_;
   // Aux
   bool lastmsgwasimu_;
+  // Old data for initializer
+  LightVector light_data_;
 };
 
 #endif  // HIVE_VIVE_EKF_H_

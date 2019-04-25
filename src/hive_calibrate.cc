@@ -49,7 +49,7 @@ int main(int argc, char ** argv) {
   ROS_INFO("Reading JSON file.");
   jp.GetBody(&calibration);
 
-  ViveCalibrate calibrator(calibration, false);
+  ViveCalibrate calibrator(calibration, true);
 
   // Lighthouses
   rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
