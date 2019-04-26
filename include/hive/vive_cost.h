@@ -101,6 +101,7 @@ private:
   bool verbose_;
 };
 
+// How close the poses should be to each other
 class SmoothingCost {
 public:
   // Constructor to pass data
@@ -167,6 +168,41 @@ private:
   Motor lighthouse_;
   hive::ViveLight data_;
 };
+
+// Hand Eye Calibration Refinement
+class PoseCostFunctor{
+public:
+  // Constructor
+  PoseCostFunctor(geometry_msgs::Transform vive,
+    geometry_msgs::Transform optitrack);
+  // Ceres operator
+  template <typename T>
+  bool operator()(const T* const o_v, const T* const a_t,
+    T * residual) const;
+private:
+  geometry_msgs::Transform vive_;
+  geometry_msgs::Transform optitrack_;
+};
+
+// The best way to average poses -- including orientation
+class PoseAverageCost{
+public:
+  // Constructor
+  PoseAverageCost(geometry_msgs::Transform sample, double angle_factor);
+  // CEres operator
+  template <typename T>
+  bool operator()(const T* const average, T * residual) const;
+private:
+  geometry_msgs::Transform sample_;
+  double angle_factor_;
+};
+
+
+
+
+
+
+
 
 /*  IMPLEMENTATION  */
 
@@ -834,6 +870,129 @@ bool ViveCalibrationVerticalCost::operator()(const T* const * parameters,
     residual[counter] = T(li_it->angle) - ang;
     counter++;
   }
+  return true;
+}
+
+PoseCostFunctor::PoseCostFunctor(geometry_msgs::Transform vive,
+  geometry_msgs::Transform optitrack) {
+  vive_ = vive;
+  optitrack_ = optitrack;
+  return;
+}
+
+template <typename T>
+bool PoseCostFunctor::operator()(const T* const o_v,
+  const T* const a_t, T * residual) const {
+  // Pose of the tracker in the Vive frame at instant t
+  Eigen::Matrix<T, 3, 1> vPt;
+  Eigen::Matrix<T, 3, 3> vRt;
+  // Pose of the arrow in the optitrack frame at instant t+/-1
+  Eigen::Matrix<T, 3, 1> oPa;
+  Eigen::Matrix<T, 3, 3> oRa;
+  // Transform from vive frame to optitrack frame
+  Eigen::Matrix<T, 3, 1> oPv;
+  Eigen::Matrix<T, 3, 3> oRv;
+  // Transform from tracker frame to arrow frame
+  Eigen::Matrix<T, 3, 1> aPt;
+  Eigen::Matrix<T, 3, 3> aRt;
+
+  vPt << T(vive_.translation.x),
+      T(vive_.translation.y),
+      T(vive_.translation.z);
+  vRt << Eigen::Quaternion<T>(T(vive_.rotation.w),
+      T(vive_.rotation.x),
+      T(vive_.rotation.y),
+      T(vive_.rotation.z)).normalized().toRotationMatrix();
+  oPa << T(optitrack_.translation.x),
+      T(optitrack_.translation.y),
+      T(optitrack_.translation.z);
+  oRa << Eigen::Quaternion<T>(T(optitrack_.rotation.w),
+      T(optitrack_.rotation.x),
+      T(optitrack_.rotation.y),
+      T(optitrack_.rotation.z)).normalized().toRotationMatrix();
+  oPv << o_v[0],
+      o_v[1],
+      o_v[2];
+  ceres::AngleAxisToRotationMatrix(&o_v[3], oRv.data());
+  aPt << a_t[0],
+      a_t[1],
+      a_t[2];
+  ceres::AngleAxisToRotationMatrix(&a_t[3], aRt.data());
+
+  // Convert Vive to OptiTrack
+  Eigen::Matrix<T, 3, 1> tPa = -aRt.transpose() * aPt;
+  Eigen::Matrix<T, 3, 3> tRa = aRt.transpose();
+
+  Eigen::Matrix<T, 3, 1> _vPa = vRt * tPa + vPt;
+  Eigen::Matrix<T, 3, 3> _vRa = vRt * tRa;
+
+  Eigen::Matrix<T, 3, 1> _oPa = oRv * _vPa + oPv;
+  Eigen::Matrix<T, 3, 3> _oRa = oRv * _vRa;
+
+  Eigen::Quaternion<T> oQa(oRa);
+  oQa.normalize();
+  Eigen::Quaternion<T> _oQa(_oRa);
+  _oQa.normalize();
+
+  // T delta = T(vive_.header.stamp.toSec()) - T(optitrack_.header.stamp.toSec());
+  T delta = T(1.0);
+  residual[0] = (_oPa(0) - oPa(0)) / (T(0.01) + delta);
+  residual[1] = (_oPa(1) - oPa(1)) / (T(0.01) + delta);
+  residual[2] = (_oPa(2) - oPa(2)) / (T(0.01) + delta);
+
+  T aa[3];
+  Eigen::Matrix<T, 3, 3> R = _oRa * oRa.transpose();
+  ceres::RotationMatrixToAngleAxis(R.data(), aa);
+  residual[3] = sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
+
+  return true;
+}
+
+PoseAverageCost::PoseAverageCost(geometry_msgs::Transform sample,
+  double angle_factor) {
+  sample_ = sample;
+  angle_factor_ = angle_factor;
+  return;
+}
+
+template <typename T>
+bool PoseAverageCost::operator()(const T* const average,
+  T * residual) const {
+  // Converting sample
+  Eigen::Matrix<T, 3, 1> Psample;
+  Psample << T(sample_.translation.x),
+    T(sample_.translation.y),
+    T(sample_.translation.z);
+  Eigen::Quaternion<T> Qsample(T(sample_.rotation.w),
+    T(sample_.rotation.x),
+    T(sample_.rotation.y),
+    T(sample_.rotation.z));
+  Eigen::Matrix<T, 3, 3> Rsample = Qsample.toRotationMatrix();
+
+  // Converting parameter
+  Eigen::Matrix<T, 3, 1> Paverage;
+  Paverage << average[0],
+    average[1],
+    average[2];
+  Eigen::Matrix<T, 3, 3> Raverage;
+  ceres::AngleAxisToRotationMatrix(&average[3], Raverage.data());
+
+  // Difference
+  Eigen::Matrix<T, 3, 1> Pdiff = Psample - Paverage;
+  Eigen::Matrix<T, 3, 3> Rdiff = Rsample * Raverage.transpose();
+
+  // Position cost
+  residual[0] = Pdiff(0);
+  residual[1] = Pdiff(1);
+  residual[2] = Pdiff(2);
+
+  // Orientation cost
+  T AAdiff[3];
+  ceres::RotationMatrixToAngleAxis(Rdiff.data(), AAdiff);
+  residual[3] = T(angle_factor_) * sqrt(AAdiff[0] * AAdiff[0] +
+    AAdiff[1] * AAdiff[1] +
+    AAdiff[2] * AAdiff[2]);
+
   return true;
 }
 

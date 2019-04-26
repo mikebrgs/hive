@@ -34,6 +34,19 @@ ViveSolve::ViveSolve() {
   // Do nothing
 }
 
+ViveSolve::ViveSolve(Tracker & tracker,
+    Environment & environment,
+    LighthouseMap & lighthouses) {
+  // Solver mutex
+  solveMutex_ = new std::mutex();
+
+  // Call older methods
+  Initialize(environment, tracker);
+  Update(lighthouses);
+
+  return;
+}
+
 ViveSolve::~ViveSolve() {
   delete solveMutex_;
   // Do nothing

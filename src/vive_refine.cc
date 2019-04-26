@@ -201,6 +201,7 @@ bool Refinery::SolveInertial() {
         pre_data[li_it->lighthouse].first = &(*li_it);
       else if (li_it->axis == VERTICAL)
         pre_data[li_it->lighthouse].second = &(*li_it);
+
       // Initialize poses for solver
       if (pre_data[li_it->lighthouse].first != NULL
         && pre_data[li_it->lighthouse].second != NULL) {

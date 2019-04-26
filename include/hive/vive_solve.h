@@ -85,6 +85,9 @@ class ViveSolve : public Solver {
  public:
   // Constructor
   ViveSolve();
+  ViveSolve(Tracker & tracker,
+    Environment & environment,
+    LighthouseMap & lighthouses);
 
   // Destructor
   ~ViveSolve();

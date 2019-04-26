@@ -5,179 +5,7 @@
  * Purpose: calculate offset between vive's frame and optitrack's
 */
 
-// ROS includes
-#include <ros/ros.h>
-#include <rosbag/bag.h>
-#include <rosbag/view.h>
-
-// Standard C includes
-#include <stdlib.h>
-#include <stdio.h>
-#include <math.h>
-
-// Standard C++ includes
-#include <iostream>
-#include <string>
-
-// Hive includes
-#include <hive/vive.h>
-#include <hive/vive_base.h>
-#include <hive/vive_solver.h>
-#include <hive/vive_general.h>
-
-// Eigen
-#include <Eigen/Dense>
-#include <Eigen/Geometry>
-
-// Ceres
-#include <ceres/ceres.h>
-#include <ceres/rotation.h>
-
-// Visp
-#include <visp3/vision/vpHandEyeCalibration.h>
-
-// ROS msgs
-#include <hive/ViveLight.h>
-#include <sensor_msgs/Imu.h>
-#include <geometry_msgs/TransformStamped.h>
-#include <tf2_msgs/TFMessage.h>
-
-#define DISTANCE_THRESH 0.1
-#define ANGLE_THRESH 0.17
-#define TIME_THRESH 0.01
-#define CAUCHY 0.05
-#define CERES_ITERATIONS 500
-
-typedef geometry_msgs::TransformStamped TF;
-typedef std::vector<TF> TFs;
-
-class PoseCostFunctor{
-public:
-  explicit PoseCostFunctor(TF vive, TF optitrack) :
-    vive_(vive), optitrack_(optitrack) {}
-  template <typename T> bool operator()(const T* const o_v,
-    const T* const a_t,
-    T * residual) const {
-    // Pose of the tracker in the Vive frame at instant t
-    Eigen::Matrix<T, 3, 1> vPt;
-    Eigen::Matrix<T, 3, 3> vRt;
-    // Pose of the arrow in the optitrack frame at instant t+/-1
-    Eigen::Matrix<T, 3, 1> oPa;
-    Eigen::Matrix<T, 3, 3> oRa;
-    // Transform from vive frame to optitrack frame
-    Eigen::Matrix<T, 3, 1> oPv;
-    Eigen::Matrix<T, 3, 3> oRv;
-    // Transform from tracker frame to arrow frame
-    Eigen::Matrix<T, 3, 1> aPt;
-    Eigen::Matrix<T, 3, 3> aRt;
-
-    vPt << T(vive_.transform.translation.x),
-        T(vive_.transform.translation.y),
-        T(vive_.transform.translation.z);
-    vRt << Eigen::Quaternion<T>(T(vive_.transform.rotation.w),
-        T(vive_.transform.rotation.x),
-        T(vive_.transform.rotation.y),
-        T(vive_.transform.rotation.z)).normalized().toRotationMatrix();
-    oPa << T(optitrack_.transform.translation.x),
-        T(optitrack_.transform.translation.y),
-        T(optitrack_.transform.translation.z);
-    oRa << Eigen::Quaternion<T>(T(optitrack_.transform.rotation.w),
-        T(optitrack_.transform.rotation.x),
-        T(optitrack_.transform.rotation.y),
-        T(optitrack_.transform.rotation.z)).normalized().toRotationMatrix();
-    oPv << o_v[0],
-        o_v[1],
-        o_v[2];
-    ceres::AngleAxisToRotationMatrix(&o_v[3], oRv.data());
-    aPt << a_t[0],
-        a_t[1],
-        a_t[2];
-    ceres::AngleAxisToRotationMatrix(&a_t[3], aRt.data());
-
-    // Convert Vive to OptiTrack
-    Eigen::Matrix<T, 3, 1> tPa = -aRt.transpose() * aPt;
-    Eigen::Matrix<T, 3, 3> tRa = aRt.transpose();
-
-    Eigen::Matrix<T, 3, 1> _vPa = vRt * tPa + vPt;
-    Eigen::Matrix<T, 3, 3> _vRa = vRt * tRa;
-
-    Eigen::Matrix<T, 3, 1> _oPa = oRv * _vPa + oPv;
-    Eigen::Matrix<T, 3, 3> _oRa = oRv * _vRa;
-
-    Eigen::Quaternion<T> oQa(oRa);
-    oQa.normalize();
-    Eigen::Quaternion<T> _oQa(_oRa);
-    _oQa.normalize();
-
-    T delta = T(vive_.header.stamp.toSec()) - T(optitrack_.header.stamp.toSec());
-    delta = T(1.0);
-    residual[0] = (_oPa(0) - oPa(0)) / (T(0.01) + delta);
-    residual[1] = (_oPa(1) - oPa(1)) / (T(0.01) + delta);
-    residual[2] = (_oPa(2) - oPa(2)) / (T(0.01) + delta);
-
-    T aa[3];
-    Eigen::Matrix<T, 3, 3> R = _oRa * oRa.transpose();
-    ceres::RotationMatrixToAngleAxis(R.data(), aa);
-    residual[3] = sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
-
-    return true;
-  }
- private:
-  TF vive_;
-  TF optitrack_;
-};
-
-class PoseAverageCost{
-public:
-  explicit PoseAverageCost(TF sample, double angle_factor) {
-    sample_ = sample;
-    angle_factor_ = angle_factor;
-  }
-
-  template <typename T> bool operator()(const T* const average,
-    T * residual) const {
-    // Converting sample
-    Eigen::Matrix<T, 3, 1> Psample;
-    Psample << T(sample_.transform.translation.x),
-      T(sample_.transform.translation.y),
-      T(sample_.transform.translation.z);
-    Eigen::Quaternion<T> Qsample(T(sample_.transform.rotation.w),
-      T(sample_.transform.rotation.x),
-      T(sample_.transform.rotation.y),
-      T(sample_.transform.rotation.z));
-    Eigen::Matrix<T, 3, 3> Rsample = Qsample.toRotationMatrix();
-
-    // Converting parameter
-    Eigen::Matrix<T, 3, 1> Paverage;
-    Paverage << average[0],
-      average[1],
-      average[2];
-    Eigen::Matrix<T, 3, 3> Raverage;
-    ceres::AngleAxisToRotationMatrix(&average[3], Raverage.data());
-
-    // Difference
-    Eigen::Matrix<T, 3, 1> Pdiff = Psample - Paverage;
-    Eigen::Matrix<T, 3, 3> Rdiff = Rsample * Raverage.transpose();
-
-    // Position cost
-    residual[0] = Pdiff(0);
-    residual[1] = Pdiff(1);
-    residual[2] = Pdiff(2);
-
-    // Orientation cost
-    T AAdiff[3];
-    ceres::RotationMatrixToAngleAxis(Rdiff.data(), AAdiff);
-    residual[3] = T(angle_factor_) * sqrt(AAdiff[0] * AAdiff[0] +
-      AAdiff[1] * AAdiff[1] +
-      AAdiff[2] * AAdiff[2]);
-
-    return true;
-  }
- private:
-  TF sample_;
-  double angle_factor_;
-};
-
+#include <hive/vive_offset.h>
 
 void TestTrajectory(TFs & vive, TFs & optitrack) {
   vpTranslationVector oPv(-2,-1,1.7);
@@ -217,36 +45,6 @@ void TestTrajectory(TFs & vive, TFs & optitrack) {
   }
   return;
 }
-
-class HiveOffset
-{
-public:
-  // Constructor - steps indicates if it averages sets of poses
-  HiveOffset(double angle_factor, bool refine, bool steps);
-  // Destructor
-  ~HiveOffset();
-  // Add a pose computed from Vive
-  bool AddVivePose(const TF& pose);
-  // Add a pose computed from OptiTrack
-  bool AddOptiTrackPose(const TF& pose);
-  // Change the pose (in the case of averaging)
-  bool NextPose();
-  // Get the offsets
-  bool GetOffset(TFs & offsets);
-  // Estimate the offset with Hand Eye Calibration algorithm
-  static TFs EstimateOffset(TFs optitrack, TFs vive);
-  // Refine with ceres the estimate of the offset
-  static TFs RefineOffset(TFs optitrack, TFs vive, TFs offset);
-
-private:
-  // Data
-  TFs tmp_vive_, vive_;
-  TFs tmp_optitrack_, optitrack_;
-  // Parameters
-  bool steps_;
-  bool refine_;
-  double angle_factor_;
-};
 
 HiveOffset::HiveOffset(double angle_factor, bool refine, bool steps) {
   steps_ = steps;
@@ -301,7 +99,7 @@ bool HiveOffset::NextPose() {
     pose_it != tmp_vive_.end(); pose_it++) {
     ceres::CostFunction * cost =
       new ceres::AutoDiffCostFunction<PoseAverageCost, 4, 6>
-      (new PoseAverageCost(*pose_it, angle_factor_));
+      (new PoseAverageCost(pose_it->transform, angle_factor_));
     problem_vive.AddResidualBlock(cost, new ceres::CauchyLoss(CAUCHY), vive_pose);
   }
   // Options and solve
@@ -366,7 +164,7 @@ bool HiveOffset::NextPose() {
     pose_it != tmp_optitrack_.end(); pose_it++) {
     ceres::CostFunction * cost =
       new ceres::AutoDiffCostFunction<PoseAverageCost, 4, 6>
-      (new PoseAverageCost(*pose_it, angle_factor_));
+      (new PoseAverageCost(pose_it->transform, angle_factor_));
     problem_optitrack.AddResidualBlock(cost, new ceres::CauchyLoss(CAUCHY), optitrack_pose);
   }
   // Options and solve
@@ -647,7 +445,7 @@ TFs HiveOffset::RefineOffset(TFs optitrack, TFs vive, TFs offset) {
   while (v_it != vive.end() && o_it != optitrack.end()) {
     ceres::CostFunction * thecost =
       new ceres::AutoDiffCostFunction<PoseCostFunctor, 4, 6, 6>
-      (new PoseCostFunctor(*v_it, *o_it));
+      (new PoseCostFunctor(v_it->transform, o_it->transform));
     problem.AddResidualBlock(thecost, NULL, oTv, aTt);
     v_it++;
     o_it++;
@@ -702,20 +500,17 @@ int main(int argc, char ** argv) {
   HiveOffset * hiver;
 
   Calibration calibration;
-  Solver * solver;
-
-
+  std::map<std::string, Solver*> solver;
 
   // Wrong parameters
   if (argc < 2) {
     std::cout << "Usage: ... hive_offset name_of_read_bag.bag "
-      << "name_of_write_bag.bag" << std::endl;
+      << "[name_of_write_bag.bag]" << std::endl;
     return -1;
-  // Just one bag
   }
 
   // Calibration
-  if (!ViveUtils::ReadConfig(HIVE_BASE_CALIBRATION_FILE, &calibration)) {
+  if (!ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE, &calibration)) {
     ROS_FATAL("Can't find calibration file.");
     return false;
   } else {
@@ -758,30 +553,27 @@ int main(int argc, char ** argv) {
       const hive::ViveCalibrationTrackerArray::ConstPtr vt =
         bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
       calibration.SetTrackers(*vt);
+      for (auto tracker : calibration.trackers) {
+        solver[tracker.first] = new ViveSolve(tracker.second,
+          calibration.environment,
+          calibration.lighthouses);
+      }
     }
     ROS_INFO("Trackers' setup complete.");
-
-    // Temporary solver - Easily changed (one tracker only)
-    solver = new BaseSolve(calibration.environment,
-      calibration.trackers.begin()->second);
 
     // Light data
     rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
     for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
       const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-      solver->ProcessLight(vl);
+      solver[vl->header.frame_id]->ProcessLight(vl);
       geometry_msgs::TransformStamped msg;
-      if (solver->GetTransform(msg)) {
+      if (solver[vl->header.frame_id]->GetTransform(msg)) {
         hiver->AddVivePose(msg);
       }
     }
-    ROS_INFO("Data processment complete.");
     rbag.close();
-    ROS_INFO("HERE");
     TFs offsets;
-    ROS_INFO("HERE");
     hiver->GetOffset(offsets);
-    ROS_INFO("HERE");
 
   // Multiple bags - with step
   } else {
@@ -834,12 +626,13 @@ int main(int argc, char ** argv) {
         const hive::ViveCalibrationTrackerArray::ConstPtr vt =
           bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
         calibration.SetTrackers(*vt);
+        for (auto tracker : calibration.trackers) {
+          solver[tracker.first] = new ViveSolve(tracker.second,
+            calibration.environment,
+            calibration.lighthouses);
+        }
       }
       ROS_INFO("Trackers' setup complete.");
-
-      // Temporary solver - Easily changed (one tracker only)
-      solver = new BaseSolve(calibration.environment,
-        calibration.trackers.begin()->second);
 
       // Light data
       counter = 0;
@@ -847,9 +640,9 @@ int main(int argc, char ** argv) {
       rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
       for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
         const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-        solver->ProcessLight(vl);
+        solver[vl->header.frame_id]->ProcessLight(vl);
         geometry_msgs::TransformStamped msg;
-        if (solver->GetTransform(msg)) {
+        if (solver[vl->header.frame_id]->GetTransform(msg)) {
           hiver->AddVivePose(msg);
           std::cout << "Vive: " <<
             msg.transform.translation.x << ", " <<
@@ -871,6 +664,8 @@ int main(int argc, char ** argv) {
     TFs offsets;
     hiver->GetOffset(offsets);
   }
+
+
 
   return 0;
 }
