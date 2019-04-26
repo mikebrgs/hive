@@ -77,6 +77,7 @@ bool Refinery::Solve() {
   return SolveStatic();
 }
 
+typedef std::map<std::string, std::pair<hive::ViveLight*,hive::ViveLight*>> LightPointerMapPair;
 typedef std::map<std::string, std::vector<double*>> PoseVectorMap;
 typedef std::map<std::string, double*> PoseMap;
 
@@ -89,6 +90,27 @@ bool Refinery::SolveInertial() {
   ceres::Solver::Options options;
   ceres::Solver::Summary summary;
 
+  // Initialize lighthouses
+  for (auto lighthouse : lighthouses) {
+    // Position
+    lighthouse.second[0] =
+      calibration_.environment.lighthouses[lighthouse.first].translation.x;
+    lighthouse.second[1] =
+      calibration_.environment.lighthouses[lighthouse.first].translation.y;
+    lighthouse.second[2] =
+      calibration_.environment.lighthouses[lighthouse.first].translation.z;
+    // Orientation
+    Eigen::Quaterniond vQl(
+      calibration_.environment.lighthouses[lighthouse.first].rotation.w,
+      calibration_.environment.lighthouses[lighthouse.first].rotation.x,
+      calibration_.environment.lighthouses[lighthouse.first].rotation.y,
+      calibration_.environment.lighthouses[lighthouse.first].rotation.z);
+    Eigen::AngleAxisd vAAl(vQl);
+    lighthouse.second[3] = vAAl.angle() * vAAl.axis()(0);
+    lighthouse.second[4] = vAAl.angle() * vAAl.axis()(1);
+    lighthouse.second[5] = vAAl.angle() * vAAl.axis()(2);
+  }
+
   for (auto tracker_data : data_) {
     // More readable structures
     SweepVec light_data = tracker_data.second.first;
@@ -97,6 +119,14 @@ bool Refinery::SolveInertial() {
 
     // Other initializations
     bool lastposewasimu = false;
+    ros::Time prev_time;
+
+    // Auxiliary structures
+    LightPointerMapPair pre_data;
+
+    // Pose pointers
+    double * next_pose = nullptr;
+    double * prev_pose = nullptr;
 
     // Initialize iterators
     auto li_it = light_data.begin();
@@ -104,39 +134,198 @@ bool Refinery::SolveInertial() {
     auto pose_it = poses[tracker.serial].begin();
     // Iterate light data
     while (li_it != light_data.end()) {
-      // New pose
-      if (!lastposewasimu) {
-        // Will be initialized later on
-        poses[tracker.serial].push_back(new double[6]);
-        lastposewasimu = false;
-      }
-
-      // CERES ADD RESIDUALS
 
       // Iterate imu data
       while (imu_it != imu_data.end()
-        && imu_it->header.stamp < li_it->header.stamp) {
+        && imu_it->header.stamp < li_it->header.stamp
+        && li_it != light_data.begin()) {
         // New pose for imu data
-        poses[tracker.serial].push_back(new double[6]);
+        poses[tracker.serial].push_back(new double[9]);
+        prev_pose = next_pose;
+        next_pose = poses[tracker.serial].back();
         lastposewasimu = true;
+        // Time delta
+        double dt = (imu_it->header.stamp - prev_time).toSec();
+        if (!lastposewasimu)
+          dt = 2*dt;
+        // Cost related to inertial measurements
+        // std::cout << "InertialCost " << prev_counter << " " << next_counter << std::endl;
+        ceres::CostFunction * cost =
+          new ceres::AutoDiffCostFunction<InertialCost, 7, 9, 9>
+          (new InertialCost(*imu_it,
+            calibration_.environment.gravity,
+            tracker.gyr_bias,
+            dt,
+            smoothing_));
+        problem.AddResidualBlock(cost, NULL, prev_pose, next_pose);
 
-        // IMU ADD RESIDUALS
-
+        prev_time = imu_it->header.stamp;
       }
 
+      // New Light pose
+      if (!lastposewasimu) {
+        // Will be initialized later on
+        poses[tracker.serial].push_back(new double[9]);
+        prev_pose = next_pose;
+        next_pose = poses[tracker.serial].back();
+        lastposewasimu = false;
+      }
+      // Cost related to light measurements
+      if (li_it->axis == HORIZONTAL) {
+        // std::cout << "ViveCalibrationHorizontalCost " << next_counter << std::endl;
+        ceres::DynamicAutoDiffCostFunction<ViveCalibrationHorizontalCost, 4> * hcost =
+          new ceres::DynamicAutoDiffCostFunction<ViveCalibrationHorizontalCost, 4>
+          (new ViveCalibrationHorizontalCost(*li_it,
+            tracker,
+            calibration_.lighthouses[li_it->lighthouse].horizontal_motor,
+            correction_));
+        hcost->AddParameterBlock(9);
+        hcost->SetNumResiduals(li_it->samples.size());
+        problem.AddResidualBlock(hcost, NULL, next_pose); // replace with next_pose
+      } else if (li_it->axis == VERTICAL) {
+        // std::cout << "ViveCalibrationVerticalCost " << next_counter << std::endl;
+        ceres::DynamicAutoDiffCostFunction<ViveCalibrationVerticalCost, 4> * vcost =
+          new ceres::DynamicAutoDiffCostFunction<ViveCalibrationVerticalCost, 4>
+          (new ViveCalibrationVerticalCost(*li_it,
+            tracker,
+            calibration_.lighthouses[li_it->lighthouse].vertical_motor,
+            correction_));
+        vcost->AddParameterBlock(9);
+        vcost->SetNumResiduals(li_it->samples.size());
+        problem.AddResidualBlock(vcost, NULL, next_pose); // replace with next_pose
+      }
+      prev_time = li_it->header.stamp;
+
+      // Save data
+      if (li_it->axis == HORIZONTAL)
+        pre_data[li_it->lighthouse].first = &(*li_it);
+      else if (li_it->axis == VERTICAL)
+        pre_data[li_it->lighthouse].second = &(*li_it);
       // Initialize poses for solver
-      while (pose_it != poses[tracker.serial].end()) {
+      if (pre_data[li_it->lighthouse].first != NULL
+        && pre_data[li_it->lighthouse].second != NULL) {
 
-        // INITIALIZE HERE
+        double pre_pose[9];
+        pre_pose[0] = 0.0;
+        pre_pose[1] = 0.0;
+        pre_pose[2] = 1.0;
+        pre_pose[3] = 0.0;
+        pre_pose[4] = 0.0;
+        pre_pose[5] = 0.0;
+        pre_pose[6] = 0.0;
+        pre_pose[7] = 0.0;
+        pre_pose[8] = 0.0;
 
-        pose_it++;
+        // Lighthouse
+        geometry_msgs::Transform lighthouse;
+        lighthouse.translation =
+          calibration_.environment.lighthouses[li_it->lighthouse].translation;
+        lighthouse.rotation =
+          calibration_.environment.lighthouses[li_it->lighthouse].rotation;
+
+        ceres::Problem pre_problem;
+        ceres::Solver::Options pre_options;
+        ceres::Solver::Summary pre_summary;
+        // Horizontal data
+        ceres::DynamicAutoDiffCostFunction<ViveHorizontalCost, 4> * hcost =
+          new ceres::DynamicAutoDiffCostFunction<ViveHorizontalCost, 4>
+          (new ViveHorizontalCost(*pre_data[li_it->lighthouse].first,
+            lighthouse,
+            tracker,
+            calibration_.lighthouses[li_it->lighthouse].horizontal_motor,
+            correction_));
+        hcost->AddParameterBlock(9);
+        hcost->SetNumResiduals(pre_data[li_it->lighthouse].first->samples.size());
+        pre_problem.AddResidualBlock(hcost, NULL, pre_pose);
+        // Vertical data
+        ceres::DynamicAutoDiffCostFunction<ViveVerticalCost, 4> * vcost =
+          new ceres::DynamicAutoDiffCostFunction<ViveVerticalCost, 4>
+          (new ViveVerticalCost(*pre_data[li_it->lighthouse].second,
+            lighthouse,
+            tracker,
+            calibration_.lighthouses[li_it->lighthouse].vertical_motor,
+            correction_));
+        vcost->AddParameterBlock(9);
+        vcost->SetNumResiduals(pre_data[li_it->lighthouse].second->samples.size());
+        pre_problem.AddResidualBlock(vcost, NULL, pre_pose);
+
+        // Solve
+        pre_options.minimizer_progress_to_stdout = false;
+        pre_options.max_num_iterations = 1000;
+        ceres::Solve(pre_options, &pre_problem, &pre_summary);
+
+        // Copy paste
+        while (pose_it != poses[tracker.serial].end()) {
+          for (size_t i = 0; i < 9; i++)
+            (*pose_it)[i] = pre_pose[i];
+          pose_it++;
+        }
+        // End of Copy Past
       }
+      // End of Initializer
     }
+    // End of light_it
   }
+  // End of tracker_data
 
-  options.minimizer_progress_to_stdout = false;
-  options.max_num_iterations = 1000;
+  // Fix one of the lighthouses to the vive frame
+  problem.SetParameterBlockConstant(lighthouses.begin()->second);
+
+  for (auto lh_it = lighthouses.begin(); lh_it != lighthouses.end(); lh_it++) {
+    std::cout << lh_it->first << " - "
+      << lh_it->second[0] << ", "
+      << lh_it->second[1] << ", "
+      << lh_it->second[2] << ", "
+      << lh_it->second[3] << ", "
+      << lh_it->second[4] << ", "
+      << lh_it->second[5] << std::endl;
+  }
+  std::cout << std::endl;
+  // Solver's options
+  options.minimizer_progress_to_stdout = true;
+  options.max_num_iterations = 1000; // TODO change this
+
   ceres::Solve(options, &problem, &summary);
+
+  for (auto lh_it = lighthouses.begin(); lh_it != lighthouses.end(); lh_it++) {
+    std::cout << lh_it->first << " - "
+      << lh_it->second[0] << ", "
+      << lh_it->second[1] << ", "
+      << lh_it->second[2] << ", "
+      << lh_it->second[3] << ", "
+      << lh_it->second[4] << ", "
+      << lh_it->second[5] << std::endl;
+  }
+  std::cout << std::endl;
+
+  std::cout << summary.BriefReport() << std::endl;
+
+  // Save all the new lighthouse poses
+  for (auto lighthouse : lighthouses) {
+    calibration_.environment.lighthouses[lighthouse.first].translation.x
+      = lighthouse.second[0];
+    calibration_.environment.lighthouses[lighthouse.first].translation.y
+      = lighthouse.second[1];
+    calibration_.environment.lighthouses[lighthouse.first].translation.z
+      = lighthouse.second[2];
+    Eigen::Vector3d vAl(lighthouse.second[3],
+      lighthouse.second[4],
+      lighthouse.second[5]);
+    Eigen::AngleAxisd vAAl;
+    if (vAl.norm() != 0)
+      vAAl = Eigen::AngleAxisd(vAl.norm(), vAl.normalized());
+    else 
+      vAAl = Eigen::AngleAxisd(vAl.norm(), vAl);
+    Eigen::Quaterniond vQl(vAAl);
+    calibration_.environment.lighthouses[lighthouse.first].rotation.w
+      = vQl.w();
+    calibration_.environment.lighthouses[lighthouse.first].rotation.x
+      = vQl.x();
+    calibration_.environment.lighthouses[lighthouse.first].rotation.y
+      = vQl.y();
+    calibration_.environment.lighthouses[lighthouse.first].rotation.z
+      = vQl.z();
+  }
 
   return true;
 }

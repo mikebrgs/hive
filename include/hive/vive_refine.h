@@ -58,6 +58,7 @@ public:
   Refinery(Calibration & calibration,
     bool correction,
     double smoothing);
+  // For true inertial smoothing goes as trust
   Refinery(Calibration & calibration,
     bool correction,
     double smoothing,
