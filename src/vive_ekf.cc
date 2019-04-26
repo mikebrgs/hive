@@ -222,6 +222,20 @@ void ViveEKF::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
 
 bool ViveEKF::Valid() {
   // check_validity
+  if (std::isnan(position_(0)) ||
+    std::isnan(position_(1)) ||
+    std::isnan(position_(2)) ||
+    std::isnan(velocity_(0)) ||
+    std::isnan(velocity_(1)) ||
+    std::isnan(velocity_(2)) ||
+    std::isnan(rotation_.w()) ||
+    std::isnan(rotation_.x()) ||
+    std::isnan(rotation_.y()) ||
+    std::isnan(rotation_.z()) ||
+    std::isnan(bias_(0)) ||
+    std::isnan(bias_(1)) ||
+    std::isnan(bias_(2))) return false;
+
   double cost = 0;
   double sample_counter = 0;
   for (auto light_msg : light_data_) {

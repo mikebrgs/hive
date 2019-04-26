@@ -32,6 +32,7 @@
 #include <vector>
 #include <thread>
 #include <string>
+#include <cmath>
 
 #define STATE_SIZE 13         // Size of the state vector
 #define NOISE_SIZE 9          // Size of the noise vector

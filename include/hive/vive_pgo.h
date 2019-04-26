@@ -7,7 +7,7 @@
 // Hive includes
 #include <hive/vive_general.h>
 #include <hive/vive_solve.h>
-// #include <hive/vive_cost.h>
+#include <hive/vive_cost.h>
 #include <hive/vive.h>
 
 // Hive msgs
@@ -93,79 +93,6 @@ private:
   // Internal
   std::vector<double*> poses_;
   bool lastposewasimu_;
-};
-
-// Light cost - Cost using the poses in the imu frame
-class ViveHorizontalCost
-{
-public:
-  // Constructor
-  ViveHorizontalCost(hive::ViveLight data,
-    geometry_msgs::Transform lTv, // vive to lighthouse
-    geometry_msgs::Transform tTi, // IMU to light
-    Tracker tracker,
-    Motor lighthouse,
-    bool correction);
-  // Destructor
-  ~ViveHorizontalCost();
-  // Ceres operator
-  template <typename T> bool operator()(const T* const * parameters,
-    T* residual) const;
-private:
-  bool correction_;
-  Tracker tracker_;
-  Motor lighthouse_;
-  hive::ViveLight data_;
-  geometry_msgs::Transform lTv_, tTi_;
-};
-
-class ViveVerticalCost
-{
-public:
-  // Constructor
-  ViveVerticalCost(hive::ViveLight data,
-    geometry_msgs::Transform lTv, // Vive to lighthouse
-    geometry_msgs::Transform tTi, // IMU to light
-    Tracker tracker,
-    Motor lighthouse,
-    bool correction);
-  // Destructor
-  ~ViveVerticalCost();
-  // Ceres operator
-  template <typename T> bool operator()(const T* const * parameters,
-    T* residual) const;
-private:
-  bool correction_;
-  Tracker tracker_;
-  Motor lighthouse_;
-  hive::ViveLight data_;
-  geometry_msgs::Transform lTv_, tTi_;
-};
-
-// Inertial cost function
-class InertialCost {
-public:
-  InertialCost(sensor_msgs::Imu imu,
-    geometry_msgs::Vector3 gravity,
-    geometry_msgs::Vector3 gyr_bias,
-    double time_step,
-    double trust_weight,
-    bool verbose = false);
-  ~InertialCost();
-  template <typename T> bool operator()(const T* const prev_vTi,
-    const T* const next_vTi,
-    T * residual) const;
-private:
-  // Inertial data
-  sensor_msgs::Imu imu_;
-  // Light data
-  hive::ViveLight prev_, next_;
-  // Gravity
-  geometry_msgs::Vector3 gravity_, gyr_bias_;
-  // Time step and weight
-  double time_step_, trust_weight_;
-  // Other
-  bool verbose_;
 };
 
 #endif // HIVE_VIVE_PGO

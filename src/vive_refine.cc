@@ -7,133 +7,48 @@ typedef std::vector<TF> TFs;
 typedef std::map<std::string, std::pair<hive::ViveLight*,
   hive::ViveLight*>> LightMap;
 
-// Constructor to pass data
-SmoothingCost::SmoothingCost(double smoothing) {
-  smoothing_ = smoothing;
-}
-// Function for ceres solver with parameters
-template <typename T> bool SmoothingCost::operator()(const T* const prev_lTt,
-  const T* const prev_vTl,
-  const T* const next_lTt,
-  const T* const next_vTl,
-  T * residual) const {
-  // cost function here
-
-  // Frame conversion
-  Eigen::Matrix<T, 3, 1> prev_lPt;
-  prev_lPt << prev_lTt[0],
-    prev_lTt[1],
-    prev_lTt[2];
-  Eigen::Matrix<T, 3, 1> next_lPt;
-  next_lPt << next_lTt[0],
-    next_lTt[1],
-    next_lTt[2];
-  Eigen::Matrix<T, 3, 3> prev_lRt;
-  ceres::AngleAxisToRotationMatrix(&prev_lTt[3], prev_lRt.data());
-  Eigen::Matrix<T, 3, 3> next_lRt;
-  ceres::AngleAxisToRotationMatrix(&next_lTt[3], next_lRt.data());
-
-  Eigen::Matrix<T, 3, 1> prev_vPl;
-  prev_vPl << prev_vTl[0],
-    prev_vTl[1],
-    prev_vTl[2];
-  Eigen::Matrix<T, 3, 1> next_vPl;
-  next_vPl << next_vTl[0],
-    next_vTl[1],
-    next_vTl[2];
-  Eigen::Matrix<T, 3, 3> prev_vRl;
-  ceres::AngleAxisToRotationMatrix(&prev_vTl[3], prev_vRl.data());
-  Eigen::Matrix<T, 3, 3> next_vRl;
-  ceres::AngleAxisToRotationMatrix(&next_vTl[3], next_vRl.data());
-
-  Eigen::Matrix<T, 3, 1> prev_vPt = prev_vRl * prev_lPt + prev_vPl;
-  Eigen::Matrix<T, 3, 3> prev_vRt = prev_vRl * prev_lRt;
-
-  Eigen::Matrix<T, 3, 1> next_vPt = next_vRl * next_lPt + next_vPl;
-  Eigen::Matrix<T, 3, 3> next_vRt = next_vRl * next_lRt;
-
-  // // Translation cost with smoothing
-  residual[0] = T(smoothing_) * (prev_vPt(0) - next_vPt(0));
-  residual[1] = T(smoothing_) * (prev_vPt(1) - next_vPt(1));
-  residual[2] = T(smoothing_) * (prev_vPt(2) - next_vPt(2));
-  // // Rotation cost with smoothing
-  T aa[3];
-  Eigen::Matrix<T, 3, 3> R = next_vRt.transpose() * prev_vRt;
-  ceres::RotationMatrixToAngleAxis(R.data(), aa);
-  residual[3] = T(ROTATION_COST_FACTOR) * T(smoothing_)*
-    sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
-  return true;
-}
-
-template <typename T> bool SmoothingCost::operator()(const T* const prev_lTt,
-  const T* const next_lTt,
-  const T* const vTl,
-  T * residual) const {
-  // Frame conversion
-  Eigen::Matrix<T, 3, 1> prev_lPt;
-  prev_lPt << prev_lTt[0],
-    prev_lTt[1],
-    prev_lTt[2];
-  Eigen::Matrix<T, 3, 1> next_lPt;
-  next_lPt << next_lTt[0],
-    next_lTt[1],
-    next_lTt[2];
-  Eigen::Matrix<T, 3, 3> prev_lRt;
-  ceres::AngleAxisToRotationMatrix(&prev_lTt[3], prev_lRt.data());
-  Eigen::Matrix<T, 3, 3> next_lRt;
-  ceres::AngleAxisToRotationMatrix(&next_lTt[3], next_lRt.data());
-
-  Eigen::Matrix<T, 3, 1> vPl;
-  vPl << vTl[0],
-    vTl[1],
-    vTl[2];
-  Eigen::Matrix<T, 3, 3> vRl;
-  ceres::AngleAxisToRotationMatrix(&vTl[3], vRl.data());
-
-  Eigen::Matrix<T, 3, 1> prev_vPt = vRl * prev_lPt + vPl;
-  Eigen::Matrix<T, 3, 3> prev_vRt = vRl * prev_lRt;
-
-  Eigen::Matrix<T, 3, 1> next_vPt = vRl * next_lPt + vPl;
-  Eigen::Matrix<T, 3, 3> next_vRt = vRl * next_lRt;
-
-  // // Translation cost with smoothing
-  residual[0] = T(smoothing_) * (prev_vPt(0) - next_vPt(0));
-  residual[1] = T(smoothing_) * (prev_vPt(1) - next_vPt(1));
-  residual[2] = T(smoothing_) * (prev_vPt(2) - next_vPt(2));
-  // // Rotation cost with smoothing
-  T aa[3];
-  Eigen::Matrix<T, 3, 3> R = next_vRt.transpose() * prev_vRt;
-  ceres::RotationMatrixToAngleAxis(R.data(), aa);
-  residual[3] = T(ROTATION_COST_FACTOR) * T(smoothing_) *
-    sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
-  return true;
-}
-
 
 Refinery::Refinery(Calibration & calibration) {
   // Initialize calibration (reference)
   calibration_ = calibration;
   correction_ = true;
+  inertial_ = false;
   smoothing_ = 0.0;
   return;
 }
 
-Refinery::Refinery(Calibration & calibration, bool correction) {
+Refinery::Refinery(Calibration & calibration,
+  bool correction) {
   // Initialize calibration (reference)
   calibration_ = calibration;
   correction_ = correction;
+  inertial_ = false;
   smoothing_ = 0.0;
   return;
 }
 
-Refinery::Refinery(Calibration & calibration, bool correction, double smoothing) {
+Refinery::Refinery(Calibration & calibration,
+  bool correction,
+  double smoothing) {
   // Initialize calibration (reference)
   calibration_ = calibration;
   correction_ = correction;
   smoothing_ = smoothing;
+  inertial_ = false;
   return;
 }
 
+Refinery::Refinery(Calibration & calibration,
+  bool correction,
+  double smoothing,
+  bool inertial) {
+  // Initialize calibration (reference)
+  calibration_ = calibration;
+  correction_ = correction;
+  smoothing_ = smoothing;
+  inertial_ = inertial;
+  return;
+}
 
 Refinery::~Refinery() {
   // pass
@@ -156,8 +71,78 @@ bool Refinery::AddLight(const hive::ViveLight::ConstPtr& msg) {
   return true;
 }
 
-// Solve the problem
 bool Refinery::Solve() {
+  if (inertial_)
+    return SolveInertial();
+  return SolveStatic();
+}
+
+typedef std::map<std::string, std::vector<double*>> PoseVectorMap;
+typedef std::map<std::string, double*> PoseMap;
+
+bool Refinery::SolveInertial() {
+  // All the poses
+  PoseVectorMap poses;
+  PoseMap lighthouses;
+
+  ceres::Problem problem;
+  ceres::Solver::Options options;
+  ceres::Solver::Summary summary;
+
+  for (auto tracker_data : data_) {
+    // More readable structures
+    SweepVec light_data = tracker_data.second.first;
+    ImuVec imu_data = tracker_data.second.second;
+    Tracker tracker = calibration_.trackers[tracker_data.first];
+
+    // Other initializations
+    bool lastposewasimu = false;
+
+    // Initialize iterators
+    auto li_it = light_data.begin();
+    auto imu_it = imu_data.begin();
+    auto pose_it = poses[tracker.serial].begin();
+    // Iterate light data
+    while (li_it != light_data.end()) {
+      // New pose
+      if (!lastposewasimu) {
+        // Will be initialized later on
+        poses[tracker.serial].push_back(new double[6]);
+        lastposewasimu = false;
+      }
+
+      // CERES ADD RESIDUALS
+
+      // Iterate imu data
+      while (imu_it != imu_data.end()
+        && imu_it->header.stamp < li_it->header.stamp) {
+        // New pose for imu data
+        poses[tracker.serial].push_back(new double[6]);
+        lastposewasimu = true;
+
+        // IMU ADD RESIDUALS
+
+      }
+
+      // Initialize poses for solver
+      while (pose_it != poses[tracker.serial].end()) {
+
+        // INITIALIZE HERE
+
+        pose_it++;
+      }
+    }
+  }
+
+  options.minimizer_progress_to_stdout = false;
+  options.max_num_iterations = 1000;
+  ceres::Solve(options, &problem, &summary);
+
+  return true;
+}
+
+// Solve the problem
+bool Refinery::SolveStatic() {
   // Check requirements
   if (calibration_.environment.lighthouses.size() <= 1) {
     ROS_WARN("Not enough lighthouses for Refinement.");
@@ -257,7 +242,7 @@ bool Refinery::Solve() {
               correction_));
           hcost->AddParameterBlock(6);
           hcost->SetNumResiduals(observations[li_it->lighthouse].first->samples.size());
-          problem.AddResidualBlock(hcost, NULL, next_pose);
+          problem.AddResidualBlock(hcost, new ceres::HuberLoss(0.05), next_pose);
         // Vertical cost
         } else if (li_it->axis == VERTICAL) {
           ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4> * vcost =
@@ -268,7 +253,7 @@ bool Refinery::Solve() {
               correction_));
           vcost->AddParameterBlock(6);
           vcost->SetNumResiduals(observations[li_it->lighthouse].second->samples.size());
-          problem.AddResidualBlock(vcost, NULL, next_pose);
+          problem.AddResidualBlock(vcost, new ceres::HuberLoss(0.05), next_pose);
         }
         poses.push_back(pose);
         // Smoothing cost
@@ -276,49 +261,85 @@ bool Refinery::Solve() {
         if (next == prev && prev_pose != NULL && next_pose != NULL) {
           ceres::CostFunction * cost =
             new ceres::AutoDiffCostFunction<SmoothingCost, 4, 6, 6, 6>
-            (new SmoothingCost(smoothing_));
-          problem.AddResidualBlock(cost, NULL,
+            (new SmoothingCost(smoothing_, ROTATION_COST_FACTOR));
+          problem.AddResidualBlock(cost, new ceres::HuberLoss(0.01),
             prev_pose, next_pose, vTl[li_it->lighthouse]);
         // If the poses are in different frames
         } else if (prev_pose != NULL && next_pose != NULL) {
           ceres::CostFunction * cost =
             new ceres::AutoDiffCostFunction<SmoothingCost, 4, 6, 6, 6, 6>
-            (new SmoothingCost(smoothing_));
-          problem.AddResidualBlock(cost, NULL,
+            (new SmoothingCost(smoothing_, ROTATION_COST_FACTOR));
+          problem.AddResidualBlock(cost, new ceres::HuberLoss(0.01),
             prev_pose, vTl[prev], next_pose, vTl[next]);
         }
       }
     }
   }
 
-  for (auto po_it = poses.begin(); po_it != poses.end(); po_it++) {
-    std::cout << (*po_it)[0] << ", "
-      << (*po_it)[1] << ", "
-      << (*po_it)[2] << ", "
-      << (*po_it)[3] << ", "
-      << (*po_it)[4] << ", "
-      << (*po_it)[5] << std::endl;
+  // Fix one of the lighthouses to the vive frame
+  problem.SetParameterBlockConstant(vTl.begin()->second);
+
+  for (auto lh_it = vTl.begin(); lh_it != vTl.end(); lh_it++) {
+    std::cout << lh_it->first << " - "
+      << lh_it->second[0] << ", "
+      << lh_it->second[1] << ", "
+      << lh_it->second[2] << ", "
+      << lh_it->second[3] << ", "
+      << lh_it->second[4] << ", "
+      << lh_it->second[5] << std::endl;
   }
   std::cout << std::endl;
   // Solver's options
-  options.minimizer_progress_to_stdout = false;
-  options.max_num_iterations = 1000;
+  options.minimizer_progress_to_stdout = true;
+  options.max_num_iterations = 1000; // TODO change this
 
   ceres::Solve(options, &problem, &summary);
 
-  for (auto po_it = poses.begin(); po_it != poses.end(); po_it++) {
-    std::cout << (*po_it)[0] << ", "
-      << (*po_it)[1] << ", "
-      << (*po_it)[2] << ", "
-      << (*po_it)[3] << ", "
-      << (*po_it)[4] << ", "
-      << (*po_it)[5] << std::endl;
+  for (auto lh_it = vTl.begin(); lh_it != vTl.end(); lh_it++) {
+    std::cout << lh_it->first << " - "
+      << lh_it->second[0] << ", "
+      << lh_it->second[1] << ", "
+      << lh_it->second[2] << ", "
+      << lh_it->second[3] << ", "
+      << lh_it->second[4] << ", "
+      << lh_it->second[5] << std::endl;
   }
   std::cout << std::endl;
 
   std::cout << summary.BriefReport() << std::endl;
 
+  // Save all the new lighthouse poses
+  for (auto lighthouse : vTl) {
+    calibration_.environment.lighthouses[lighthouse.first].translation.x
+      = lighthouse.second[0];
+    calibration_.environment.lighthouses[lighthouse.first].translation.y
+      = lighthouse.second[1];
+    calibration_.environment.lighthouses[lighthouse.first].translation.z
+      = lighthouse.second[2];
+    Eigen::Vector3d vAl(lighthouse.second[3],
+      lighthouse.second[4],
+      lighthouse.second[5]);
+    Eigen::AngleAxisd vAAl;
+    if (vAl.norm() != 0)
+      vAAl = Eigen::AngleAxisd(vAl.norm(), vAl.normalized());
+    else 
+      vAAl = Eigen::AngleAxisd(vAl.norm(), vAl);
+    Eigen::Quaterniond vQl(vAAl);
+    calibration_.environment.lighthouses[lighthouse.first].rotation.w
+      = vQl.w();
+    calibration_.environment.lighthouses[lighthouse.first].rotation.x
+      = vQl.x();
+    calibration_.environment.lighthouses[lighthouse.first].rotation.y
+      = vQl.y();
+    calibration_.environment.lighthouses[lighthouse.first].rotation.z
+      = vQl.z();
+  }
+
   return true;
+}
+
+Calibration Refinery::GetCalibration() {
+  return calibration_;
 }
 
 // This is a test function
@@ -366,19 +387,22 @@ int main(int argc, char ** argv)
   ROS_INFO("Trackers' setup complete.");
 
   size_t counter = 0;
-  Refinery ref = Refinery(cal, false, 1e-1);
+  Refinery ref = Refinery(cal, true, 1e1);
   // Light data
   rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
     ref.AddLight(vl);
     counter++;
-    if (counter >= 10) break;
+    if (counter >= 100) break;
   }
   ROS_INFO("Data processment complete.");
 
   // Solve the refinement
   ref.Solve();
+
+  ViveUtils::WriteConfig(HIVE_CALIBRATION_FILE,
+    ref.GetCalibration());
 
   return 0;
 }
