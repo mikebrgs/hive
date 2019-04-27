@@ -14,6 +14,7 @@
 #include <rosbag/view.h>
 
 // Standard C includes
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
@@ -51,7 +52,7 @@
 #define ANGLE_THRESH 0.17
 #define TIME_THRESH 0.01
 #define CAUCHY 0.05
-#define CERES_ITERATIONS 500
+#define CERES_ITERATIONS 10000
 
 typedef geometry_msgs::TransformStamped TF;
 typedef std::vector<TF> TFs;

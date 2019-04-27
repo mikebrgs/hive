@@ -87,7 +87,8 @@ class ViveSolve : public Solver {
   ViveSolve();
   ViveSolve(Tracker & tracker,
     Environment & environment,
-    LighthouseMap & lighthouses);
+    LighthouseMap & lighthouses,
+    bool correction);
 
   // Destructor
   ~ViveSolve();
@@ -139,6 +140,7 @@ class ViveSolve : public Solver {
   std::mutex * solveMutex_;
   Tracker tracker_;
   LighthouseMap lh_extrinsics_;
+  bool correction_;
 };
 
 class PoseHorizontalCost {
@@ -197,6 +199,7 @@ bool ComputeTransformBundle(LightData observations,
   Extrinsics * extrinsics,
   Environment * environment,
   std::mutex * solveMutex,
-  LighthouseMap * lighthouses);
+  LighthouseMap * lighthouses,
+  bool correction);
 
 #endif  // VIVE_VIVE_SOLVE_H_

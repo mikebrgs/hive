@@ -229,3 +229,11 @@ target_link_libraries(hive_calibrate
   ${CERES_LIBRARIES}
   ${EIGEN_LIBRARIES}
 )
+
+# add_executable(hive_solver src/hive_solver.cc src/vive.cc)
+# add_dependencies(hive_solver hive_generate_messages_cpp)
+# target_link_libraries(hive_solver
+#   ${catkin_LIBRARIES}
+#   ${CERES_LIBRARIES}
+#   ${EIGEN_LIBRARIES}
+# )

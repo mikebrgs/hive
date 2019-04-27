@@ -36,13 +36,15 @@ ViveSolve::ViveSolve() {
 
 ViveSolve::ViveSolve(Tracker & tracker,
     Environment & environment,
-    LighthouseMap & lighthouses) {
+    LighthouseMap & lighthouses,
+    bool correction) {
   // Solver mutex
   solveMutex_ = new std::mutex();
 
   // Call older methods
   Initialize(environment, tracker);
   Update(lighthouses);
+  correction_ = correction;
 
   return;
 }
@@ -121,7 +123,8 @@ void ViveSolve::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
       &extrinsics_,
       &environment_,
       solveMutex_,
-      &lh_extrinsics_);
+      &lh_extrinsics_,
+      correction_);
     poseSolver.detach();
   }
   return;
@@ -156,6 +159,7 @@ bool ViveSolve::GetTransform(geometry_msgs::TransformStamped &msg) {
   msg.child_frame_id = tracker_.serial;
   msg.header.frame_id = environment_.vive.child_frame;
   msg.header.stamp = ros::Time::now();
+  // msg.header.stamp = tracker_pose_;
   // Prevent repeated use of the same pose
   tracker_pose_.valid = false;
   solveMutex_->unlock();
@@ -934,7 +938,8 @@ bool ComputeTransformBundle(LightData observations,
   Extrinsics * extrinsics,
   Environment * environment,
   std::mutex * solveMutex,
-  LighthouseMap * lighthouses) {
+  LighthouseMap * lighthouses,
+  bool correction) {
   solveMutex->lock();
   ceres::Problem problem;
   double pose[6];// = {0.017356, -0.00947887, 1.53151, -0.799895, 2.22509, -0.436057};
@@ -952,17 +957,17 @@ bool ComputeTransformBundle(LightData observations,
     ld_it != observations.end(); ld_it++) {
     // Get lighthouse to angle axis
     bool lighthouse = false;
-    bool correction = false;
+    // bool correction = false;
     if (environment->lighthouses.find(ld_it->first) == environment->lighthouses.end())
       continue;
 
-    if (lighthouses->find(ld_it->first) != lighthouses->end()
-      && CORRECTION) {
-      // std::cout << "CORRECTION " << ld_it->first << " TRUE" << std::endl;
-      correction = true;
-    } else {
-      // std::cout << "CORRECTION " << ld_it->first << " FALSE" << std::endl;
-    }
+    // if (lighthouses->find(ld_it->first) != lighthouses->end()
+    //   && CORRECTION) {
+    //   // std::cout << "CORRECTION " << ld_it->first << " TRUE" << std::endl;
+    //   correction = true;
+    // } else {
+    //   // std::cout << "CORRECTION " << ld_it->first << " FALSE" << std::endl;
+    // }
     // correction = false;
 
     Eigen::AngleAxisd tmp_AA = Eigen::AngleAxisd(
