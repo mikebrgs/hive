@@ -197,20 +197,191 @@ private:
   double angle_factor_;
 };
 
-// Hand Eye Calibration Refinement
-class PoseCostFunctor{
+// Hand Eye Calibration Refinement -- new approach
+class HandEyeCostFunctor{
 public:
   // Constructor
-  PoseCostFunctor(geometry_msgs::Transform vive,
-    geometry_msgs::Transform optitrack);
+  HandEyeCostFunctor(geometry_msgs::Transform prev_vive,
+    geometry_msgs::Transform next_vive,
+    geometry_msgs::Transform prev_optitrack,
+    geometry_msgs::Transform next_optitrack);
   // Ceres operator
   template <typename T>
-  bool operator()(const T* const o_v, const T* const a_t,
+  bool operator()(const T* const a_t,
     T * residual) const;
 private:
-  geometry_msgs::Transform vive_;
-  geometry_msgs::Transform optitrack_;
+  geometry_msgs::Transform prev_vive_;
+  geometry_msgs::Transform next_vive_;
+  geometry_msgs::Transform prev_optitrack_;
+  geometry_msgs::Transform next_optitrack_;
 };
+
+HandEyeCostFunctor::HandEyeCostFunctor(
+  geometry_msgs::Transform prev_vive,
+  geometry_msgs::Transform next_vive,
+  geometry_msgs::Transform prev_optitrack,
+  geometry_msgs::Transform next_optitrack) {
+  prev_vive_ = prev_vive;
+  next_vive_ = next_vive;
+  prev_optitrack_ = prev_optitrack;
+  next_optitrack_ = next_optitrack;
+  return;
+}
+
+template <typename T>
+bool HandEyeCostFunctor::operator()(const T* const a_t,
+  T * residual) const {
+  // Set up dR vive
+  Eigen::Quaternion<T> prev_vQt(T(prev_vive_.rotation.w),
+    T(prev_vive_.rotation.x),
+    T(prev_vive_.rotation.y),
+    T(prev_vive_.rotation.z));
+  Eigen::Matrix<T,3,3> prev_vRt = prev_vQt.toRotationMatrix();
+  Eigen::Quaternion<T> next_vQt(T(next_vive_.rotation.w),
+    T(next_vive_.rotation.x),
+    T(next_vive_.rotation.y),
+    T(next_vive_.rotation.z));
+  Eigen::Matrix<T,3,3> next_vRt = next_vQt.toRotationMatrix();
+  Eigen::Matrix<T,3,3> d_tRt = next_vRt.transpose() * prev_vRt;
+  // Vive position
+  Eigen::Matrix<T,3,1> prev_vPt;
+  prev_vPt << T(prev_vive_.translation.x),
+    T(prev_vive_.translation.y),
+    T(prev_vive_.translation.z);
+  Eigen::Matrix<T,3,1> next_vPt;
+  next_vPt << T(next_vive_.translation.x),
+    T(next_vive_.translation.y),
+    T(next_vive_.translation.z);
+  Eigen::Matrix<T,3,1> d_tPt = next_vRt.transpose() * prev_vPt -
+    next_vRt.transpose() * next_vPt;
+
+  // set up dR optitrack
+  Eigen::Quaternion<T> prev_oQa(T(prev_optitrack_.rotation.w),
+    T(prev_optitrack_.rotation.x),
+    T(prev_optitrack_.rotation.y),
+    T(prev_optitrack_.rotation.z));
+  Eigen::Matrix<T,3,3> prev_oRa = prev_oQa.toRotationMatrix();
+  Eigen::Quaternion<T> next_oQa(T(next_optitrack_.rotation.w),
+    T(next_optitrack_.rotation.x),
+    T(next_optitrack_.rotation.y),
+    T(next_optitrack_.rotation.z));
+  Eigen::Matrix<T,3,3> next_oRa = next_oQa.toRotationMatrix();
+  Eigen::Matrix<T,3,3> d_aRa = next_oRa.transpose() * prev_oRa;
+  // Optitrack position
+  Eigen::Matrix<T,3,1> prev_oPa;
+  prev_oPa << T(prev_optitrack_.translation.x),
+    T(prev_optitrack_.translation.y),
+    T(prev_optitrack_.translation.z);
+  Eigen::Matrix<T,3,1> next_oPa;
+  next_oPa << T(next_optitrack_.translation.x),
+    T(next_optitrack_.translation.y),
+    T(next_optitrack_.translation.z);
+  Eigen::Matrix<T,3,1> d_aPa = next_oRa.transpose() * prev_oPa -
+    next_oRa.transpose() * next_oPa;
+
+  // Set up vive R optitrack
+  Eigen::Matrix<T,3,1> aPt;
+  aPt << a_t[0], a_t[1], a_t[2];
+  Eigen::Matrix<T,3,3> aRt;
+  ceres::AngleAxisToRotationMatrix(&a_t[3], aRt.data());
+
+  // Transforms
+  Eigen::Matrix<T,3,3> t_tRt = aRt.transpose() * d_aRa * aRt;
+
+  // Cost
+  Eigen::Matrix<T,3,3> dR = d_tRt.transpose() * t_tRt;
+  Eigen::Matrix<T,3,1> dP = - d_tPt +
+    aRt.transpose() * (d_aRa * aPt + d_aPa) - aRt.transpose() * aPt;
+
+  T aa[3];
+  ceres::RotationMatrixToAngleAxis(dR.data(),aa);
+
+  residual[0] = aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2];
+  residual[1] = dP(0);
+  residual[2] = dP(1);
+  residual[3] = dP(2);
+
+  return true;
+}
+
+// Hand Eye Calibration Refinement -- new approach
+class OrientationCostFunctor{
+public:
+  // Constructor
+  OrientationCostFunctor(geometry_msgs::Quaternion prev_vive,
+    geometry_msgs::Quaternion next_vive,
+    geometry_msgs::Quaternion prev_optitrack,
+    geometry_msgs::Quaternion next_optitrack);
+  // Ceres operator
+  template <typename T>
+  bool operator()(const T* const a_t,
+    T * residual) const;
+private:
+  geometry_msgs::Quaternion prev_vive_;
+  geometry_msgs::Quaternion next_vive_;
+  geometry_msgs::Quaternion prev_optitrack_;
+  geometry_msgs::Quaternion next_optitrack_;
+};
+
+OrientationCostFunctor::OrientationCostFunctor(geometry_msgs::Quaternion prev_vive,
+  geometry_msgs::Quaternion next_vive,
+  geometry_msgs::Quaternion prev_optitrack,
+  geometry_msgs::Quaternion next_optitrack) {
+  prev_vive_ = prev_vive;
+  next_vive_ = next_vive;
+  prev_optitrack_ = prev_optitrack;
+  next_optitrack_ = next_optitrack;
+  return;
+}
+
+template <typename T>
+bool OrientationCostFunctor::operator()(const T* const a_t,
+  T * residual) const {
+  // Set up dR vive
+  Eigen::Quaternion<T> prev_vQt(T(prev_vive_.w),
+    T(prev_vive_.x),
+    T(prev_vive_.y),
+    T(prev_vive_.z));
+  Eigen::Matrix<T,3,3> prev_vRt = prev_vQt.toRotationMatrix();
+  Eigen::Quaternion<T> next_vQt(T(next_vive_.w),
+    T(next_vive_.x),
+    T(next_vive_.y),
+    T(next_vive_.z));
+  Eigen::Matrix<T,3,3> next_vRt = next_vQt.toRotationMatrix();
+  Eigen::Matrix<T,3,3> d_tRt = next_vRt.transpose() * prev_vRt;
+
+  // set up dR optitrack
+  Eigen::Quaternion<T> prev_oQa(T(prev_optitrack_.w),
+    T(prev_optitrack_.x),
+    T(prev_optitrack_.y),
+    T(prev_optitrack_.z));
+  Eigen::Matrix<T,3,3> prev_oRa = prev_oQa.toRotationMatrix();
+  Eigen::Quaternion<T> next_oQa(T(next_optitrack_.w),
+    T(next_optitrack_.x),
+    T(next_optitrack_.y),
+    T(next_optitrack_.z));
+  Eigen::Matrix<T,3,3> next_oRa = next_oQa.toRotationMatrix();
+  Eigen::Matrix<T,3,3> d_aRa = next_oRa.transpose() * prev_oRa;
+
+  // Set up vive R optitrack
+  Eigen::Matrix<T,3,3> aRt;
+  ceres::AngleAxisToRotationMatrix(a_t, aRt.data());
+
+  // Transforms
+  Eigen::Matrix<T,3,3> t_tRt = aRt.transpose() * d_aRa * aRt;
+
+  // Cost
+  Eigen::Matrix<T,3,3> dR = d_tRt.transpose() * t_tRt;
+
+  T aa[3];
+  ceres::RotationMatrixToAngleAxis(dR.data(),aa);
+
+  residual[0] = aa[0] * aa[0] +
+    aa[1] * aa[1] +
+    aa[2] * aa[2];
+
+  return true;
+}
 
 // Light pose in the lighthouse frame
 class LighthouseHorizontalCost {

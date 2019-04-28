@@ -133,7 +133,6 @@ include_directories(
 add_executable(hive_server src/vive_server.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc src/vive_calibrate.cc)
 add_executable(hive_base_solve src/vive_base_solve.cc src/vive_base.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc)
 add_executable(hive_base_calibrate src/vive_base_calibrate.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc)
-add_executable(hive_calibrate src/hive_calibrate.cc src/vive.cc src/vive_solve.cc src/hive_calibrator.cc)
 add_executable(hive_print tools/vive_print.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc src/vive_calibrate.cc)
 add_executable(hive_tool tools/vive_tool.cc)
 add_executable(hive_optimize tools/vive_optimize.cc src/vive.cc src/vive_solve.cc)
@@ -143,6 +142,9 @@ add_executable(hive_offset tools/vive_offset.cc src/vive.cc src/vive_solve.cc)
 add_executable(hive_refine src/vive_refine.cc src/vive.cc src/vive_solve.cc)
 add_executable(hive_ekf src/vive_ekf.cc src/vive.cc)
 add_executable(hive_pgo src/vive_pgo.cc src/vive.cc)
+
+add_executable(hive_calibrate tools/hive_calibrate.cc src/vive.cc src/vive_solve.cc src/hive_calibrator.cc)
+add_executable(hive_solve tools/hive_solve.cc src/vive.cc src/hive_solver.cc)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
@@ -159,7 +161,9 @@ add_dependencies(hive_offset hive_generate_messages_cpp)
 add_dependencies(hive_refine hive_generate_messages_cpp)
 add_dependencies(hive_ekf hive_generate_messages_cpp)
 add_dependencies(hive_pgo hive_generate_messages_cpp)
+
 add_dependencies(hive_calibrate hive_generate_messages_cpp)
+add_dependencies(hive_solve hive_generate_messages_cpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(hive_server
@@ -225,6 +229,12 @@ target_link_libraries(hive_pgo
 )
 
 target_link_libraries(hive_calibrate
+  ${catkin_LIBRARIES}
+  ${CERES_LIBRARIES}
+  ${EIGEN_LIBRARIES}
+)
+
+target_link_libraries(hive_solve
   ${catkin_LIBRARIES}
   ${CERES_LIBRARIES}
   ${EIGEN_LIBRARIES}

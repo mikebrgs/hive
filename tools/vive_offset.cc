@@ -37,135 +37,163 @@ bool HiveOffset::NextPose() {
     return true;
   }
 
-  // Average vive poses
-  ceres::Problem problem_vive;
-  ceres::Solver::Options options_vive;
-  ceres::Solver::Summary summary_vive;
-  // Averages pose
-  double vive_pose[6];
-  vive_pose[0] = tmp_vive_.front().transform.translation.x;
-  vive_pose[1] = tmp_vive_.front().transform.translation.y;
-  vive_pose[2] = tmp_vive_.front().transform.translation.z;
-  Eigen::Quaterniond guessQvive(tmp_vive_.front().transform.rotation.w,
-    tmp_vive_.front().transform.rotation.z,
-    tmp_vive_.front().transform.rotation.y,
-    tmp_vive_.front().transform.rotation.z);
-  Eigen::AngleAxisd guessAAvive(guessQvive);
-  vive_pose[3] = guessAAvive.axis()(0) * guessAAvive.angle();
-  vive_pose[4] = guessAAvive.axis()(1) * guessAAvive.angle();
-  vive_pose[5] = guessAAvive.axis()(2) * guessAAvive.angle();
+  // // Average vive poses
+  // ceres::Problem problem_vive;
+  // ceres::Solver::Options options_vive;
+  // ceres::Solver::Summary summary_vive;
+  // // Averages pose
+  // double vive_pose[6];
+  // vive_pose[0] = tmp_vive_.front().transform.translation.x;
+  // vive_pose[1] = tmp_vive_.front().transform.translation.y;
+  // vive_pose[2] = tmp_vive_.front().transform.translation.z;
+  // Eigen::Quaterniond guessQvive(tmp_vive_.front().transform.rotation.w,
+  //   tmp_vive_.front().transform.rotation.z,
+  //   tmp_vive_.front().transform.rotation.y,
+  //   tmp_vive_.front().transform.rotation.z);
+  // Eigen::AngleAxisd guessAAvive(guessQvive);
+  // vive_pose[3] = guessAAvive.axis()(0) * guessAAvive.angle();
+  // vive_pose[4] = guessAAvive.axis()(1) * guessAAvive.angle();
+  // vive_pose[5] = guessAAvive.axis()(2) * guessAAvive.angle();
 
-  // Set up residuals
-  for (auto pose_it = tmp_vive_.begin();
-    pose_it != tmp_vive_.end(); pose_it++) {
-    ceres::CostFunction * cost =
-      new ceres::AutoDiffCostFunction<PoseAverageCost, 4, 6>
-      (new PoseAverageCost(pose_it->transform, angle_factor_));
-    problem_vive.AddResidualBlock(cost, new ceres::CauchyLoss(CAUCHY), vive_pose);
-  }
-  // Options and solve
-  options_vive.minimizer_progress_to_stdout = false;
-  options_vive.max_num_iterations = CERES_ITERATIONS;
-  ceres::Solve(options_vive, &problem_vive, &summary_vive);
-  std::cout << "Vive: "
-    << vive_pose[0] << ", "
-    << vive_pose[1] << ", "
-    << vive_pose[2] << ", "
-    << vive_pose[3] << ", "
-    << vive_pose[4] << ", "
-    << vive_pose[5] << std::endl;
-  std::cout << summary_vive.BriefReport() << std::endl;
+  // // Set up residuals
+  // for (auto pose_it = tmp_vive_.begin();
+  //   pose_it != tmp_vive_.end(); pose_it++) {
+  //   std::cout << "Vive It : "
+  //     << pose_it->transform.translation.x << ", "
+  //     << pose_it->transform.translation.y << ", "
+  //     << pose_it->transform.translation.z << ", ";
+  //     Eigen::Quaterniond auxQ(pose_it->transform.rotation.w,
+  //       pose_it->transform.rotation.x,
+  //       pose_it->transform.rotation.y,
+  //       pose_it->transform.rotation.z);
+  //     Eigen::AngleAxisd auxAA(auxQ);
+  //     std::cout << auxAA.angle() * auxAA.axis()(0) << ", "
+  //     << auxAA.angle() * auxAA.axis()(1) << ", "
+  //     << auxAA.angle() * auxAA.axis()(2) << std::endl;
+  //   ceres::CostFunction * cost =
+  //     new ceres::AutoDiffCostFunction<PoseAverageCost, 4, 6>
+  //     (new PoseAverageCost(pose_it->transform, angle_factor_));
+  //   problem_vive.AddResidualBlock(cost, new ceres::CauchyLoss(CAUCHY), vive_pose);
+  // }
+  // // Options and solve
+  // options_vive.minimizer_progress_to_stdout = false;
+  // options_vive.max_num_iterations = CERES_ITERATIONS;
+  // ceres::Solve(options_vive, &problem_vive, &summary_vive);
+  // std::cout << "Vive: "
+  //   << vive_pose[0] << ", "
+  //   << vive_pose[1] << ", "
+  //   << vive_pose[2] << ", "
+  //   << vive_pose[3] << ", "
+  //   << vive_pose[4] << ", "
+  //   << vive_pose[5] << std::endl;
+  // std::cout << summary_vive.BriefReport() << std::endl;
 
-  // Save vive pose
-  TF avg_vive;
-  avg_vive.header.frame_id = tmp_vive_.front().header.frame_id;
-  avg_vive.child_frame_id = tmp_vive_.front().child_frame_id;
-  avg_vive.header.stamp = tmp_vive_.front().header.stamp;
-  avg_vive.transform.translation.x = vive_pose[0];
-  avg_vive.transform.translation.y = vive_pose[1];
-  avg_vive.transform.translation.z = vive_pose[2];
-  Eigen::Vector3d avgVvive(vive_pose[3],
-    vive_pose[4],
-    vive_pose[5]);
-  Eigen::Quaterniond avgQvive;
-  if (avgVvive.norm() != 0) {
-    Eigen::AngleAxisd avgAAvive(avgVvive.norm(),
-      avgVvive.normalized());
-    avgQvive = Eigen::Quaterniond(avgAAvive);
-  } else {
-    avgQvive = Eigen::Quaterniond(1,0,0,0);
-  }
-  avg_vive.transform.rotation.w = avgQvive.w();
-  avg_vive.transform.rotation.x = avgQvive.x();
-  avg_vive.transform.rotation.y = avgQvive.y();
-  avg_vive.transform.rotation.z = avgQvive.z();
-  vive_.push_back(avg_vive);
+  // // Save vive pose
+  // TF avg_vive;
+  // avg_vive.header.frame_id = tmp_vive_.front().header.frame_id;
+  // avg_vive.child_frame_id = tmp_vive_.front().child_frame_id;
+  // avg_vive.header.stamp = tmp_vive_.front().header.stamp;
+  // avg_vive.transform.translation.x = vive_pose[0];
+  // avg_vive.transform.translation.y = vive_pose[1];
+  // avg_vive.transform.translation.z = vive_pose[2];
+  // Eigen::Vector3d avgVvive(vive_pose[3],
+  //   vive_pose[4],
+  //   vive_pose[5]);
+  // Eigen::Quaterniond avgQvive;
+  // if (avgVvive.norm() != 0) {
+  //   Eigen::AngleAxisd avgAAvive(avgVvive.norm(),
+  //     avgVvive.normalized());
+  //   avgQvive = Eigen::Quaterniond(avgAAvive);
+  // } else {
+  //   avgQvive = Eigen::Quaterniond(1,0,0,0);
+  // }
+  // avg_vive.transform.rotation.w = avgQvive.w();
+  // avg_vive.transform.rotation.x = avgQvive.x();
+  // avg_vive.transform.rotation.y = avgQvive.y();
+  // avg_vive.transform.rotation.z = avgQvive.z();
+
+  // vive_.push_back(avg_vive);
+  vive_.push_back(tmp_vive_.back());
 
   tmp_vive_.clear();
 
   // OptiTrack average poses
-  ceres::Problem problem_optitrack;
-  ceres::Solver::Options options_optitrack;
-  ceres::Solver::Summary summary_optitrack;
-  // Averages pose
-  double optitrack_pose[6];
-  optitrack_pose[0] = tmp_optitrack_.front().transform.translation.x;
-  optitrack_pose[1] = tmp_optitrack_.front().transform.translation.y;
-  optitrack_pose[2] = tmp_optitrack_.front().transform.translation.z;
-  Eigen::Quaterniond guessQoptitrack(tmp_optitrack_.front().transform.rotation.w,
-    tmp_optitrack_.front().transform.rotation.z,
-    tmp_optitrack_.front().transform.rotation.y,
-    tmp_optitrack_.front().transform.rotation.z);
-  Eigen::AngleAxisd guessAAoptitrack(guessQoptitrack);
-  optitrack_pose[3] = guessAAoptitrack.axis()(0) * guessAAoptitrack.angle();
-  optitrack_pose[4] = guessAAoptitrack.axis()(1) * guessAAoptitrack.angle();
-  optitrack_pose[5] = guessAAoptitrack.axis()(2) * guessAAoptitrack.angle();
+  // ceres::Problem problem_optitrack;
+  // ceres::Solver::Options options_optitrack;
+  // ceres::Solver::Summary summary_optitrack;
+  // // Averages pose
+  // double optitrack_pose[6];
+  // optitrack_pose[0] = tmp_optitrack_.front().transform.translation.x;
+  // optitrack_pose[1] = tmp_optitrack_.front().transform.translation.y;
+  // optitrack_pose[2] = tmp_optitrack_.front().transform.translation.z;
+  // Eigen::Quaterniond guessQoptitrack(tmp_optitrack_.front().transform.rotation.w,
+  //   tmp_optitrack_.front().transform.rotation.z,
+  //   tmp_optitrack_.front().transform.rotation.y,
+  //   tmp_optitrack_.front().transform.rotation.z);
+  // Eigen::AngleAxisd guessAAoptitrack(guessQoptitrack);
+  // optitrack_pose[3] = guessAAoptitrack.axis()(0) * guessAAoptitrack.angle();
+  // optitrack_pose[4] = guessAAoptitrack.axis()(1) * guessAAoptitrack.angle();
+  // optitrack_pose[5] = guessAAoptitrack.axis()(2) * guessAAoptitrack.angle();
 
-  // Set up residuals
-  for (auto pose_it = tmp_optitrack_.begin();
-    pose_it != tmp_optitrack_.end(); pose_it++) {
-    ceres::CostFunction * cost =
-      new ceres::AutoDiffCostFunction<PoseAverageCost, 4, 6>
-      (new PoseAverageCost(pose_it->transform, angle_factor_));
-    problem_optitrack.AddResidualBlock(cost, new ceres::CauchyLoss(CAUCHY), optitrack_pose);
-  }
-  // Options and solve
-  options_optitrack.minimizer_progress_to_stdout = false;
-  options_optitrack.max_num_iterations = CERES_ITERATIONS;
-  ceres::Solve(options_optitrack, &problem_optitrack, &summary_optitrack);
-  std::cout << "Optitrack: " 
-    << optitrack_pose[0] << ", "
-    << optitrack_pose[1] << ", "
-    << optitrack_pose[2] << ", "
-    << optitrack_pose[3] << ", "
-    << optitrack_pose[4] << ", "
-    << optitrack_pose[5] << std::endl;
-  std::cout << summary_optitrack.BriefReport() << std::endl;
+  // // Set up residuals
+  // for (auto pose_it = tmp_optitrack_.begin();
+  //   pose_it != tmp_optitrack_.end(); pose_it++) {
+  //   std::cout << "Opti It : "
+  //     << pose_it->transform.translation.x << ", "
+  //     << pose_it->transform.translation.y << ", "
+  //     << pose_it->transform.translation.z << ", ";
+  //     Eigen::Quaterniond auxQ(pose_it->transform.rotation.w,
+  //       pose_it->transform.rotation.x,
+  //       pose_it->transform.rotation.y,
+  //       pose_it->transform.rotation.z);
+  //     Eigen::AngleAxisd auxAA(auxQ);
+  //     std::cout << auxAA.angle() * auxAA.axis()(0) << ", "
+  //     << auxAA.angle() * auxAA.axis()(1) << ", "
+  //     << auxAA.angle() * auxAA.axis()(2) << std::endl;
+  //   ceres::CostFunction * cost =
+  //     new ceres::AutoDiffCostFunction<PoseAverageCost, 4, 6>
+  //     (new PoseAverageCost(pose_it->transform, angle_factor_));
+  //   problem_optitrack.AddResidualBlock(cost, new ceres::CauchyLoss(CAUCHY), optitrack_pose);
+  // }
+  // // Options and solve
+  // options_optitrack.minimizer_progress_to_stdout = false;
+  // options_optitrack.max_num_iterations = CERES_ITERATIONS;
+  // ceres::Solve(options_optitrack, &problem_optitrack, &summary_optitrack);
+  // std::cout << "Optitrack: " 
+  //   << optitrack_pose[0] << ", "
+  //   << optitrack_pose[1] << ", "
+  //   << optitrack_pose[2] << ", "
+  //   << optitrack_pose[3] << ", "
+  //   << optitrack_pose[4] << ", "
+  //   << optitrack_pose[5] << std::endl;
+  // std::cout << summary_optitrack.BriefReport() << std::endl;
 
-  // Save optitrack pose
-  TF avg_optitrack;
-  avg_optitrack.header.frame_id = tmp_optitrack_.front().header.frame_id;
-  avg_optitrack.child_frame_id = tmp_optitrack_.front().child_frame_id;
-  avg_optitrack.header.stamp = tmp_optitrack_.front().header.stamp;
-  avg_optitrack.transform.translation.x = optitrack_pose[0];
-  avg_optitrack.transform.translation.y = optitrack_pose[1];
-  avg_optitrack.transform.translation.z = optitrack_pose[2];
-  Eigen::Vector3d avgVoptitrack(optitrack_pose[3],
-    optitrack_pose[4],
-    optitrack_pose[5]);
-  Eigen::Quaterniond avgQoptitrack;
-  if (avgVoptitrack.norm() != 0) {
-    Eigen::AngleAxisd avgAAoptitrack(avgVoptitrack.norm(),
-      avgVoptitrack.normalized());
-    avgQoptitrack = Eigen::Quaterniond(avgAAoptitrack);
-  } else {
-    avgQoptitrack = Eigen::Quaterniond(1,0,0,0);
-  }
-  avg_optitrack.transform.rotation.w = avgQoptitrack.w();
-  avg_optitrack.transform.rotation.x = avgQoptitrack.x();
-  avg_optitrack.transform.rotation.y = avgQoptitrack.y();
-  avg_optitrack.transform.rotation.z = avgQoptitrack.z();
-  optitrack_.push_back(avg_optitrack);
+  // // Save optitrack pose
+  // TF avg_optitrack;
+  // avg_optitrack.header.frame_id = tmp_optitrack_.front().header.frame_id;
+  // avg_optitrack.child_frame_id = tmp_optitrack_.front().child_frame_id;
+  // avg_optitrack.header.stamp = tmp_optitrack_.front().header.stamp;
+  // avg_optitrack.transform.translation.x = optitrack_pose[0];
+  // avg_optitrack.transform.translation.y = optitrack_pose[1];
+  // avg_optitrack.transform.translation.z = optitrack_pose[2];
+  // Eigen::Vector3d avgVoptitrack(optitrack_pose[3],
+  //   optitrack_pose[4],
+  //   optitrack_pose[5]);
+  // Eigen::Quaterniond avgQoptitrack;
+  // if (avgVoptitrack.norm() != 0) {
+  //   Eigen::AngleAxisd avgAAoptitrack(avgVoptitrack.norm(),
+  //     avgVoptitrack.normalized());
+  //   avgQoptitrack = Eigen::Quaterniond(avgAAoptitrack);
+  // } else {
+  //   avgQoptitrack = Eigen::Quaterniond(1,0,0,0);
+  // }
+  // avg_optitrack.transform.rotation.w = avgQoptitrack.w();
+  // avg_optitrack.transform.rotation.x = avgQoptitrack.x();
+  // avg_optitrack.transform.rotation.y = avgQoptitrack.y();
+  // avg_optitrack.transform.rotation.z = avgQoptitrack.z();
+
+  // optitrack_.push_back(avg_optitrack);
+  optitrack_.push_back(tmp_optitrack_.back());
 
   tmp_optitrack_.clear();
 
@@ -173,11 +201,14 @@ bool HiveOffset::NextPose() {
 }
 
 bool HiveOffset::GetOffset(TFs & offsets) {
+  return CeresEstimateOffset(optitrack_, vive_, offsets);
+
+  // Old
   // If the data was collected in steps
   TFs vive_vfull, opti_vfull;
   if (steps_) {
     NextPose();
-    offsets = EstimateOffset(optitrack_, vive_);
+    offsets = VispEstimateOffset(optitrack_, vive_);
     if (refine_)
       offsets = RefineOffset(optitrack_, vive_, offsets);
   // If we have continuous data
@@ -245,7 +276,7 @@ bool HiveOffset::GetOffset(TFs & offsets) {
 
     std::cout << vive_.size() << " " << optitrack_.size() << std::endl;
     // Estimating the offset
-    offsets = EstimateOffset(optitrack_, vive_);
+    offsets = VispEstimateOffset(optitrack_, vive_);
     if (refine_)
       offsets = RefineOffset(optitrack_, vive_, offsets);
   }
@@ -259,7 +290,95 @@ bool HiveOffset::GetOffset(TFs & offsets) {
   return true;
 }
 
-TFs HiveOffset::EstimateOffset(TFs optitrack, TFs vive) {
+bool HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive, TFs& offsets) {
+  // The offsets
+  // for (size_t i = 0; i < 6; i++) aTt[i] = 0.0;
+  double aAt[3];
+  for (size_t i = 0; i < 3; i++) aAt[i] = 0.0;
+
+  if (optitrack.size() != vive.size()) return false;
+  if (optitrack.size() < 2) return false;
+
+  ceres::Problem problem1;
+  ceres::Solver::Options options;
+  ceres::Solver::Summary summary;
+
+  auto prev_opti_it = optitrack.begin();
+  auto next_opti_it = prev_opti_it + 1;
+  auto prev_vive_it = vive.begin();
+  auto next_vive_it = prev_vive_it + 1;
+  while (next_vive_it != vive.end()) {
+    ceres::CostFunction * cost =
+      new ceres::AutoDiffCostFunction<OrientationCostFunctor, 1, 3>
+      (new OrientationCostFunctor(prev_vive_it->transform.rotation,
+        next_vive_it->transform.rotation,
+        prev_opti_it->transform.rotation,
+        next_opti_it->transform.rotation));
+    problem1.AddResidualBlock(cost, NULL, aAt);
+    // Next poses
+    next_vive_it++;
+    prev_vive_it++;
+    next_opti_it++;
+    prev_opti_it++;
+  }
+
+  // for (size_t i = 0; i < 3; i++) aTt[i+3] = aAt[i];
+  double aTt[6];
+  aTt[0] = 0.0;
+  aTt[1] = 0.0;
+  aTt[2] = 0.0;
+  aTt[3] = aAt[0];
+  aTt[4] = aAt[1];
+  aTt[5] = aAt[2];
+
+  options.minimizer_progress_to_stdout = true;
+  options.max_num_iterations = 1000;
+  ceres::Solve(options, &problem1, &summary);
+
+  std::cout << summary.final_cost <<  " - "
+    << aTt[3] << ", "
+    << aTt[4] << ", "
+    << aTt[5] << std::endl;
+
+  std::cout << summary.FullReport() << std::endl;
+
+  ceres::Problem problem2;
+
+  prev_opti_it = optitrack.begin();
+  next_opti_it = prev_opti_it + 1;
+  prev_vive_it = vive.begin();
+  next_vive_it = prev_vive_it + 1;
+  while (next_vive_it != vive.end()) {
+    ceres::CostFunction * cost =
+      new ceres::AutoDiffCostFunction<HandEyeCostFunctor, 4, 6>
+      (new HandEyeCostFunctor(prev_vive_it->transform,
+        next_vive_it->transform,
+        prev_opti_it->transform,
+        next_opti_it->transform));
+    problem2.AddResidualBlock(cost, NULL, aTt);
+    // Next poses
+    next_vive_it++;
+    prev_vive_it++;
+    next_opti_it++;
+    prev_opti_it++;
+  }
+
+  ceres::Solve(options, &problem2, &summary);
+  std::cout << summary.FullReport() << std::endl;
+
+  std::cout << summary.final_cost <<  " - "
+    << aTt[0] << ", "
+    << aTt[1] << ", "
+    << aTt[2] << ", "
+    << aTt[3] << ", "
+    << aTt[4] << ", "
+    << aTt[5] << std::endl;
+
+  return true;
+}
+
+
+TFs HiveOffset::VispEstimateOffset(TFs optitrack, TFs vive) {
   std::vector<vpHomogeneousMatrix> vMtVec; // camera to object - tracker to vive
   std::vector<vpHomogeneousMatrix> tMvVec;
   std::vector<vpHomogeneousMatrix> aMoVec; // reference to end effector - optitrack to arrow

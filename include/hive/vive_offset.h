@@ -52,7 +52,7 @@
 #define ANGLE_THRESH 0.17
 #define TIME_THRESH 0.01
 #define CAUCHY 0.05
-#define CERES_ITERATIONS 10000
+#define CERES_ITERATIONS 500
 
 typedef geometry_msgs::TransformStamped TF;
 typedef std::vector<TF> TFs;
@@ -73,7 +73,8 @@ public:
   // Get the offsets
   bool GetOffset(TFs & offsets);
   // Estimate the offset with Hand Eye Calibration algorithm
-  static TFs EstimateOffset(TFs optitrack, TFs vive);
+  static TFs VispEstimateOffset(TFs optitrack, TFs vive);
+  static bool CeresEstimateOffset(TFs& optitrack, TFs& vive, TFs& offsets);
   // Refine with ceres the estimate of the offset
   static TFs RefineOffset(TFs optitrack, TFs vive, TFs offset);
 
