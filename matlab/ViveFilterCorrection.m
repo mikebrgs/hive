@@ -52,10 +52,10 @@ lPs = lRt * (tRtl * tlPs + tPtl) + lPt;
 
 % Check if vG or -vG
 disp('d dot(V) / dq')
-ccode(diff(vRt * tA + vG,vQt_w))
-ccode(diff(vRt * tA + vG,vQt_x))
-ccode(diff(vRt * tA + vG,vQt_y))
-ccode(diff(vRt * tA + vG,vQt_z))
+ccode(diff(-vRt * tA + vG,vQt_w))
+ccode(diff(-vRt * tA + vG,vQt_x))
+ccode(diff(-vRt * tA + vG,vQt_y))
+ccode(diff(-vRt * tA + vG,vQt_z))
 
 disp('d dot(Q) / dQ')
 ccode(diff(0.5 * Omega * (tW-tB),vQt_w))
@@ -63,8 +63,11 @@ ccode(diff(0.5 * Omega * (tW-tB),vQt_x))
 ccode(diff(0.5 * Omega * (tW-tB),vQt_y))
 ccode(diff(0.5 * Omega * (tW-tB),vQt_z))
 
-alphaH = atan(lPs(1)/lPs(3));
-alphaV = atan(lPs(2)/lPs(3));
+x = (lPs(1)/lPs(3));
+y = (lPs(2)/lPs(3));
+syms phase tilt gib_phase gib_mag curve
+alphaH = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
+alphaV = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
 
 disp('d alphaH / dP')
 ccode(diff(alphaH, vPt_x))
