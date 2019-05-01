@@ -1,5 +1,5 @@
-#ifndef HIVE_VIVE_EKF_H_
-#define HIVE_VIVE_EKF_H_
+#ifndef HIVE_VIVE_FILTER_H_
+#define HIVE_VIVE_FILTER_H_
 
 // ROS includes
 #include <ros/ros.h>
@@ -37,25 +37,29 @@
 #define STATE_SIZE 13         // Size of the state vector
 #define NOISE_SIZE 9          // Size of the noise vector
 #define LIGHT_DATA_BUFFER 4   // Size of the light data vector
+#define VALID_POSE_COST 1e-3
 
-typedef std::map<std::string,
-  std::pair<hive::ViveLight*,hive::ViveLight*>> LightMap;
+namespace filter {
+  // filter type
+  enum type {ekf, iekf, ukf};
 
-typedef std::vector<hive::ViveLight> LightVector;
+  typedef std::vector<hive::ViveLight> LightVector;
+}
 
 
-class ViveEKF : public Solver{
+class ViveFilter : public Solver{
 public:
   // Constructor
-  ViveEKF();
-  ViveEKF(Tracker & tracker,
+  ViveFilter();
+  ViveFilter(Tracker & tracker,
     std::map<std::string, Lighthouse> & lighthouses,
     Environment & environment,
     double model_noise,
     double measure_noise,
-    bool correction);
+    bool correction,
+    filter::type ftype);
   // Destructor
-  ~ViveEKF();
+  ~ViveFilter();
   // Process an IMU measurement
   void ProcessImu(const sensor_msgs::Imu::ConstPtr& msg);
   // Process a light measurement
@@ -68,7 +72,8 @@ private: // temporary
   // Internal method
   bool Predict(const sensor_msgs::Imu & msg);
   // Internal method
-  bool Update(const hive::ViveLight & msg);
+  bool UpdateEKF(const hive::ViveLight & msg);
+  bool UpdateIEKF(const hive::ViveLight & msg);
   // Validity
   bool Valid();
   // Initialize estimates
@@ -100,6 +105,8 @@ private:
   Tracker tracker_;
   // If the correction parameters are to be used
   bool correction_;
+  // Type of filter being used
+  filter::type filter_type_;
   // Validity of current state
   bool valid_;
   // If the pose was already used
@@ -107,7 +114,7 @@ private:
   // Aux
   bool lastmsgwasimu_;
   // Old data for initializer
-  LightVector light_data_;
+  filter::LightVector light_data_;
 };
 
-#endif  // HIVE_VIVE_EKF_H_
+#endif  // HIVE_VIVE_FILTER_H_

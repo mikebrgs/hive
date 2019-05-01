@@ -91,8 +91,8 @@ for i = 1:8
     
     % Probability of an horizontal measurement given the parameters
     NalphaH = 1/(sqrt(2*pi))*exp(-0.5 * ((MalphaH - alphaH)/sigma)^2);
-    BalphaH = int(1/(sqrt(2*pi))*exp(-0.5 * ((MalphaH - alphaH)/sigma)^2),alpha,0,B);
-    AalphaH = int(1/(sqrt(2*pi))*exp(-0.5 * ((MalphaH - alphaH)/sigma)^2),alpha,0,A);
+    BalphaH = int(1/(sqrt(2*pi))*exp(-0.5 * ((MalphaH - alphaH)/sigma)^2),MalphaH,0,B);
+    AalphaH = int(1/(sqrt(2*pi))*exp(-0.5 * ((MalphaH - alphaH)/sigma)^2),MalphaH,0,A);
     % Truncated Normal Distribution
     PalphaH = NalphaH / (sigma);% * (BalphaH - AalphaH));
     % log likedlihood
@@ -100,8 +100,8 @@ for i = 1:8
 
     % Probability of an vertical measurement given the parameters
     NalphaV = 1/(sqrt(2*pi))*exp(-0.5 * ((MalphaV - alphaV)/sigma)^2);
-    BalphaV = int(1/(sqrt(2*pi))*exp(-0.5 * ((MalphaV - alphaV)/sigma)^2),alpha,0,B);
-    AalphaV = int(1/(sqrt(2*pi))*exp(-0.5 * ((MalphaV - alphaV)/sigma)^2),alpha,0,A);
+    BalphaV = int(1/(sqrt(2*pi))*exp(-0.5 * ((MalphaV - alphaV)/sigma)^2),MalphaV,0,B);
+    AalphaV = int(1/(sqrt(2*pi))*exp(-0.5 * ((MalphaV - alphaV)/sigma)^2),MalphaV,0,A);
     % Truncated Normal Distribution
     PalphaV = NalphaV / (sigma);% * (BalphaV - AalphaV));
     % log likedlihood
