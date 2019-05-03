@@ -68,7 +68,7 @@ int main(int argc, char ** argv) {
     solver[tracker.first] = new HiveSolver(calibration.trackers[tracker.first],
       calibration.lighthouses,
       calibration.environment,
-      false);
+      true);
   }
   ROS_INFO("Trackers' setup complete.");
 
@@ -80,6 +80,7 @@ int main(int argc, char ** argv) {
         bag_it->instantiate<tf2_msgs::TFMessage>();
       for (auto tf_it = tf->transforms.begin();
         tf_it != tf->transforms.end(); tf_it++) {
+        std::cout << "OptiPose" << std::endl;
         wbag.write("/tf", tf_it->header.stamp, *tf_it);
       }
     }
@@ -92,6 +93,7 @@ int main(int argc, char ** argv) {
     solver[vl->header.frame_id]->ProcessLight(vl);
     geometry_msgs::TransformStamped msg;
     if (solver[vl->header.frame_id]->GetTransform(msg))
+      std::cout << "VivePose" << std::endl;
       wbag.write("/tf", vl->header.stamp, msg);
     counter++;
   }

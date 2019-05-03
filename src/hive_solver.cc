@@ -312,6 +312,14 @@ bool HiveSolver::Solve() {
   options.max_solver_time_in_seconds = 0.1;
   ceres::Solve(options, &problem, &summary);
 
+  std::cout << summary.final_cost <<  " - "
+    << pose[0] << ", "
+    << pose[1] << ", "
+    << pose[2] << ", "
+    << pose[3] << ", "
+    << pose[4] << ", "
+    << pose[5] << std::endl;
+
   // Check pose
   double pose_norm = sqrt(pose[0]*pose[0] + pose[1]*pose[1] + pose[2]*pose[2]);
   if (summary.final_cost > 1e-5* n_sensors
@@ -320,13 +328,6 @@ bool HiveSolver::Solve() {
     return false;
   }
 
-  std::cout << summary.final_cost <<  " - "
-    << pose[0] << ", "
-    << pose[1] << ", "
-    << pose[2] << ", "
-    << pose[3] << ", "
-    << pose[4] << ", "
-    << pose[5] << std::endl;
 
   // Save the result
   pose_.header.stamp = time;

@@ -201,7 +201,8 @@ bool HiveOffset::NextPose() {
 }
 
 bool HiveOffset::GetOffset(TFs & offsets) {
-  return CeresEstimateOffset(optitrack_, vive_, offsets);
+  offsets = CeresEstimateOffset(optitrack_, vive_);
+  return true;
 
   // Old
   // If the data was collected in steps
@@ -290,91 +291,186 @@ bool HiveOffset::GetOffset(TFs & offsets) {
   return true;
 }
 
-bool HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive, TFs& offsets) {
-  // The offsets
-  // for (size_t i = 0; i < 6; i++) aTt[i] = 0.0;
-  double aAt[3];
-  for (size_t i = 0; i < 3; i++) aAt[i] = 0.0;
+TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
+  TFs offsets;
+  double best_cost;
+  Eigen::Matrix3d best_aRt;
 
-  if (optitrack.size() != vive.size()) return false;
-  if (optitrack.size() < 2) return false;
+  if (optitrack.size() != vive.size()) return offsets;
+  if (optitrack.size() < 3) return offsets;
 
-  ceres::Problem problem1;
   ceres::Solver::Options options;
   ceres::Solver::Summary summary;
 
-  auto prev_opti_it = optitrack.begin();
-  auto next_opti_it = prev_opti_it + 1;
-  auto prev_vive_it = vive.begin();
-  auto next_vive_it = prev_vive_it + 1;
-  while (next_vive_it != vive.end()) {
-    ceres::CostFunction * cost =
-      new ceres::AutoDiffCostFunction<OrientationCostFunctor, 1, 3>
-      (new OrientationCostFunctor(prev_vive_it->transform.rotation,
-        next_vive_it->transform.rotation,
-        prev_opti_it->transform.rotation,
-        next_opti_it->transform.rotation));
-    problem1.AddResidualBlock(cost, NULL, aAt);
-    // Next poses
-    next_vive_it++;
-    prev_vive_it++;
-    next_opti_it++;
-    prev_opti_it++;
+  // Orientation optimization
+  std::cout << "Offset Orientation ";
+  // Random generator
+  std::uniform_real_distribution<double> unif_rot(-M_PI,M_PI);
+  std::default_random_engine re_rot;
+  // Cycle through multiple poses
+  best_cost = 9e9;
+  double best_aAt[3];
+  for (size_t i = 0; i < 200; i++) {
+    ceres::Problem problem1;
+
+    // Warm start
+    double aAt[3];
+    for (size_t j = 0; j < 3; j++) {
+      aAt[j] = unif_rot(re_rot) / sqrt(3*pow(M_PI,2));
+    }
+
+    auto prev_opti_it = optitrack.begin();
+    auto next_opti_it = prev_opti_it + 1;
+    auto prev_vive_it = vive.begin();
+    auto next_vive_it = prev_vive_it + 1;
+    while (next_vive_it != vive.end()) {
+      ceres::CostFunction * cost =
+        new ceres::AutoDiffCostFunction<OrientationCostFunctor, 1, 3>
+        (new OrientationCostFunctor(prev_vive_it->transform.rotation,
+          next_vive_it->transform.rotation,
+          prev_opti_it->transform.rotation,
+          next_opti_it->transform.rotation));
+      problem1.AddResidualBlock(cost, NULL, aAt);
+      // Next poses
+      next_vive_it++;
+      prev_vive_it++;
+      next_opti_it++;
+      prev_opti_it++;
+    }
+
+    options.minimizer_progress_to_stdout = false;
+    options.max_num_iterations = 1000;
+    ceres::Solve(options, &problem1, &summary);
+
+
+    if (summary.final_cost < best_cost) {
+      best_cost = summary.final_cost;
+      // Eigen::Vector3d aAUXt(aAt[0], aAt[1], aAt[2]);
+      // Eigen::AngleAxisd aAAt(aAUXt.norm(), aAUXt.normalized());
+      // best_aRt = aAAt.toRotationMatrix();
+      best_aAt[0] = aAt[0];
+      best_aAt[1] = aAt[1];
+      best_aAt[2] = aAt[2];
+    }
+  }
+  // Custo final da orientação
+  std::cout << summary.final_cost << std::endl;
+
+  /* Temporary */
+  // auto opti_it = optitrack.begin();
+  // auto vive_it = vive.begin();
+  // while (vive_it != vive.end()) {
+  //   Eigen::Matrix3d vRt = Eigen::Quaterniond(
+  //     vive_it->transform.rotation.w,
+  //     vive_it->transform.rotation.x,
+  //     vive_it->transform.rotation.y,
+  //     vive_it->transform.rotation.z).toRotationMatrix();
+  //   std::cout << "vRt: " << vRt << std::endl;
+  //   Eigen::Matrix3d oRa = Eigen::Quaterniond(
+  //     opti_it->transform.rotation.w,
+  //     opti_it->transform.rotation.x,
+  //     opti_it->transform.rotation.y,
+  //     opti_it->transform.rotation.z).toRotationMatrix();
+  //   std::cout << "oRa: " << oRa << std::endl;
+  //   Eigen::Matrix3d aRt = best_aRt;
+  //   std::cout << "aRt: " << aRt << std::endl;
+  //   opti_it++;
+  //   vive_it++;
+  //   std::cout << "oRv: "<< oRa * aRt * vRt.transpose() << std::endl
+  //     << std::endl;
+  // }
+
+
+  // Full pose optimization
+  std::cout << "Offset Pose" << std::endl;
+  // Random uniform generator
+  std::uniform_real_distribution<double> unif_pose(-0.2,0.2);
+  std::default_random_engine re_pose;
+  // Cycle through multiple poses
+  best_cost = 9e9;
+  double best_aTt[6];
+  for (size_t i = 0; i < 100; i++) {
+    double aTt[6];
+    ceres::Problem problem2;
+
+    aTt[0] = unif_pose(re_pose);
+    aTt[1] = unif_pose(re_pose);
+    aTt[2] = unif_pose(re_pose);
+    aTt[3] = best_aAt[0];
+    aTt[4] = best_aAt[1];
+    aTt[5] = best_aAt[2];
+
+    auto prev_opti_it = optitrack.begin();
+    auto next_opti_it = prev_opti_it + 1;
+    auto prev_vive_it = vive.begin();
+    auto next_vive_it = prev_vive_it + 1;
+    while (next_vive_it != vive.end()) {
+      ceres::CostFunction * cost =
+        new ceres::AutoDiffCostFunction<HandEyeCostFunctor, 4, 6>
+        (new HandEyeCostFunctor(prev_vive_it->transform,
+          next_vive_it->transform,
+          prev_opti_it->transform,
+          next_opti_it->transform));
+      problem2.AddResidualBlock(cost, NULL, aTt);
+      // Next poses
+      next_vive_it++;
+      prev_vive_it++;
+      next_opti_it++;
+      prev_opti_it++;
+    }
+
+
+    ceres::Solve(options, &problem2, &summary);
+    // std::cout << summary.final_cost << std::endl;
+    if (summary.final_cost < best_cost) {
+      best_cost = summary.final_cost;
+      best_aTt[0] = aTt[0];
+      best_aTt[1] = aTt[1];
+      best_aTt[2] = aTt[2];
+      best_aTt[3] = aTt[3];
+      best_aTt[4] = aTt[4];
+      best_aTt[5] = aTt[5];
+    }
   }
 
-  // for (size_t i = 0; i < 3; i++) aTt[i+3] = aAt[i];
-  double aTt[6];
-  aTt[0] = 0.0;
-  aTt[1] = 0.0;
-  aTt[2] = 0.0;
-  aTt[3] = aAt[0];
-  aTt[4] = aAt[1];
-  aTt[5] = aAt[2];
+  // Printing the final solution
+  std::cout << best_cost <<  " - "
+    << best_aTt[0] << ", "
+    << best_aTt[1] << ", "
+    << best_aTt[2] << ", "
+    << best_aTt[3] << ", "
+    << best_aTt[4] << ", "
+    << best_aTt[5] << std::endl;
 
-  options.minimizer_progress_to_stdout = true;
-  options.max_num_iterations = 1000;
-  ceres::Solve(options, &problem1, &summary);
+  // Changing the format for best_aTt
+  TF aMt;
+  Eigen::Vector3d aAt(best_aTt[3], best_aTt[4], best_aTt[5]);
+  Eigen::AngleAxisd aAAt;
+  if (aAt.norm() != 0)
+    aAAt = Eigen::AngleAxisd(aAt.norm(), aAt.normalized());
+  else
+    aAAt = Eigen::AngleAxisd(aAt.norm(), aAt);
+  Eigen::Quaterniond aQt(aAAt);
+  aMt.transform.translation.x = best_aTt[0];
+  aMt.transform.translation.y = best_aTt[1];
+  aMt.transform.translation.z = best_aTt[2];
+  aMt.transform.rotation.w = aQt.w();
+  aMt.transform.rotation.x = aQt.x();
+  aMt.transform.rotation.y = aQt.y();
+  aMt.transform.rotation.z = aQt.z();
 
-  std::cout << summary.final_cost <<  " - "
-    << aTt[3] << ", "
-    << aTt[4] << ", "
-    << aTt[5] << std::endl;
+  // Changing the format for oTv // Not ready yet
+  // oTv->transform.translation.x = oTv[0];
+  // oTv->transform.translation.y = oTv[1];
+  // oTv->transform.translation.z = oTv[2];
+  // oTv->transform.rotation.w = oQv.w();
+  // oTv->transform.rotation.x = oQv.x();
+  // oTv->transform.rotation.y = oQv.y();
+  // oTv->transform.rotation.z = oQv.z();
 
-  std::cout << summary.FullReport() << std::endl;
-
-  ceres::Problem problem2;
-
-  prev_opti_it = optitrack.begin();
-  next_opti_it = prev_opti_it + 1;
-  prev_vive_it = vive.begin();
-  next_vive_it = prev_vive_it + 1;
-  while (next_vive_it != vive.end()) {
-    ceres::CostFunction * cost =
-      new ceres::AutoDiffCostFunction<HandEyeCostFunctor, 4, 6>
-      (new HandEyeCostFunctor(prev_vive_it->transform,
-        next_vive_it->transform,
-        prev_opti_it->transform,
-        next_opti_it->transform));
-    problem2.AddResidualBlock(cost, NULL, aTt);
-    // Next poses
-    next_vive_it++;
-    prev_vive_it++;
-    next_opti_it++;
-    prev_opti_it++;
-  }
-
-  ceres::Solve(options, &problem2, &summary);
-  std::cout << summary.FullReport() << std::endl;
-
-  std::cout << summary.final_cost <<  " - "
-    << aTt[0] << ", "
-    << aTt[1] << ", "
-    << aTt[2] << ", "
-    << aTt[3] << ", "
-    << aTt[4] << ", "
-    << aTt[5] << std::endl;
-
-  return true;
+  offsets.push_back(aMt);
+  // offsets.push_back(oMv);
+  return offsets;
 }
 
 
@@ -584,11 +680,11 @@ int main(int argc, char ** argv) {
   std::map<std::string, Solver*> solver;
 
   // Wrong parameters
-  if (argc < 2) {
-    std::cout << "Usage: ... hive_offset name_of_read_bag.bag "
-      << "[name_of_write_bag.bag]" << std::endl;
-    return -1;
-  }
+  // if (argc < 2) {
+  //   std::cout << "Usage: ... hive_offset name_of_read_bag.bag "
+  //     << "[name_of_write_bag.bag]" << std::endl;
+  //   return -1;
+  // }
 
   // Calibration
   if (!ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE, &calibration)) {
@@ -617,7 +713,7 @@ int main(int argc, char ** argv) {
         hiver->AddOptiTrackPose(*tf_it);
       }
     }
-    ROS_INFO("Lighthouses' setup complete.");
+    ROS_INFO("OptiTrack' setup complete.");
 
     // Lighthouses
     rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
@@ -663,7 +759,7 @@ int main(int argc, char ** argv) {
     hiver->GetOffset(offsets);
 
   // Multiple bags - with step
-  } else {
+  } else if (argc > 2) {
     ROS_INFO ("STEP OFFSET.");
 
     hiver = new HiveOffset(1.0, true, true);
@@ -683,20 +779,22 @@ int main(int argc, char ** argv) {
           bag_it->instantiate<tf2_msgs::TFMessage>();
         for (auto tf_it = tf->transforms.begin();
           tf_it != tf->transforms.end(); tf_it++) {
-          // std::cout << "OptiTrack: " <<
-          //   tf_it->transform.translation.x << ", " <<
-          //   tf_it->transform.translation.y << ", " <<
-          //   tf_it->transform.translation.z << ", " <<
-          //   tf_it->transform.rotation.w << ", " <<
-          //   tf_it->transform.rotation.x << ", " <<
-          //   tf_it->transform.rotation.y << ", " <<
-          //   tf_it->transform.rotation.z << std::endl;
+          std::cout << "OptiTrack: " <<
+            tf_it->transform.translation.x << ", " <<
+            tf_it->transform.translation.y << ", " <<
+            tf_it->transform.translation.z << ", " <<
+            tf_it->transform.rotation.w << ", " <<
+            tf_it->transform.rotation.x << ", " <<
+            tf_it->transform.rotation.y << ", " <<
+            tf_it->transform.rotation.z << std::endl;
           hiver->AddOptiTrackPose(*tf_it);
           counter++;
         }
-        if (counter >= 10) break;
+        if (counter >= 10) {
+          break;
+        }
       }
-      ROS_INFO("Lighthouses' setup complete.");
+      ROS_INFO("OptiTrack' setup complete.");
 
       // Lighthouses
       rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
@@ -717,7 +815,7 @@ int main(int argc, char ** argv) {
           solver[tracker.first] = new ViveSolve(tracker.second,
             calibration.environment,
             calibration.lighthouses,
-            false);
+            true);
         }
       }
       ROS_INFO("Trackers' setup complete.");
@@ -729,7 +827,8 @@ int main(int argc, char ** argv) {
       for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
         const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
         solver[vl->header.frame_id]->ProcessLight(vl);
-        usleep(200000);
+        usleep(50000);
+        // ROS_INFO("OI");
         geometry_msgs::TransformStamped msg;
         if (solver[vl->header.frame_id]->GetTransform(msg)) {
           msg.header.stamp = vl->header.stamp;
@@ -746,24 +845,50 @@ int main(int argc, char ** argv) {
         } else {
           unsuccess++;
         }
-        if (counter >= 20 || unsuccess >= 100) break;
+        if (counter >= 20 || unsuccess >= 100) {
+          break;
+        }
       }
       hiver->NextPose();
       rbag.close();
     }
     TFs offsets;
+    ROS_INFO("OFFSET");
     hiver->GetOffset(offsets);
+
+    // TODO test the offsets right here
+
+  } else {
+    TFs vive, optitrack, offsets;
+    TestTrajectory(vive, optitrack);
+    hiver = new HiveOffset(1.0, true, true);
+
+    for (size_t i = 0; i < 10; i++) {
+      hiver->AddVivePose(vive[i]);
+      hiver->AddOptiTrackPose(optitrack[i]);
+      hiver->NextPose();
+    }
+
+    hiver->GetOffset(offsets);
+
   }
 
   return 0;
 }
 
 void TestTrajectory(TFs & vive, TFs & optitrack) {
-  vpTranslationVector oPv(-2,-1,1.7);
-  vpThetaUVector oAv(0,0,0);
+  std::uniform_real_distribution<double> unif(-M_PI,M_PI);
+  std::default_random_engine re;
+  std::normal_distribution<double> normf(0.0,0.01);
+
+  vpTranslationVector oPv(unif(re),unif(re),unif(re));
+  vpThetaUVector oAv(unif(re),unif(re),unif(re));
   vpHomogeneousMatrix oMv(oPv, oAv);
-  vpTranslationVector aPt(0.01,0.06,0.02);
-  vpThetaUVector aAt(0,0,0);
+  vpTranslationVector aPt(unif(re),unif(re),unif(re));
+  vpThetaUVector aAt(unif(re),unif(re),unif(re));
+  std::cout << aAt[0] << ", "
+    << aAt[1] << ", "
+    << aAt[2] << std::endl;
   vpHomogeneousMatrix aMt(aPt, aAt);
 
   for (double i = 0; i < 100; i++) {
@@ -777,20 +902,20 @@ void TestTrajectory(TFs & vive, TFs & optitrack) {
     oMa.extract(oQa);
     oMa.extract(oPa);
     TF oTa, vTt;
-    oTa.transform.translation.x = oPa[0] + 0.005 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    oTa.transform.translation.y = oPa[1] + 0.005 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    oTa.transform.translation.z = oPa[2] + 0.005 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    oTa.transform.rotation.w = oQa.w() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    oTa.transform.rotation.x = oQa.x() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    oTa.transform.rotation.y = oQa.y() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    oTa.transform.rotation.z = oQa.z() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    vTt.transform.translation.x = vPt[0] + 0.005 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    vTt.transform.translation.y = vPt[1] + 0.005 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    vTt.transform.translation.z = vPt[2] + 0.005 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    vTt.transform.rotation.w = vQt.w() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    vTt.transform.rotation.x = vQt.x() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    vTt.transform.rotation.y = vQt.y() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
-    vTt.transform.rotation.z = vQt.z() + 0.001 * ((double)rand() / RAND_MAX * 2.0 - 1.0);
+    oTa.transform.translation.x = oPa[0] + normf(re);
+    oTa.transform.translation.y = oPa[1] + normf(re);
+    oTa.transform.translation.z = oPa[2] + normf(re);
+    oTa.transform.rotation.w = oQa.w() + normf(re);
+    oTa.transform.rotation.x = oQa.x() + normf(re);
+    oTa.transform.rotation.y = oQa.y() + normf(re);
+    oTa.transform.rotation.z = oQa.z() + normf(re);
+    vTt.transform.translation.x = vPt[0] + normf(re);
+    vTt.transform.translation.y = vPt[1] + normf(re);
+    vTt.transform.translation.z = vPt[2] + normf(re);
+    vTt.transform.rotation.w = vQt.w() + normf(re);
+    vTt.transform.rotation.x = vQt.x() + normf(re);
+    vTt.transform.rotation.y = vQt.y() + normf(re);
+    vTt.transform.rotation.z = vQt.z() + normf(re);
     vive.push_back(vTt);
     optitrack.push_back(oTa);
   }

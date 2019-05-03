@@ -22,6 +22,7 @@
 // Standard C++ includes
 #include <iostream>
 #include <string>
+#include <random>
 
 // Hive includes
 #include <hive/vive.h>
@@ -74,7 +75,7 @@ public:
   bool GetOffset(TFs & offsets);
   // Estimate the offset with Hand Eye Calibration algorithm
   static TFs VispEstimateOffset(TFs optitrack, TFs vive);
-  static bool CeresEstimateOffset(TFs& optitrack, TFs& vive, TFs& offsets);
+  static TFs CeresEstimateOffset(TFs& optitrack, TFs& vive);
   // Refine with ceres the estimate of the offset
   static TFs RefineOffset(TFs optitrack, TFs vive, TFs offset);
 
@@ -88,5 +89,6 @@ private:
   double angle_factor_;
 };
 
+void TestTrajectory(TFs & vive, TFs & optitrack);
 
 #endif // HIVE_VIVE_OFFSET_H_
