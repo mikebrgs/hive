@@ -186,15 +186,11 @@ HiveSolver::HiveSolver() {
 }
 
 HiveSolver::HiveSolver(Tracker & tracker,
-    LighthouseMap & lighthouses,
-    Environment & environment,
-    bool correction) {
+  LighthouseMap & lighthouses,
+  Environment & environment,
+  bool correction) {
   tracker_ = tracker;
-  lighthouses_ = lighthouses_;
-  for (auto lighthouse : lighthouses_) {
-    light_check_[lighthouse.first].first = false;
-    light_check_[lighthouse.first].second = false;
-  }
+  lighthouses_ = lighthouses;
   environment_ = environment;
   correction_ = correction;
   valid_ = false;
@@ -224,16 +220,15 @@ void HiveSolver::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
 void HiveSolver::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   if (msg == NULL) return;
 
-  if (msg->axis == HORIZONTAL){
-    light_data_[msg->lighthouse].first = *msg;
-    light_check_[msg->lighthouse].first = true;
-  } else if (msg->axis == VERTICAL) {
-    light_data_[msg->lighthouse].second = *msg;
-    light_check_[msg->lighthouse].second = true;
+  light_data_.push_back(*msg);
+
+  while ((msg->header.stamp -
+    light_data_.front().header.stamp).toNSec() >= 50e6) {
+    light_data_.erase(light_data_.begin());
   }
 
-  if (light_check_[msg->lighthouse].first == true
-    && light_check_[msg->lighthouse].second == true) {
+
+  if (light_data_.size() > 2) {
     valid_ = Solve();
   }
 
@@ -269,47 +264,65 @@ bool HiveSolver::Solve() {
   pose[5] = vAAt_1.angle() * vAAt_1.axis()(2);
 
   for (auto lh_it : light_data_) {
+    hive::ViveLight clean_msg = lh_it;
+    auto sample_it = clean_msg.samples.begin();
+    while (sample_it != clean_msg.samples.end()) {
+      if (sample_it->angle > -M_PI/3.0 && sample_it->angle < M_PI / 3.0) {
+        sample_it++;
+      //   // std::cout << (sample_it->angle < (-M_PI/3.0)) << std::endl;
+      //   // std::cout << ((sample_it->angle > (M_PI / 3.0)) || (sample_it->angle < (-M_PI/3.0))) << std::endl;
+      // } else if (sample_it->angle > M_PI / 3.0) {
+      //   std::cout << "HERE " << sample_it->angle << std::endl;
+      //   // std::cout << (sample_it->angle > (M_PI / 3.0)) << std::endl;
+      //   // std::cout << ((sample_it->angle > (M_PI / 3.0)) || (sample_it->angle < (-M_PI/3.0))) << std::endl;
+      } else {
+        clean_msg.samples.erase(sample_it);
+      }
+    }
+    if (clean_msg.samples.size() < 1) {
+      continue;
+    }
     // Convert lighthouse transform
     geometry_msgs::Transform lighthouse;
-    lighthouse.translation = environment_.lighthouses[lh_it.first].translation;
-    lighthouse.rotation = environment_.lighthouses[lh_it.first].rotation;
+    lighthouse.translation = environment_.lighthouses[clean_msg.lighthouse].translation;
+    lighthouse.rotation = environment_.lighthouses[clean_msg.lighthouse].rotation;
     // Horizontal sweep
-    if (light_check_[lh_it.first].first == true) {
+    if (clean_msg.axis == HORIZONTAL) {
       ceres::DynamicAutoDiffCostFunction<BundledHorizontalCost, 4> * hcost =
         new ceres::DynamicAutoDiffCostFunction<BundledHorizontalCost, 4>
-        (new BundledHorizontalCost(lh_it.second.first,
+        (new BundledHorizontalCost(clean_msg,
           tracker_,
           lighthouse,
-          lighthouses_[lh_it.first].horizontal_motor,
+          lighthouses_[clean_msg.lighthouse].horizontal_motor,
           correction_));
       hcost->AddParameterBlock(6);
-      hcost->SetNumResiduals(lh_it.second.first.samples.size());
+      hcost->SetNumResiduals(clean_msg.samples.size());
       problem.AddResidualBlock(hcost, NULL, pose);
-      if (lh_it.second.first.header.stamp > time)
-        time = lh_it.second.first.header.stamp;
-      n_sensors += lh_it.second.first.samples.size();
+      if (clean_msg.header.stamp > time)
+        time = clean_msg.header.stamp;
+      n_sensors += clean_msg.samples.size();
     }
     // Vertical sweep
-    if (light_check_[lh_it.first].second == true) {
+    if (clean_msg.axis == VERTICAL) {
       ceres::DynamicAutoDiffCostFunction<BundledVerticalCost, 4> * vcost =
         new ceres::DynamicAutoDiffCostFunction<BundledVerticalCost, 4>
-        (new BundledVerticalCost(lh_it.second.second,
+        (new BundledVerticalCost(clean_msg,
           tracker_,
           lighthouse,
-          lighthouses_[lh_it.first].vertical_motor,
+          lighthouses_[clean_msg.lighthouse].vertical_motor,
           correction_));
       vcost->AddParameterBlock(6);
-      vcost->SetNumResiduals(lh_it.second.second.samples.size());
+      vcost->SetNumResiduals(clean_msg.samples.size());
       problem.AddResidualBlock(vcost, NULL, pose);
-      if (lh_it.second.second.header.stamp > time)
-        time = lh_it.second.second.header.stamp;
-      n_sensors += lh_it.second.second.samples.size();
+      if (clean_msg.header.stamp > time)
+        time = clean_msg.header.stamp;
+      n_sensors += clean_msg.samples.size();
     }
   }
 
   options.minimizer_progress_to_stdout = false;
   options.max_num_iterations = 1000;
-  options.max_solver_time_in_seconds = 0.1;
+  options.max_solver_time_in_seconds = 0.5;
   ceres::Solve(options, &problem, &summary);
 
   std::cout << summary.final_cost <<  " - "

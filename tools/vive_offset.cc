@@ -201,17 +201,14 @@ bool HiveOffset::NextPose() {
 }
 
 bool HiveOffset::GetOffset(TFs & offsets) {
-  offsets = CeresEstimateOffset(optitrack_, vive_);
-  return true;
-
-  // Old
   // If the data was collected in steps
   TFs vive_vfull, opti_vfull;
   if (steps_) {
     NextPose();
-    offsets = VispEstimateOffset(optitrack_, vive_);
-    if (refine_)
-      offsets = RefineOffset(optitrack_, vive_, offsets);
+    offsets = CeresEstimateOffset(optitrack_, vive_);
+    // offsets = VispEstimateOffset(optitrack_, vive_);
+    // if (refine_)
+    //   offsets = RefineOffset(optitrack_, vive_, offsets);
   // If we have continuous data
   } else {
     // Search the vive poses
@@ -277,9 +274,10 @@ bool HiveOffset::GetOffset(TFs & offsets) {
 
     std::cout << vive_.size() << " " << optitrack_.size() << std::endl;
     // Estimating the offset
-    offsets = VispEstimateOffset(optitrack_, vive_);
-    if (refine_)
-      offsets = RefineOffset(optitrack_, vive_, offsets);
+    offsets = CeresEstimateOffset(optitrack_, vive_);
+    // offsets = VispEstimateOffset(optitrack_, vive_);
+    // if (refine_)
+    //   offsets = RefineOffset(optitrack_, vive_, offsets);
   }
 
   // Clear the data
@@ -418,7 +416,7 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
   // Compute oTv
   best_cost = 9e9;
   double best_oTv[6];
-  for (size_t i = 0; i < 100; i++) {
+  for (size_t i = 0; i < 5; i++) {
     ceres::Problem problem3;
 
     double aTt[6];
@@ -447,7 +445,9 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
       vive_it++;
       opti_it++;
     }
-    problem3.SetParameterBlockConstant(aTt);
+    // problem3.SetParameterBlockConstant(aTt);
+    // options.minimizer_progress_to_stdout = true;
+    options.max_num_iterations = 2000;
     ceres::Solve(options, &problem3, &summary);
 
     if (summary.final_cost < best_cost) {
@@ -458,7 +458,12 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
       best_oTv[3] = oTv[3];
       best_oTv[4] = oTv[4];
       best_oTv[5] = oTv[5];
-    }
+      best_aTt[0] = aTt[0];
+      best_aTt[1] = aTt[1];
+      best_aTt[2] = aTt[2];
+      best_aTt[3] = aTt[3];
+      best_aTt[4] = aTt[4];
+      best_aTt[5] = aTt[5];    }
     // std::cout << summary.final_cost <<  " - "
     //   << oTv[0] << ", "
     //   << oTv[1] << ", "
@@ -469,6 +474,15 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
   }
 
   // Printing the final solution
+  std::cout << "aTt: "
+    << best_cost <<  " - "
+    << best_aTt[0] << ", "
+    << best_aTt[1] << ", "
+    << best_aTt[2] << ", "
+    << best_aTt[3] << ", "
+    << best_aTt[4] << ", "
+    << best_aTt[5] << std::endl;
+
   std::cout << "oTv: "
     << best_cost <<  " - "
     << best_oTv[0] << ", "
@@ -495,6 +509,8 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
   aMt.transform.rotation.x = aQt.x();
   aMt.transform.rotation.y = aQt.y();
   aMt.transform.rotation.z = aQt.z();
+  aMt.header.frame_id = "arrow";
+  aMt.child_frame_id = "tracker";
   // Changing the format for best_aTt
   TF oMv;
   Eigen::Vector3d oAv(best_oTv[3], best_oTv[4], best_oTv[5]);
@@ -511,6 +527,8 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
   oMv.transform.rotation.x = oQv.x();
   oMv.transform.rotation.y = oQv.y();
   oMv.transform.rotation.z = oQv.z();
+  oMv.header.frame_id = "optitrack";
+  oMv.child_frame_id = "vive";
 
   offsets.push_back(aMt);
   offsets.push_back(oMv);
@@ -774,7 +792,7 @@ int main(int argc, char ** argv) {
         solver[tracker.first] = new ViveSolve(tracker.second,
           calibration.environment,
           calibration.lighthouses,
-          false);
+          true);
       }
     }
     ROS_INFO("Trackers' setup complete.");
@@ -797,6 +815,11 @@ int main(int argc, char ** argv) {
     TFs offsets;
     ROS_INFO("Getting Offset");
     hiver->GetOffset(offsets);
+
+    for (auto of_it = offsets.begin();
+      of_it != offsets.end(); of_it++) {
+      wbag.write("/offset", ros::Time::now(),*of_it);
+    }
 
   // Multiple bags - with step
   } else if (argc > 2) {

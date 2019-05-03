@@ -9,5 +9,5 @@ if len(args) < 2:
 
 bag = rosbag.Bag(args[1], "r")
 
-for topic, msg, t in bag.read_messages(topics=["/loc/vive/light"]):
-    print(msg.samples)
+for topic, msg, t in bag.read_messages(topics=["/offset"]):
+    print(msg)

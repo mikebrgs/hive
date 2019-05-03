@@ -80,10 +80,10 @@ int main(int argc, char ** argv) {
         bag_it->instantiate<tf2_msgs::TFMessage>();
       for (auto tf_it = tf->transforms.begin();
         tf_it != tf->transforms.end(); tf_it++) {
-        std::cout << "OptiPose" << std::endl;
         wbag.write("/tf", tf_it->header.stamp, *tf_it);
       }
     }
+  ROS_INFO("OptiTrack' setup complete.");
 
   // Light data
   size_t counter = 0;

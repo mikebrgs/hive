@@ -30,9 +30,10 @@
 #include <thread>
 #include <string>
 
-typedef std::map<std::string,
-  std::pair<hive::ViveLight,hive::ViveLight>> LightMap;
-typedef std::map<std::string, std::pair<bool,bool>> BoolLightMap;
+// typedef std::map<std::string,
+//   std::pair<hive::ViveLight,hive::ViveLight>> LightMap;
+typedef std::vector<hive::ViveLight> LightVector;
+// typedef std::map<std::string, std::pair<bool,bool>> BoolLightMap;
 typedef std::map<std::string, Lighthouse> LighthouseMap;
 
 class HiveSolver : public Solver {
@@ -59,8 +60,7 @@ class HiveSolver : public Solver {
   LighthouseMap lighthouses_;
   Environment environment_;
   Tracker tracker_;
-  LightMap light_data_;
-  BoolLightMap light_check_;
+  LightVector light_data_;
   bool correction_;
   bool valid_;
 };

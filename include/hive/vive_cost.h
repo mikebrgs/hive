@@ -1421,8 +1421,10 @@ template <typename T> bool BundledHorizontalCost::operator()(const T* const * pa
     T curve = T(lighthouse_.curve);
 
     if (correction_) {
+      std::cout << "C" << std::endl;
       ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
     } else {
+      std::cout << "NC" << std::endl;
       ang = atan(x);
     }
 
@@ -1492,8 +1494,10 @@ template <typename T> bool BundledVerticalCost::operator()(const T* const * para
     T curve = T(lighthouse_.curve);
 
     if (correction_) {
+      std::cout << "C" << std::endl;
       ang = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
     } else {
+      std::cout << "NC" << std::endl;
       ang = atan(y);
     }
 

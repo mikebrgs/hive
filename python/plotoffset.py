@@ -6,62 +6,91 @@ import numpy as np
 import tf.transformations
 import matplotlib.pyplot as plt
 
-bag = rosbag.Bag(sys.argv[1])
+offset_bag = rosbag.Bag(sys.argv[1])
+bag = rosbag.Bag(sys.argv[2])
 vive_poses = np.empty((7,0))
 optitrack_poses = np.empty((7,0))
 
-aRt = np.matrix([[0.06756, -0.7676, 0.6374],
-                 [0.9895, 0.1335, 0.05586],
-                 [-0.128, 0.6269, 0.7685]])
 vRt = None
 oRa = None
+oRv = None
+aRt = None
+for topic, msg, t in offset_bag.read_messages(topics=['/offset', 'offset']):
+  if msg.header.frame_id == "optitrack":
+    oPv = np.matrix([msg.transform.translation.x,
+      msg.transform.translation.y,
+      msg.transform.translation.z]).transpose()
+    oRv = np.matrix(tf.transformations.quaternion_matrix([msg.transform.rotation.x,
+      msg.transform.rotation.y,
+      msg.transform.rotation.z,
+      msg.transform.rotation.w])[0:3,0:3])
+    # print(oRv)
+  elif msg.header.frame_id == "arrow":
+    aPt = np.matrix([msg.transform.translation.x,
+      msg.transform.translation.y,
+      msg.transform.translation.z]).transpose()
+    aRt = np.matrix(tf.transformations.quaternion_matrix([msg.transform.rotation.x,
+      msg.transform.rotation.y,
+      msg.transform.rotation.z,
+      msg.transform.rotation.w])[0:3,0:3])
+    # print(aRt)
+
 for topic, msg, t in bag.read_messages(topics=['/tf', 'tf']):
   if msg.header.frame_id == "vive":
-    vRt = tf.transformations.quaternion_matrix([msg.transform.rotation.x,
+    vPt = np.matrix([msg.transform.translation.x,
+      msg.transform.translation.y,
+      msg.transform.translation.z]).transpose()
+    vRt = np.matrix(tf.transformations.quaternion_matrix([msg.transform.rotation.x,
       msg.transform.rotation.y,
       msg.transform.rotation.z,
-      msg.transform.rotation.w])[1:4,1:4]
-    print(vRt)
-    pose = np.array([[msg.transform.translation.x,
-      msg.transform.translation.y,
-      msg.transform.translation.z,
-      msg.transform.rotation.w,
-      msg.transform.rotation.x,
-      msg.transform.rotation.y,
-      msg.transform.rotation.z]]).transpose()
-    vive_poses = np.hstack((vive_poses,pose))
+      msg.transform.rotation.w])[0:3,0:3])
+    # print(vRt)
+    # pose = np.array([[msg.transform.translation.x,
+    #   msg.transform.translation.y,
+    #   msg.transform.translation.z,
+    #   msg.transform.rotation.w,
+    #   msg.transform.rotation.x,
+    #   msg.transform.rotation.y,
+    #   msg.transform.rotation.z]]).transpose()
+    # vive_poses = np.hstack((vive_poses,pose))
   else:
-    oRa = tf.transformations.quaternion_matrix([msg.transform.rotation.x,
+    oPa = np.matrix([msg.transform.translation.x,
+      msg.transform.translation.y,
+      msg.transform.translation.z]).transpose()
+    oRa = np.matrix(tf.transformations.quaternion_matrix([msg.transform.rotation.x,
       msg.transform.rotation.y,
       msg.transform.rotation.z,
-      msg.transform.rotation.w])[1:4,1:4]
+      msg.transform.rotation.w])[0:3,0:3])
     # print(oRa)
-    pose = np.array([[msg.transform.translation.x,
-      msg.transform.translation.y,
-      msg.transform.translation.z,
-      msg.transform.rotation.w,
-      msg.transform.rotation.x,
-      msg.transform.rotation.y,
-      msg.transform.rotation.z]]).transpose()
-    optitrack_poses = np.hstack((optitrack_poses,pose))
+    # pose = np.array([[msg.transform.translation.x,
+    #   msg.transform.translation.y,
+    #   msg.transform.translation.z,
+    #   msg.transform.rotation.w,
+    #   msg.transform.rotation.x,
+    #   msg.transform.rotation.y,
+    #   msg.transform.rotation.z]]).transpose()
+    # optitrack_poses = np.hstack((optitrack_poses,pose))
+  if not (oRa is None) and not (aRt is None) and not (vRt is None) and not (oRv is None):
+    test_oRv = oRa * aRt * vRt.transpose();
+    test_oPv = oRa * (aRt * (-vRt.transpose() * vPt) + aPt) + oPa
+    print(oPv.transpose())
+    print(test_oPv.transpose())
+    print(" ")
 
-oRv = oRa * aRt * vRt.transpose();
-print(oRv)
+# fig2, axs = plt.subplots(4, 2, sharex = True, sharey= False)
 
-fig2, axs = plt.subplots(4, 2, sharex = True, sharey= False)
-
-axs[0,0].plot(poses[0,:])
-axs[0,0].set_title("PX")
-axs[1,0].plot(poses[1,:])
-axs[1,0].set_title("PY")
-axs[2,0].plot(poses[2,:])
-axs[2,0].set_title("PZ")
-axs[0,1].plot(poses[3,:])
-axs[0,1].set_title("QW")
-axs[1,1].plot(poses[4,:])
-axs[1,1].set_title("QX")
-axs[2,1].plot(poses[5,:])
-axs[2,1].set_title("QY")
-axs[3,1].plot(poses[6,:])
-axs[3,1].set_title("QZ")
-plt.show()
+# axs[0,0].plot(poses[0,:])
+# axs[0,0].set_title("PX")
+# axs[1,0].plot(poses[1,:])
+# axs[1,0].set_title("PY")
+# axs[2,0].plot(poses[2,:])
+# axs[2,0].set_title("PZ")
+# axs[0,1].plot(poses[3,:])
+# axs[0,1].set_title("QW")
+# axs[1,1].plot(poses[4,:])
+# axs[1,1].set_title("QX")
+# axs[2,1].plot(poses[5,:])
+# axs[2,1].set_title("QY")
+# axs[3,1].plot(poses[6,:])
+# axs[3,1].set_title("QZ")
+# plt.show()
