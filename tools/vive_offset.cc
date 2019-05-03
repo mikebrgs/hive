@@ -445,7 +445,7 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
       vive_it++;
       opti_it++;
     }
-    // problem3.SetParameterBlockConstant(aTt);
+    problem3.SetParameterBlockConstant(aTt);
     // options.minimizer_progress_to_stdout = true;
     options.max_num_iterations = 2000;
     ceres::Solve(options, &problem3, &summary);

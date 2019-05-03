@@ -59,6 +59,22 @@ namespace filter {
     Omega(3,2) = Q.w();
     return Omega;
   }
+
+
+  Eigen::MatrixXd SliceR(Eigen::MatrixXd R,
+    std::vector<int> sensors) {
+    size_t col = 0, row = 0;
+    Eigen::MatrixXd slicedR(sensors.size(), sensors.size());
+    for (auto sensor_row : sensors) {
+      col = 0;
+      for (auto sensor_col : sensors) {
+        slicedR(row, col) = R(sensor_row, sensor_col);
+        col++;
+      }
+      row++;
+    }
+    return slicedR;
+  }
 }
 
 ViveFilter::ViveFilter() {}
@@ -202,7 +218,7 @@ void ViveFilter::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   if (msg == NULL) return;
 
   light_data_.push_back(*msg);
-  if (light_data_.size() > LIGHT_DATA_BUFFER) {
+  while (light_data_.size() > LIGHT_DATA_BUFFER) {
     light_data_.erase(light_data_.begin());
   }
 
@@ -233,8 +249,8 @@ void ViveFilter::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   return;
 }
 
+// Check_validity
 bool ViveFilter::Valid() {
-  // check_validity
   if (std::isnan(position_(0)) ||
     std::isnan(position_(1)) ||
     std::isnan(position_(2)) ||
@@ -277,6 +293,16 @@ bool ViveFilter::Valid() {
     Eigen::Vector3d lPt = vRl.transpose() * (
       vRi * ( - tRi.transpose() * tPi) + vPi) + (- vRl.transpose() * vPl);
     Eigen::Matrix3d lRt = vRl.transpose() * vRi * tRi.transpose();
+
+    // Mahalanobis distance
+    size_t counter = 0;
+    // USed sensors
+    std::vector<int> dtSensors;
+    // Measured Angle
+    Eigen::VectorXd msAngle(light_msg.samples.size());
+    // Predicted Angle
+    Eigen::VectorXd prAngle(light_msg.samples.size());
+
     for (auto sample : light_msg.samples) {
       // Sensor in the light frame
       Eigen::Vector3d tPs(tracker_.sensors[sample.sensor].position.x,
@@ -301,8 +327,12 @@ bool ViveFilter::Valid() {
           ang = atan(x);
         }
         // Adding to cost
+        msAngle(counter) = sample.angle;
+        prAngle(counter) = ang;
+        dtSensors.push_back(sample.sensor);
         cost += pow(sample.angle - ang,2);
         sample_counter++;
+        counter++;
       // Vertical Angle
       } else if (light_msg.axis == VERTICAL) {
         double ang;
@@ -320,10 +350,14 @@ bool ViveFilter::Valid() {
           ang = atan(y);
         }
         // Adding to cost
+        msAngle(counter) = sample.angle;
+        prAngle(counter) = ang;
+        dtSensors.push_back(sample.sensor);
         cost += pow(sample.angle - ang,2);
         sample_counter++;
       }
     }
+    // Mahalanobis cost right here
   }
 
   if (cost > VALID_POSE_COST * sample_counter)
@@ -773,21 +807,6 @@ Eigen::MatrixXd GetVerticalZ(Eigen::Vector3d position,
   return Z;
 }
 
-Eigen::MatrixXd SliceR(Eigen::MatrixXd R,
-  std::vector<int> sensors) {
-  size_t col = 0, row = 0;
-  Eigen::MatrixXd slicedR(sensors.size(), sensors.size());
-  for (auto sensor_row : sensors) {
-    col = 0;
-    for (auto sensor_col : sensors) {
-      slicedR(row, col) = R(sensor_row, sensor_col);
-      col++;
-    }
-    row++;
-  }
-  return slicedR;
-}
-
 // Time update (Inertial data)
 bool ViveFilter::Predict(const sensor_msgs::Imu & msg) {
   // Convert measurements
@@ -890,7 +909,7 @@ bool ViveFilter::UpdateEKF(const hive::ViveLight & msg) {
       tracker_, environment_.lighthouses[clean_msg.lighthouse],
       lighthouses_[clean_msg.lighthouse], correction_);
     // Sliced measurement covariance matrix
-    R = SliceR(measure_covariance_.block(total_sensors * HORIZONTAL,
+    R = filter::SliceR(measure_covariance_.block(total_sensors * HORIZONTAL,
       total_sensors * HORIZONTAL, total_sensors, total_sensors), sensors);
   } else {
     // Derivative of measurement model
@@ -902,7 +921,7 @@ bool ViveFilter::UpdateEKF(const hive::ViveLight & msg) {
       tracker_, environment_.lighthouses[clean_msg.lighthouse],
       lighthouses_[clean_msg.lighthouse], correction_);
     // Sliced measurement covariance matrix
-    R = SliceR(measure_covariance_.block(total_sensors * VERTICAL,
+    R = filter::SliceR(measure_covariance_.block(total_sensors * VERTICAL,
       total_sensors  *VERTICAL, total_sensors, total_sensors), sensors);
   }
   // std::cout << "oldP " << oldP << std::endl;
@@ -972,7 +991,7 @@ bool ViveFilter::UpdateIEKF(const hive::ViveLight & msg) {
       tracker_, environment_.lighthouses[clean_msg.lighthouse],
       lighthouses_[clean_msg.lighthouse], correction_);
     // Sliced measurement covariance matrix
-    R = SliceR(measure_covariance_.block(total_sensors * HORIZONTAL,
+    R = filter::SliceR(measure_covariance_.block(total_sensors * HORIZONTAL,
       total_sensors * HORIZONTAL, total_sensors, total_sensors), sensors);
   } else {
     // Difference between prediction and real measures
@@ -980,7 +999,7 @@ bool ViveFilter::UpdateIEKF(const hive::ViveLight & msg) {
       tracker_, environment_.lighthouses[clean_msg.lighthouse],
       lighthouses_[clean_msg.lighthouse], correction_);
     // Sliced measurement covariance matrix
-    R = SliceR(measure_covariance_.block(total_sensors * VERTICAL,
+    R = filter::SliceR(measure_covariance_.block(total_sensors * VERTICAL,
       total_sensors  *VERTICAL, total_sensors, total_sensors), sensors);
   }
 

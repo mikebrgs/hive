@@ -71,9 +71,12 @@ public:
 private: // temporary
   // Internal method
   bool Predict(const sensor_msgs::Imu & msg);
-  // Internal method
+  // EKF update
   bool UpdateEKF(const hive::ViveLight & msg);
+  // IEKF update
   bool UpdateIEKF(const hive::ViveLight & msg);
+  // UKF update
+  bool UpdateUKF(const hive::ViveLight & msg);
   // Validity
   bool Valid();
   // Initialize estimates
