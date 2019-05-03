@@ -310,7 +310,7 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
   // Cycle through multiple poses
   best_cost = 9e9;
   double best_aAt[3];
-  for (size_t i = 0; i < 200; i++) {
+  for (size_t i = 0; i < 50; i++) {
     ceres::Problem problem1;
 
     // Warm start
@@ -345,9 +345,6 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
 
     if (summary.final_cost < best_cost) {
       best_cost = summary.final_cost;
-      // Eigen::Vector3d aAUXt(aAt[0], aAt[1], aAt[2]);
-      // Eigen::AngleAxisd aAAt(aAUXt.norm(), aAUXt.normalized());
-      // best_aRt = aAAt.toRotationMatrix();
       best_aAt[0] = aAt[0];
       best_aAt[1] = aAt[1];
       best_aAt[2] = aAt[2];
@@ -355,31 +352,6 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
   }
   // Custo final da orientação
   std::cout << summary.final_cost << std::endl;
-
-  /* Temporary */
-  // auto opti_it = optitrack.begin();
-  // auto vive_it = vive.begin();
-  // while (vive_it != vive.end()) {
-  //   Eigen::Matrix3d vRt = Eigen::Quaterniond(
-  //     vive_it->transform.rotation.w,
-  //     vive_it->transform.rotation.x,
-  //     vive_it->transform.rotation.y,
-  //     vive_it->transform.rotation.z).toRotationMatrix();
-  //   std::cout << "vRt: " << vRt << std::endl;
-  //   Eigen::Matrix3d oRa = Eigen::Quaterniond(
-  //     opti_it->transform.rotation.w,
-  //     opti_it->transform.rotation.x,
-  //     opti_it->transform.rotation.y,
-  //     opti_it->transform.rotation.z).toRotationMatrix();
-  //   std::cout << "oRa: " << oRa << std::endl;
-  //   Eigen::Matrix3d aRt = best_aRt;
-  //   std::cout << "aRt: " << aRt << std::endl;
-  //   opti_it++;
-  //   vive_it++;
-  //   std::cout << "oRv: "<< oRa * aRt * vRt.transpose() << std::endl
-  //     << std::endl;
-  // }
-
 
   // Full pose optimization
   std::cout << "Offset Pose" << std::endl;
@@ -389,7 +361,7 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
   // Cycle through multiple poses
   best_cost = 9e9;
   double best_aTt[6];
-  for (size_t i = 0; i < 100; i++) {
+  for (size_t i = 0; i < 30; i++) {
     double aTt[6];
     ceres::Problem problem2;
 
@@ -421,7 +393,7 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
 
 
     ceres::Solve(options, &problem2, &summary);
-    // std::cout << summary.final_cost << std::endl;
+    // Check if this is the best solution yet
     if (summary.final_cost < best_cost) {
       best_cost = summary.final_cost;
       best_aTt[0] = aTt[0];
@@ -434,13 +406,78 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
   }
 
   // Printing the final solution
-  std::cout << best_cost <<  " - "
+  std::cout << "aTt: "
+    << best_cost <<  " - "
     << best_aTt[0] << ", "
     << best_aTt[1] << ", "
     << best_aTt[2] << ", "
     << best_aTt[3] << ", "
     << best_aTt[4] << ", "
     << best_aTt[5] << std::endl;
+
+  // Compute oTv
+  best_cost = 9e9;
+  double best_oTv[6];
+  for (size_t i = 0; i < 100; i++) {
+    ceres::Problem problem3;
+
+    double aTt[6];
+    aTt[0] = best_aTt[0];
+    aTt[1] = best_aTt[1];
+    aTt[2] = best_aTt[2];
+    aTt[3] = best_aTt[3];
+    aTt[4] = best_aTt[4];
+    aTt[5] = best_aTt[5];
+
+    double oTv[6];
+    oTv[0] = unif_pose(re_pose);
+    oTv[1] = unif_pose(re_pose);
+    oTv[2] = unif_pose(re_pose);
+    oTv[3] = unif_rot(re_rot);
+    oTv[4] = unif_rot(re_rot);
+    oTv[5] = unif_rot(re_rot);
+
+    auto vive_it = vive.begin();
+    auto opti_it = optitrack.begin();
+    while (vive_it != vive.end() && opti_it != optitrack.end()) {
+      ceres::CostFunction * thecost =
+        new ceres::AutoDiffCostFunction<PoseCostFunctor, 4, 6, 6>
+        (new PoseCostFunctor(vive_it->transform, opti_it->transform));
+      problem3.AddResidualBlock(thecost, NULL, oTv, aTt);
+      vive_it++;
+      opti_it++;
+    }
+    problem3.SetParameterBlockConstant(aTt);
+    ceres::Solve(options, &problem3, &summary);
+
+    if (summary.final_cost < best_cost) {
+      best_cost = summary.final_cost;
+      best_oTv[0] = oTv[0];
+      best_oTv[1] = oTv[1];
+      best_oTv[2] = oTv[2];
+      best_oTv[3] = oTv[3];
+      best_oTv[4] = oTv[4];
+      best_oTv[5] = oTv[5];
+    }
+    // std::cout << summary.final_cost <<  " - "
+    //   << oTv[0] << ", "
+    //   << oTv[1] << ", "
+    //   << oTv[2] << ", "
+    //   << oTv[3] << ", "
+    //   << oTv[4] << ", "
+    //   << oTv[5] << std::endl;
+  }
+
+  // Printing the final solution
+  std::cout << "oTv: "
+    << best_cost <<  " - "
+    << best_oTv[0] << ", "
+    << best_oTv[1] << ", "
+    << best_oTv[2] << ", "
+    << best_oTv[3] << ", "
+    << best_oTv[4] << ", "
+    << best_oTv[5] << std::endl;
+
 
   // Changing the format for best_aTt
   TF aMt;
@@ -458,18 +495,25 @@ TFs HiveOffset::CeresEstimateOffset(TFs& optitrack, TFs& vive) {
   aMt.transform.rotation.x = aQt.x();
   aMt.transform.rotation.y = aQt.y();
   aMt.transform.rotation.z = aQt.z();
-
-  // Changing the format for oTv // Not ready yet
-  // oTv->transform.translation.x = oTv[0];
-  // oTv->transform.translation.y = oTv[1];
-  // oTv->transform.translation.z = oTv[2];
-  // oTv->transform.rotation.w = oQv.w();
-  // oTv->transform.rotation.x = oQv.x();
-  // oTv->transform.rotation.y = oQv.y();
-  // oTv->transform.rotation.z = oQv.z();
+  // Changing the format for best_aTt
+  TF oMv;
+  Eigen::Vector3d oAv(best_oTv[3], best_oTv[4], best_oTv[5]);
+  Eigen::AngleAxisd oAAv;
+  if (oAv.norm() != 0)
+    oAAv = Eigen::AngleAxisd(oAv.norm(), oAv.normalized());
+  else
+    oAAv = Eigen::AngleAxisd(oAv.norm(), oAv);
+  Eigen::Quaterniond oQv(oAAv);
+  oMv.transform.translation.x = best_oTv[0];
+  oMv.transform.translation.y = best_oTv[1];
+  oMv.transform.translation.z = best_oTv[2];
+  oMv.transform.rotation.w = oQv.w();
+  oMv.transform.rotation.x = oQv.x();
+  oMv.transform.rotation.y = oQv.y();
+  oMv.transform.rotation.z = oQv.z();
 
   offsets.push_back(aMt);
-  // offsets.push_back(oMv);
+  offsets.push_back(oMv);
   return offsets;
 }
 
@@ -678,13 +722,9 @@ int main(int argc, char ** argv) {
 
   Calibration calibration;
   std::map<std::string, Solver*> solver;
+  rosbag::Bag wbag;
+  wbag.open("hive_offset.bag", rosbag::bagmode::Write);
 
-  // Wrong parameters
-  // if (argc < 2) {
-  //   std::cout << "Usage: ... hive_offset name_of_read_bag.bag "
-  //     << "[name_of_write_bag.bag]" << std::endl;
-  //   return -1;
-  // }
 
   // Calibration
   if (!ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE, &calibration)) {
@@ -856,7 +896,10 @@ int main(int argc, char ** argv) {
     ROS_INFO("OFFSET");
     hiver->GetOffset(offsets);
 
-    // TODO test the offsets right here
+    for (auto of_it = offsets.begin();
+      of_it != offsets.end(); of_it++) {
+      wbag.write("/offset", ros::Time::now(),*of_it);
+    }
 
   } else {
     TFs vive, optitrack, offsets;

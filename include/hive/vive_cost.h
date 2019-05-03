@@ -1194,10 +1194,9 @@ bool PoseCostFunctor::operator()(const T* const o_v,
   _oQa.normalize();
 
   // T delta = T(vive_.header.stamp.toSec()) - T(optitrack_.header.stamp.toSec());
-  T delta = T(1.0);
-  residual[0] = (_oPa(0) - oPa(0)) / (T(0.01) + delta);
-  residual[1] = (_oPa(1) - oPa(1)) / (T(0.01) + delta);
-  residual[2] = (_oPa(2) - oPa(2)) / (T(0.01) + delta);
+  residual[0] = (_oPa(0) - oPa(0));
+  residual[1] = (_oPa(1) - oPa(1));
+  residual[2] = (_oPa(2) - oPa(2));
 
   T aa[3];
   Eigen::Matrix<T, 3, 3> R = _oRa * oRa.transpose();

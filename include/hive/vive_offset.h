@@ -12,6 +12,7 @@
 #include <ros/ros.h>
 #include <rosbag/bag.h>
 #include <rosbag/view.h>
+#include <tf2/LinearMath/Transform.h>
 
 // Standard C includes
 #include <unistd.h>
@@ -75,6 +76,7 @@ public:
   bool GetOffset(TFs & offsets);
   // Estimate the offset with Hand Eye Calibration algorithm
   static TFs VispEstimateOffset(TFs optitrack, TFs vive);
+  // Estimate the offset with Hand Eye Calibration method on Ceres
   static TFs CeresEstimateOffset(TFs& optitrack, TFs& vive);
   // Refine with ceres the estimate of the offset
   static TFs RefineOffset(TFs optitrack, TFs vive, TFs offset);
