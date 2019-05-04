@@ -10,6 +10,7 @@ PoseGraph::PoseGraph(Environment environment,
   std::map<std::string, Lighthouse> lighthouses,
   size_t window,
   double trust,
+  bool force_first,
   bool correction) {
   if (window < 2) {
     std::cout << "Bad window size. Using 2." << std::endl;
@@ -24,6 +25,7 @@ PoseGraph::PoseGraph(Environment environment,
   tracker_ = tracker;
   environment_ = environment;
   lighthouses_ = lighthouses;
+  force_first_ = force_first;
   return;
 }
 
@@ -464,6 +466,19 @@ bool PoseGraph::Solve() {
     li_it++;
   }
 
+  // If we want to force the first pose to be close
+  // to its previous estimate
+  double first_pose[9];
+  if (force_first_) {
+    for(size_t i = 0; i < 9; i++)
+      first_pose[i] = poses_[0][i];
+    ceres::CostFunction * cost =
+      new ceres::AutoDiffCostFunction<ClosenessCost, 7, 9, 9>
+      (new ClosenessCost(smoothing_, ROTATION_FACTOR));
+    problem.AddResidualBlock(cost, NULL, first_pose, poses_[0]);
+    problem.SetParameterBlockConstant(first_pose);
+  }
+
   options.minimizer_progress_to_stdout = false;
   options.max_num_iterations = 1000;
   ceres::Solve(options, &problem, &summary);
@@ -575,7 +590,7 @@ int main(int argc, char ** argv) {
       smap[tr.serial] = PoseGraph(cal.environment,
         cal.trackers[tr.serial],
         cal.lighthouses,
-        4, TRUST, true);
+        4, TRUST, false, true);
     }
   }
   ROS_INFO("Trackers' setup complete.");

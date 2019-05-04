@@ -32,6 +32,8 @@
 #include <map>
 #include <string>
 
+#define SMOOTHING 1.0
+#define ROTATION_FACTOR 1.0
 
 class PoseGraph : public Solver {
 public:
@@ -42,6 +44,7 @@ public:
   std::map<std::string, Lighthouse> lighthouses,
   size_t window,
   double trust,
+  bool force_first,
   bool correction);
   // Destructor
   ~PoseGraph();
@@ -84,6 +87,8 @@ private:
   std::map<std::string, Lighthouse> lighthouses_;
   // Correction
   bool correction_;
+  // Force the first the first pose to be close to its previous estimate.
+  bool force_first_;
   // Optimization window
   size_t window_;
   /*Trust on the inertial measurements
@@ -91,6 +96,8 @@ private:
     -> Too low - consecutive poses will pushed apart
   */
   double trust_;
+  //
+  double smoothing_ = SMOOTHING;
   // Validity
   bool valid_;
   // Internal

@@ -455,7 +455,23 @@ private:
   geometry_msgs::Transform lh_pose_;
 };
 
+// How close the poses should be to each other
+class ClosenessCost {
+public:
+  // Constructor to pass data
+  // A good smoothing factor is 0.1, but it may be changed
+  explicit ClosenessCost(double smoothing,
+    double rotation_factor);
 
+  // Function for ceres solver with parameters (different frames)
+  template <typename T> bool operator()(const T* const prev_vTt,
+    const T* const next_vTt,
+    T * residual) const;
+
+private:
+  double smoothing_;
+  double rotation_factor_;
+};
 
 
 
@@ -1506,5 +1522,45 @@ template <typename T> bool BundledVerticalCost::operator()(const T* const * para
   }
   return true;
 }
+
+// Constructor to pass data
+ClosenessCost::ClosenessCost(double smoothing,
+  double rotation_factor) {
+  smoothing_ = smoothing;
+  rotation_factor_ = rotation_factor;
+}
+// Function for ceres solver with parameters
+template <typename T> bool ClosenessCost::operator()(const T* const prev_vTt,
+  const T* const next_vTt,
+  T * residual) const {
+  // cost function here
+
+  // Frame conversion
+  Eigen::Matrix<T, 3, 1> prev_vPt;
+  prev_vPt << prev_vTt[0],
+    prev_vTt[1],
+    prev_vTt[2];
+  Eigen::Matrix<T, 3, 1> next_vPt;
+  next_vPt << next_vTt[0],
+    next_vTt[1],
+    next_vTt[2];
+  Eigen::Matrix<T, 3, 3> prev_vRt;
+  ceres::AngleAxisToRotationMatrix(&prev_vTt[3], prev_vRt.data());
+  Eigen::Matrix<T, 3, 3> next_vRt;
+  ceres::AngleAxisToRotationMatrix(&next_vTt[3], next_vRt.data());
+
+  // // Translation cost with smoothing
+  residual[0] = T(smoothing_) * (prev_vPt(0) - next_vPt(0));
+  residual[1] = T(smoothing_) * (prev_vPt(1) - next_vPt(1));
+  residual[2] = T(smoothing_) * (prev_vPt(2) - next_vPt(2));
+  // // Rotation cost with smoothing
+  T aa[3];
+  Eigen::Matrix<T, 3, 3> R = next_vRt.transpose() * prev_vRt;
+  ceres::RotationMatrixToAngleAxis(R.data(), aa);
+  residual[3] = T(rotation_factor_) * T(smoothing_)*
+    sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
+  return true;
+}
+
 
 #endif // HIVE_VIVE_COST_H_
