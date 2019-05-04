@@ -22,6 +22,7 @@
 // Eigen includes
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
+#include <unsupported/Eigen/MatrixFunctions>
 
 // STD C includes
 #include <math.h>
@@ -37,7 +38,9 @@
 #define STATE_SIZE 13         // Size of the state vector
 #define NOISE_SIZE 9          // Size of the noise vector
 #define LIGHT_DATA_BUFFER 4   // Size of the light data vector
-#define VALID_POSE_COST 1e-3
+#define MAHALANOBIS_MAX_DIST 3
+#define IEFK_THRESHOLD 1e-5
+#define UKF_FACTOR 1.0
 
 namespace filter {
   // filter type
@@ -58,6 +61,13 @@ public:
     double measure_noise,
     bool correction,
     filter::type ftype);
+  ViveFilter(Tracker & tracker,
+    std::map<std::string, Lighthouse> & lighthouses,
+    Environment & environment,
+    Eigen::MatrixXd model_noise,
+    Eigen::MatrixXd measure_noise,
+    bool correction,
+    filter::type ftype);
   // Destructor
   ~ViveFilter();
   // Process an IMU measurement
@@ -69,8 +79,12 @@ public:
   // Temporary
   void PrintState();
 private: // temporary
-  // Internal method
-  bool Predict(const sensor_msgs::Imu & msg);
+  // EKF predict
+  bool PredictEKF(const sensor_msgs::Imu & msg);
+  // IEFK predict
+  bool PredictIEKF(const sensor_msgs::Imu & msg);
+  // UKF predict
+  bool PredictUKF(const sensor_msgs::Imu & msg);
   // EKF update
   bool UpdateEKF(const hive::ViveLight & msg);
   // IEKF update
