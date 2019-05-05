@@ -137,6 +137,12 @@ ViveFilter::ViveFilter(Tracker & tracker,
     measure_noise.rows() != 2*tracker_.sensors.size()) throw;
   measure_covariance_ = measure_noise;
   covariance_ = Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE);
+  // UKF's extended covariance.
+  ext_covariance_ = Eigen::MatrixXd(STATE_SIZE + NOISE_SIZE,
+    STATE_SIZE + NOISE_SIZE);
+  ext_covariance_.block<STATE_SIZE, STATE_SIZE>(0,0) = covariance_;
+  ext_covariance_.block<NOISE_SIZE, NOISE_SIZE>(
+    STATE_SIZE, STATE_SIZE) = model_covariance_;
   filter_type_ = ftype;
   return;
 }
@@ -217,6 +223,12 @@ bool ViveFilter::Initialize() {
     tracker_.gyr_bias.y,
     tracker_.gyr_bias.z);
   covariance_ = Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE);
+  // UKF's extended covariance.
+  ext_covariance_ = Eigen::MatrixXd(STATE_SIZE + NOISE_SIZE,
+    STATE_SIZE + NOISE_SIZE);
+  ext_covariance_.block<STATE_SIZE, STATE_SIZE>(0,0) = covariance_;
+  ext_covariance_.block<NOISE_SIZE, NOISE_SIZE>(
+    STATE_SIZE, STATE_SIZE) = model_covariance_;
   // Change this
   time_ = light_data_.back().header.stamp;
   return true;
@@ -1183,13 +1195,14 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
     Eigen::VectorXd::Zero(NOISE_SIZE);
 
   // Previous extended state covariance
-  prev_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0) = covariance_;
-  prev_extCovariance.block<STATE_SIZE, NOISE_SIZE>(STATE_SIZE,0) =
-    Eigen::MatrixXd::Zero(STATE_SIZE, NOISE_SIZE);
-  prev_extCovariance.block<NOISE_SIZE, STATE_SIZE>(0,STATE_SIZE) =
-    Eigen::MatrixXd::Zero(NOISE_SIZE, STATE_SIZE);
-  prev_extCovariance.block<NOISE_SIZE, NOISE_SIZE>(STATE_SIZE,STATE_SIZE) =
-    model_covariance_;
+  // prev_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0) = covariance_;
+  // prev_extCovariance.block<STATE_SIZE, NOISE_SIZE>(STATE_SIZE,0) =
+  //   Eigen::MatrixXd::Zero(STATE_SIZE, NOISE_SIZE);
+  // prev_extCovariance.block<NOISE_SIZE, STATE_SIZE>(0,STATE_SIZE) =
+  //   Eigen::MatrixXd::Zero(NOISE_SIZE, STATE_SIZE);
+  // prev_extCovariance.block<NOISE_SIZE, NOISE_SIZE>(STATE_SIZE,STATE_SIZE) =
+  //   model_covariance_;
+  prev_extCovariance = ext_covariance_;
 
   std::vector<Eigen::VectorXd> prev_unscentedStates;
   std::vector<Eigen::VectorXd> next_unscentedStates;
@@ -1251,8 +1264,8 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
     next_extState(9)).normalized();
   bias_ = next_extState.segment<3>(10);
   covariance_ = next_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
+  ext_covariance_ = next_extCovariance;
   time_ = msg.header.stamp;
-
   return true;
 }
 
@@ -1273,13 +1286,14 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
     Eigen::VectorXd::Zero(NOISE_SIZE);
 
   // Previous extended state covariance
-  prev_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0) = covariance_;
-  prev_extCovariance.block<STATE_SIZE, NOISE_SIZE>(STATE_SIZE,0) =
-    Eigen::MatrixXd::Zero(STATE_SIZE, NOISE_SIZE);
-  prev_extCovariance.block<NOISE_SIZE, STATE_SIZE>(0,STATE_SIZE) =
-    Eigen::MatrixXd::Zero(NOISE_SIZE, STATE_SIZE);
-  prev_extCovariance.block<NOISE_SIZE, NOISE_SIZE>(STATE_SIZE,STATE_SIZE) =
-    model_covariance_;
+  // prev_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0) = covariance_;
+  // prev_extCovariance.block<STATE_SIZE, NOISE_SIZE>(STATE_SIZE,0) =
+  //   Eigen::MatrixXd::Zero(STATE_SIZE, NOISE_SIZE);
+  // prev_extCovariance.block<NOISE_SIZE, STATE_SIZE>(0,STATE_SIZE) =
+  //   Eigen::MatrixXd::Zero(NOISE_SIZE, STATE_SIZE);
+  // prev_extCovariance.block<NOISE_SIZE, NOISE_SIZE>(STATE_SIZE,STATE_SIZE) =
+  //   model_covariance_;
+  prev_extCovariance = ext_covariance_;
 
   std::vector<Eigen::VectorXd> prev_unscentedStates;
 
@@ -1406,6 +1420,7 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
     next_extState(9)).normalized();
   bias_ = next_extState.segment<3>(10);
   covariance_ = next_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
+  ext_covariance_ = next_extCovariance;
   time_ = msg.header.stamp;
 
   return true;

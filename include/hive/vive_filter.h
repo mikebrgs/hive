@@ -49,6 +49,194 @@ namespace filter {
   typedef std::vector<hive::ViveLight> LightVector;
 }
 
+// Unscented Kalman Filter
+class ViveUKF : public Solver {
+public:
+  ViveUKF(Tracker & tracker,
+    std::map<std::string, Lighthouse> & lighthouses,
+    Environment & environment,
+    double model_noise,
+    double measure_noise,
+    double factor,
+    bool correction);
+  ViveUKF(Tracker & tracker,
+    std::map<std::string, Lighthouse> & lighthouses,
+    Environment & environment,
+    Eigen::MatrixXd model_noise,
+    Eigen::MatrixXd measure_noise,
+    double factor,
+    bool correction);
+  ~ViveUKF();
+  // Process an IMU measurement
+  void ProcessImu(const sensor_msgs::Imu::ConstPtr& msg);
+  // Process a light measurement
+  void ProcessLight(const hive::ViveLight::ConstPtr& msg);
+  // Get the current pose according to the solver
+  bool GetTransform(geometry_msgs::TransformStamped& msg);
+  // Print the state
+  void PrintState();
+private:
+  // State
+  // Positon of the imu frame in the Vive frame
+  Eigen::Vector3d position_;
+  // Velocity of the imu frame in the Vive frame
+  Eigen::Vector3d velocity_;
+  // Orientation of the imu frame in the Vive frame
+  Eigen::Quaterniond rotation_;
+  // Bias of the imu frame in the Vive frame
+  Eigen::Vector3d bias_;
+  // Last update to the solver
+  ros::Time time_;
+  // Covariances
+  // Model covariance
+  Eigen::MatrixXd model_covariance_;
+  // Measurement covariance
+  Eigen::MatrixXd measure_covariance_;
+  // State covariance
+  Eigen::MatrixXd covariance_;
+  // Lighthouse specs
+  std::map<std::string, Lighthouse> lighthouses_;
+  // Calibration environment
+  Environment environment_;
+  // The tracker it's solving for
+  Tracker tracker_;
+  // UKF factor
+  double factor_;
+  // If the correction parameters are to be used
+  bool correction_;
+  // Validity of current state
+  bool valid_;
+  // If the pose was already used
+  bool used_;
+  // Aux
+  bool lastmsgwasimu_;
+  // Old data for initializer
+  filter::LightVector light_data_;
+
+};
+
+// Extended Kalman Filter
+class ViveEKF : public Solver {
+public:
+  ViveEKF(Tracker & tracker,
+    std::map<std::string, Lighthouse> & lighthouses,
+    Environment & environment,
+    double model_noise,
+    double measure_noise,
+    bool correction);
+  ViveEKF(Tracker & tracker,
+    std::map<std::string, Lighthouse> & lighthouses,
+    Environment & environment,
+    Eigen::MatrixXd model_noise,
+    Eigen::MatrixXd measure_noise,
+    bool correction);
+  ~ViveEKF();
+  // Process an IMU measurement
+  void ProcessImu(const sensor_msgs::Imu::ConstPtr& msg);
+  // Process a light measurement
+  void ProcessLight(const hive::ViveLight::ConstPtr& msg);
+  // Get the current pose according to the solver
+  bool GetTransform(geometry_msgs::TransformStamped& msg);
+  // Print the state
+  void PrintState();
+private:
+  // State
+  // Positon of the imu frame in the Vive frame
+  Eigen::Vector3d position_;
+  // Velocity of the imu frame in the Vive frame
+  Eigen::Vector3d velocity_;
+  // Orientation of the imu frame in the Vive frame
+  Eigen::Quaterniond rotation_;
+  // Bias of the imu frame in the Vive frame
+  Eigen::Vector3d bias_;
+  // Last update to the solver
+  ros::Time time_;
+  // Covatiances
+  // Model covariance
+  Eigen::MatrixXd model_covariance_;
+  // Measurement covariance
+  Eigen::MatrixXd measure_covariance_;
+  // State covariance
+  Eigen::MatrixXd covariance_;
+  // Lighthouse specs
+  std::map<std::string, Lighthouse> lighthouses_;
+  // Calibration environment
+  Environment environment_;
+  // The tracker it's solving for
+  Tracker tracker_;
+  // If the correction parameters are to be used
+  bool correction_;
+  // Validity of current state
+  bool valid_;
+  // If the pose was already used
+  bool used_;
+  // Aux
+  bool lastmsgwasimu_;
+  // Old data for initializer
+  filter::LightVector light_data_;
+};
+
+// Iterated Extended Kalman Filter
+class ViveIEKF : public Solver {
+public:
+  ViveIEKF(Tracker & tracker,
+    std::map<std::string, Lighthouse> & lighthouses,
+    Environment & environment,
+    double model_noise,
+    double measure_noise,
+    bool correction);
+  ViveIEKF(Tracker & tracker,
+    std::map<std::string, Lighthouse> & lighthouses,
+    Environment & environment,
+    Eigen::MatrixXd model_noise,
+    Eigen::MatrixXd measure_noise,
+    bool correction);
+  ~ViveIEKF();
+  // Process an IMU measurement
+  void ProcessImu(const sensor_msgs::Imu::ConstPtr& msg);
+  // Process a light measurement
+  void ProcessLight(const hive::ViveLight::ConstPtr& msg);
+  // Get the current pose according to the solver
+  bool GetTransform(geometry_msgs::TransformStamped& msg);
+  // Print the state
+  void PrintState();
+private:
+  // State
+  // Positon of the imu frame in the Vive frame
+  Eigen::Vector3d position_;
+  // Velocity of the imu frame in the Vive frame
+  Eigen::Vector3d velocity_;
+  // Orientation of the imu frame in the Vive frame
+  Eigen::Quaterniond rotation_;
+  // Bias of the imu frame in the Vive frame
+  Eigen::Vector3d bias_;
+  // Last update to the solver
+  ros::Time time_;
+  // Covatiances
+  // Model covariance
+  Eigen::MatrixXd model_covariance_;
+  // Measurement covariance
+  Eigen::MatrixXd measure_covariance_;
+  // State covariance
+  Eigen::MatrixXd covariance_;
+  // Lighthouse specs
+  std::map<std::string, Lighthouse> lighthouses_;
+  // Calibration environment
+  Environment environment_;
+  // The tracker it's solving for
+  Tracker tracker_;
+  // If the correction parameters are to be used
+  bool correction_;
+  // Validity of current state
+  bool valid_;
+  // If the pose was already used
+  bool used_;
+  // Aux
+  bool lastmsgwasimu_;
+  // Old data for initializer
+  filter::LightVector light_data_;
+};
+
 
 class ViveFilter : public Solver{
 public:
@@ -114,7 +302,7 @@ private:
   Eigen::MatrixXd measure_covariance_;
   // State covariance
   Eigen::MatrixXd covariance_;
-  // Lighthouse specifications
+  // Lighthouse specs
   std::map<std::string, Lighthouse> lighthouses_;
   // Calibration environment
   Environment environment_;
@@ -132,6 +320,8 @@ private:
   bool lastmsgwasimu_;
   // Old data for initializer
   filter::LightVector light_data_;
+  // UKF stuff
+  Eigen::MatrixXd ext_covariance_;
 };
 
 #endif  // HIVE_VIVE_FILTER_H_
