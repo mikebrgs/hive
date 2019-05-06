@@ -269,12 +269,6 @@ bool HiveSolver::Solve() {
     while (sample_it != clean_msg.samples.end()) {
       if (sample_it->angle > -M_PI/3.0 && sample_it->angle < M_PI / 3.0) {
         sample_it++;
-      //   // std::cout << (sample_it->angle < (-M_PI/3.0)) << std::endl;
-      //   // std::cout << ((sample_it->angle > (M_PI / 3.0)) || (sample_it->angle < (-M_PI/3.0))) << std::endl;
-      // } else if (sample_it->angle > M_PI / 3.0) {
-      //   std::cout << "HERE " << sample_it->angle << std::endl;
-      //   // std::cout << (sample_it->angle > (M_PI / 3.0)) << std::endl;
-      //   // std::cout << ((sample_it->angle > (M_PI / 3.0)) || (sample_it->angle < (-M_PI/3.0))) << std::endl;
       } else {
         clean_msg.samples.erase(sample_it);
       }

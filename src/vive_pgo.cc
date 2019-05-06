@@ -1,7 +1,6 @@
 #include <hive/vive_pgo.h>
 
 #define TRUST 0.4
-// #define TRUST 1.6
 
 enum DataType {imu, light};
 
@@ -53,6 +52,16 @@ bool PoseGraph::Valid() {
     pose_.transform.rotation.y,
     pose_.transform.rotation.z);
   Eigen::Matrix3d vRt = vQt.toRotationMatrix();
+
+  // std::cout << "Val T: "
+  //   << vPt(0) << ", "
+  //   << vPt(1) << ", "
+  //   << vPt(2) << ", "
+  //   << vQt.w() << ", "
+  //   << vQt.x() << ", "
+  //   << vQt.y() << ", "
+  //   << vQt.z() << std::endl;
+
   for (auto light_sample : light_data_) {
     // Lighthouse in the vive frame
     Eigen::Vector3d vPl(
@@ -65,9 +74,29 @@ bool PoseGraph::Valid() {
       environment_.lighthouses[light_sample.lighthouse].rotation.y,
       environment_.lighthouses[light_sample.lighthouse].rotation.z);
     Eigen::Matrix3d vRl = vQl.toRotationMatrix();
+
+    // std::cout << "Val L: "
+    //   << vPl(0) << ", "
+    //   << vPl(1) << ", "
+    //   << vPl(2) << ", "
+    //   << vQl.w() << ", "
+    //   << vQl.x() << ", "
+    //   << vQl.y() << ", "
+    //   << vQl.z() << std::endl;
+
     // Convert pose to lighthouse frame
     Eigen::Vector3d lPt = vRl.transpose() * (vPt) + ( - vRl.transpose() * vPl);
     Eigen::Matrix3d lRt = vRl.transpose() * vRt;
+
+
+    // std::cout << "Val lT: "
+    //   << lPt(0) << ", "
+    //   << lPt(1) << ", "
+    //   << lPt(2) << ", "
+    //   << Eigen::Quaterniond(lRt).w() << ", "
+    //   << Eigen::Quaterniond(lRt).x() << ", "
+    //   << Eigen::Quaterniond(lRt).y() << ", "
+    //   << Eigen::Quaterniond(lRt).z() << std::endl;
     for (auto sample : light_sample.samples) {
       Eigen::Vector3d tPs(tracker_.sensors[sample.sensor].position.x,
         tracker_.sensors[sample.sensor].position.y,
@@ -116,6 +145,8 @@ bool PoseGraph::Valid() {
     }
   }
 
+  std::cout << "COST: " << cost << std::endl;
+
   if (cost > 1e-5 * sample_counter)
     return false;
 
@@ -123,7 +154,10 @@ bool PoseGraph::Valid() {
 }
 
 void PoseGraph::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
-  light_data_.push_back(*msg);
+  // Create copy to clean
+  hive::ViveLight * clone_msg = new hive::ViveLight(*msg);
+  // Save the copy
+  light_data_.push_back(*clone_msg);
 
   if (!lastposewasimu_) {
     AddPoseBack();
@@ -182,8 +216,11 @@ void PoseGraph::RemoveLight() {
 }
 
 void PoseGraph::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
-  // Save the inertial data
-  imu_data_.push_back(*msg);
+  // Create copy to clean
+  sensor_msgs::Imu * clone_msg = new sensor_msgs::Imu(*msg);
+  // Save the copy
+  imu_data_.push_back(*clone_msg);
+
   lastposewasimu_ = true;
   AddPoseBack();
 
@@ -300,6 +337,16 @@ bool PoseGraph::Solve() {
 
   // std::cout << "Poses: " << poses_.size() << std::endl;
   while (li_it != light_data_.end()) {
+    // Remove outliers
+    auto sample_it = li_it->samples.begin();
+    while (sample_it != li_it->samples.end()) {
+      if (sample_it->angle > -M_PI/3.0 && sample_it->angle < M_PI / 3.0) {
+        sample_it++;
+      } else {
+        li_it->samples.erase(sample_it);
+      }
+    }
+
     prev_pose = next_pose;
     next_pose = *pose_it;
     prev_counter = next_counter;
@@ -339,6 +386,26 @@ bool PoseGraph::Solve() {
           dt,
           trust_));
       problem.AddResidualBlock(cost, NULL, prev_pose, next_pose);
+      // std::cout << "IPPose: "
+      //   << prev_pose[0] << ", "
+      //   << prev_pose[1] << ", "
+      //   << prev_pose[2] << ", "
+      //   << prev_pose[3] << ", "
+      //   << prev_pose[4] << ", "
+      //   << prev_pose[5] << ", "
+      //   << prev_pose[6] << ", "
+      //   << prev_pose[7] << ", "
+      //   << prev_pose[8] << std::endl;
+      // std::cout << "INPose: "
+      //   << next_pose[0] << ", "
+      //   << next_pose[1] << ", "
+      //   << next_pose[2] << ", "
+      //   << next_pose[3] << ", "
+      //   << next_pose[4] << ", "
+      //   << next_pose[5] << ", "
+      //   << next_pose[6] << ", "
+      //   << next_pose[7] << ", "
+      //   << next_pose[8] << std::endl;
       pose_it++;
       pose_counter++;
       prev_pose = next_pose;
@@ -377,6 +444,16 @@ bool PoseGraph::Solve() {
       hcost->AddParameterBlock(9);
       hcost->SetNumResiduals(li_it->samples.size());
       problem.AddResidualBlock(hcost, NULL, next_pose); // replace with next_pose
+      // std::cout << "HPose: "
+      //   << next_pose[0] << ", "
+      //   << next_pose[1] << ", "
+      //   << next_pose[2] << ", "
+      //   << next_pose[3] << ", "
+      //   << next_pose[4] << ", "
+      //   << next_pose[5] << ", "
+      //   << next_pose[6] << ", "
+      //   << next_pose[7] << ", "
+      //   << next_pose[8] << std::endl;
     } else if (li_it->axis == VERTICAL) {
       // std::cout << "ViveVerticalCost " << next_counter << std::endl;
       ceres::DynamicAutoDiffCostFunction<ViveVerticalCost, 4> * vcost =
@@ -390,6 +467,16 @@ bool PoseGraph::Solve() {
       vcost->AddParameterBlock(9);
       vcost->SetNumResiduals(li_it->samples.size());
       problem.AddResidualBlock(vcost, NULL, next_pose); // replace with next_pose
+      // std::cout << "VPose: "
+      //   << next_pose[0] << ", "
+      //   << next_pose[1] << ", "
+      //   << next_pose[2] << ", "
+      //   << next_pose[3] << ", "
+      //   << next_pose[4] << ", "
+      //   << next_pose[5] << ", "
+      //   << next_pose[6] << ", "
+      //   << next_pose[7] << ", "
+      //   << next_pose[8] << std::endl;
     }
 
     // Preliminary solver data
@@ -468,43 +555,48 @@ bool PoseGraph::Solve() {
 
   // If we want to force the first pose to be close
   // to its previous estimate
-  double first_pose[9];
-  if (force_first_) {
+  double rigid_pose[9];
+  if (force_first_ && valid_) {
     for(size_t i = 0; i < 9; i++)
-      first_pose[i] = poses_[0][i];
+      rigid_pose[i] = poses_.front()[i];
     ceres::CostFunction * cost =
-      new ceres::AutoDiffCostFunction<ClosenessCost, 7, 9, 9>
+      new ceres::AutoDiffCostFunction<ClosenessCost, 4, 9, 9>
       (new ClosenessCost(smoothing_, ROTATION_FACTOR));
-    problem.AddResidualBlock(cost, NULL, first_pose, poses_[0]);
-    problem.SetParameterBlockConstant(first_pose);
+    problem.AddResidualBlock(cost, NULL, rigid_pose, poses_.front());
+    // std::cout << "RPose: "
+    //   << rigid_pose[0] << ", "
+    //   << rigid_pose[1] << ", "
+    //   << rigid_pose[2] << ", "
+    //   << rigid_pose[3] << ", "
+    //   << rigid_pose[4] << ", "
+    //   << rigid_pose[5] << ", "
+    //   << rigid_pose[6] << ", "
+    //   << rigid_pose[7] << ", "
+    //   << rigid_pose[8] << std::endl;
+    problem.SetParameterBlockConstant(rigid_pose);
   }
 
   options.minimizer_progress_to_stdout = false;
   options.max_num_iterations = 1000;
   ceres::Solve(options, &problem, &summary);
 
-  // size_t counter = 0;
-  // for (auto pose : poses_) {
-  //   std::cout << counter << " "
-  //     << summary.final_cost <<  " - "
-  //     << pose[0] << ", "
-  //     << pose[1] << ", "
-  //     << pose[2] << ", "
-  //     << pose[3] << ", "
-  //     << pose[4] << ", "
-  //     << pose[5] << ", "
-  //     << pose[6] << ", "
-  //     << pose[7] << ", "
-  //     << pose[8] << std::endl;
-  //     counter++;
-  // }
-  std::cout << summary.final_cost <<  " - "
-    << poses_.back()[0] << ", "
-    << poses_.back()[1] << ", "
-    << poses_.back()[2] << ", "
-    << poses_.back()[6] << ", "
-    << poses_.back()[7] << ", "
-    << poses_.back()[8] << std::endl;
+  size_t counter = 0;
+  for (auto pose : poses_) {
+    std::cout << counter << " "
+      << summary.final_cost <<  " - "
+      << pose[0] << ", "
+      << pose[1] << ", "
+      << pose[2] << ", "
+      << pose[3] << ", "
+      << pose[4] << ", "
+      << pose[5] << ", "
+      << pose[6] << ", "
+      << pose[7] << ", "
+      << pose[8] << std::endl;
+      counter++;
+  }
+
+  last_cost_ = summary.final_cost;
 
   // Save pose -- light frame in the vive frame
   pose_.header.stamp = light_data_.back().header.stamp;
@@ -528,8 +620,9 @@ bool PoseGraph::Solve() {
     tracker_.imu_transform.rotation.y,
     tracker_.imu_transform.rotation.z);
   Eigen::Matrix3d tRi = tQi.toRotationMatrix();
+
   // Convert frames
-  Eigen::Vector3d vPt = vRi * ( - tRi.transpose() * tPi ) + tPi;
+  Eigen::Vector3d vPt = vRi * ( - tRi.transpose() * tPi ) + vPi;
   Eigen::Matrix3d vRt = vRi * tRi.transpose();
   Eigen::Quaterniond vQt(vRt);
   // Save to ROS msg
@@ -545,6 +638,17 @@ bool PoseGraph::Solve() {
 }
 
 void PoseGraph::PrintState() {
+  // if (!valid_) {
+  //   std::cout << "NOT VALID" << std::endl;
+  //   return;
+  // }
+  std::cout << last_cost_ <<  " - "
+    << poses_.back()[0] << ", "
+    << poses_.back()[1] << ", "
+    << poses_.back()[2] << ", "
+    << poses_.back()[6] << ", "
+    << poses_.back()[7] << ", "
+    << poses_.back()[8] << std::endl;
   return;
 }
 
@@ -590,7 +694,7 @@ int main(int argc, char ** argv) {
       smap[tr.serial] = PoseGraph(cal.environment,
         cal.trackers[tr.serial],
         cal.lighthouses,
-        4, TRUST, false, true);
+        4, TRUST, true, true);
     }
   }
   ROS_INFO("Trackers' setup complete.");
@@ -607,6 +711,7 @@ int main(int argc, char ** argv) {
     if (vl != NULL) {
       // std::cout << "LIGHT" << std::endl;
       smap[vl->header.frame_id].ProcessLight(vl);
+      smap[vl->header.frame_id].PrintState();
       counter++;
     }
     const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();

@@ -32,7 +32,7 @@
 #include <map>
 #include <string>
 
-#define SMOOTHING 1.0
+#define SMOOTHING 10.0
 #define ROTATION_FACTOR 1.0
 
 class PoseGraph : public Solver {
@@ -50,15 +50,17 @@ public:
   ~PoseGraph();
   // New light data
   void ProcessLight(const hive::ViveLight::ConstPtr& msg);
-  // Aux method
-  void RemoveLight();
   // New Imu data
   void ProcessImu(const sensor_msgs::Imu::ConstPtr& msg);
-  // Aux method
-  void RemoveImu();
   // Get the tracker's pose
   bool GetTransform(geometry_msgs::TransformStamped& msg);
+  // Prinst stuff
+  void PrintState();
 private:
+  // Aux method
+  void RemoveLight();
+  // Aux method
+  void RemoveImu();
   // Add new pose to the back
   void AddPoseBack();
   // Add new pose to the front
@@ -69,8 +71,6 @@ private:
   bool Solve();
   // Validity of the pose
   bool Valid();
-  // Prinst stuff
-  void PrintState();
   
 private:
   // The pose (light pose in vive frame)
@@ -103,6 +103,7 @@ private:
   // Internal
   std::vector<double*> poses_;
   bool lastposewasimu_;
+  double last_cost_;
 };
 
 #endif // HIVE_VIVE_PGO

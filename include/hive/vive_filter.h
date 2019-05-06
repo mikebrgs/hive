@@ -22,6 +22,7 @@
 // Eigen includes
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
+#include <Eigen/Cholesky>
 #include <unsupported/Eigen/MatrixFunctions>
 
 // STD C includes
@@ -38,9 +39,10 @@
 #define STATE_SIZE 13         // Size of the state vector
 #define NOISE_SIZE 9          // Size of the noise vector
 #define LIGHT_DATA_BUFFER 4   // Size of the light data vector
-#define MAHALANOBIS_MAX_DIST 3
+#define MAHALANOBIS_MAX_DIST 5
 #define IEFK_THRESHOLD 1e-5
-#define UKF_FACTOR 1.0
+#define UKF_FACTOR -17.0
+#define HIVE_APE_ACC 1e-4
 
 namespace filter {
   // filter type

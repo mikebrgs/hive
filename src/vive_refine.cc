@@ -82,6 +82,7 @@ typedef std::map<std::string, std::vector<double*>> PoseVectorMap;
 typedef std::map<std::string, double*> PoseMap;
 
 bool Refinery::SolveInertial() {
+  std::cout << "Solving Intertial" << std::endl;
   // All the poses
   PoseVectorMap poses;
   PoseMap lighthouses;
@@ -91,13 +92,14 @@ bool Refinery::SolveInertial() {
   ceres::Solver::Summary summary;
 
   // Initialize lighthouses
-  for (auto lighthouse : lighthouses) {
+  for (auto lighthouse : calibration_.environment.lighthouses) {
+    lighthouses[lighthouse.first] = new double[6];
     // Position
-    lighthouse.second[0] =
+    lighthouses[lighthouse.first][0] =
       calibration_.environment.lighthouses[lighthouse.first].translation.x;
-    lighthouse.second[1] =
+    lighthouses[lighthouse.first][1] =
       calibration_.environment.lighthouses[lighthouse.first].translation.y;
-    lighthouse.second[2] =
+    lighthouses[lighthouse.first][2] =
       calibration_.environment.lighthouses[lighthouse.first].translation.z;
     // Orientation
     Eigen::Quaterniond vQl(
@@ -106,12 +108,13 @@ bool Refinery::SolveInertial() {
       calibration_.environment.lighthouses[lighthouse.first].rotation.y,
       calibration_.environment.lighthouses[lighthouse.first].rotation.z);
     Eigen::AngleAxisd vAAl(vQl);
-    lighthouse.second[3] = vAAl.angle() * vAAl.axis()(0);
-    lighthouse.second[4] = vAAl.angle() * vAAl.axis()(1);
-    lighthouse.second[5] = vAAl.angle() * vAAl.axis()(2);
+    lighthouses[lighthouse.first][3] = vAAl.angle() * vAAl.axis()(0);
+    lighthouses[lighthouse.first][4] = vAAl.angle() * vAAl.axis()(1);
+    lighthouses[lighthouse.first][5] = vAAl.angle() * vAAl.axis()(2);
   }
 
   for (auto tracker_data : data_) {
+    std::cout << "Tracker " << tracker_data.first << std::endl;
     // More readable structures
     SweepVec light_data = tracker_data.second.first;
     ImuVec imu_data = tracker_data.second.second;
@@ -131,9 +134,12 @@ bool Refinery::SolveInertial() {
     // Initialize iterators
     auto li_it = light_data.begin();
     auto imu_it = imu_data.begin();
-    auto pose_it = poses[tracker.serial].begin();
+    // auto pose_it = poses[tracker.serial].begin();
+    // TODO change pose iterator
+    size_t pose_it = 0;
     // Iterate light data
     while (li_it != light_data.end()) {
+      std::cout << "Light " << li_it->header.stamp << std::endl;
 
       // Iterate imu data
       while (imu_it != imu_data.end()
@@ -160,6 +166,9 @@ bool Refinery::SolveInertial() {
         problem.AddResidualBlock(cost, NULL, prev_pose, next_pose);
 
         prev_time = imu_it->header.stamp;
+
+        // Next imu msg
+        imu_it++;
       }
 
       // New Light pose
@@ -180,8 +189,10 @@ bool Refinery::SolveInertial() {
             calibration_.lighthouses[li_it->lighthouse].horizontal_motor,
             correction_));
         hcost->AddParameterBlock(9);
+        hcost->AddParameterBlock(6);
         hcost->SetNumResiduals(li_it->samples.size());
-        problem.AddResidualBlock(hcost, NULL, next_pose); // replace with next_pose
+        problem.AddResidualBlock(hcost, NULL,
+          next_pose, lighthouses[li_it->lighthouse]); // replace with next_pose
       } else if (li_it->axis == VERTICAL) {
         // std::cout << "ViveCalibrationVerticalCost " << next_counter << std::endl;
         ceres::DynamicAutoDiffCostFunction<ViveCalibrationVerticalCost, 4> * vcost =
@@ -191,8 +202,10 @@ bool Refinery::SolveInertial() {
             calibration_.lighthouses[li_it->lighthouse].vertical_motor,
             correction_));
         vcost->AddParameterBlock(9);
+        vcost->AddParameterBlock(6);
         vcost->SetNumResiduals(li_it->samples.size());
-        problem.AddResidualBlock(vcost, NULL, next_pose); // replace with next_pose
+        problem.AddResidualBlock(vcost, NULL,
+          next_pose, lighthouses[li_it->lighthouse]); // replace with next_pose
       }
       prev_time = li_it->header.stamp;
 
@@ -255,15 +268,29 @@ bool Refinery::SolveInertial() {
         pre_options.max_num_iterations = 1000;
         ceres::Solve(pre_options, &pre_problem, &pre_summary);
 
+        std::cout << "PP: "
+          << pre_pose[0] << ", "
+          << pre_pose[1] << ", "
+          << pre_pose[2] << ", "
+          << pre_pose[3] << ", "
+          << pre_pose[4] << ", "
+          << pre_pose[5] << ", "
+          << pre_pose[6] << ", "
+          << pre_pose[7] << ", "
+          << pre_pose[8] << std::endl;
+
         // Copy paste
-        while (pose_it != poses[tracker.serial].end()) {
+        while (pose_it != poses[tracker.serial].size()) {
           for (size_t i = 0; i < 9; i++)
-            (*pose_it)[i] = pre_pose[i];
+            poses[tracker.serial][pose_it][i] = pre_pose[i];
           pose_it++;
         }
+        std::cout << "HERE" << std::endl;
         // End of Copy Past
       }
       // End of Initializer
+      // Next light msg
+      li_it++;
     }
     // End of light_it
   }
@@ -400,10 +427,10 @@ bool Refinery::SolveStatic() {
       if (observations[li_it->lighthouse].first != NULL &&
         observations[li_it->lighthouse].second != NULL &&
         ViveSolve::SolvePose(*observations[li_it->lighthouse].first,
-        *observations[li_it->lighthouse].second,
-        tf, calibration_.trackers[tr_it->first],
-        calibration_.lighthouses[li_it->lighthouse],
-        correction_)) {
+          *observations[li_it->lighthouse].second,
+          tf, calibration_.trackers[tr_it->first],
+          calibration_.lighthouses[li_it->lighthouse],
+          correction_)) {
         double * pose = new double[6];
         // Set new pose from solver
         pose[0] = tf.transform.translation.x;
@@ -480,8 +507,8 @@ bool Refinery::SolveStatic() {
   }
   std::cout << std::endl;
   // Solver's options
-  options.minimizer_progress_to_stdout = true;
-  options.max_num_iterations = 1000; // TODO change this
+  options.minimizer_progress_to_stdout = false;
+  options.max_num_iterations = 5000; // TODO change this
 
   ceres::Solve(options, &problem, &summary);
 
@@ -577,7 +604,7 @@ int main(int argc, char ** argv)
   ROS_INFO("Trackers' setup complete.");
 
   size_t counter = 0;
-  Refinery ref = Refinery(cal, true, 1e1);
+  Refinery ref = Refinery(cal, true, 1e1, true);
   // Light data
   rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {

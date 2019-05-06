@@ -1558,7 +1558,7 @@ template <typename T> bool ClosenessCost::operator()(const T* const prev_vTt,
   Eigen::Matrix<T, 3, 3> R = next_vRt.transpose() * prev_vRt;
   ceres::RotationMatrixToAngleAxis(R.data(), aa);
   residual[3] = T(rotation_factor_) * T(smoothing_)*
-    sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
+    (aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
   return true;
 }
 

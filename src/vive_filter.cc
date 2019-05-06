@@ -104,8 +104,13 @@ ViveFilter::ViveFilter(Tracker & tracker,
   //    [ 0 V ]
   measure_covariance_ = measure_noise * Eigen::MatrixXd::Identity(
     2*tracker_.sensors.size(), 2*tracker_.sensors.size());
-  covariance_ = Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE);
+  covariance_ = Eigen::MatrixXd::Zero(STATE_SIZE, STATE_SIZE);
   filter_type_ = ftype;
+  ext_covariance_ = Eigen::MatrixXd::Zero(STATE_SIZE + NOISE_SIZE,
+    STATE_SIZE + NOISE_SIZE);
+  ext_covariance_.block<STATE_SIZE, STATE_SIZE>(0,0) = covariance_;
+  ext_covariance_.block<NOISE_SIZE, NOISE_SIZE>(
+    STATE_SIZE, STATE_SIZE) = model_covariance_;
   return;
 }
 
@@ -136,9 +141,9 @@ ViveFilter::ViveFilter(Tracker & tracker,
   if (measure_noise.cols() != 2*tracker_.sensors.size() ||
     measure_noise.rows() != 2*tracker_.sensors.size()) throw;
   measure_covariance_ = measure_noise;
-  covariance_ = Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE);
+  covariance_ = Eigen::MatrixXd::Zero(STATE_SIZE, STATE_SIZE);
   // UKF's extended covariance.
-  ext_covariance_ = Eigen::MatrixXd(STATE_SIZE + NOISE_SIZE,
+  ext_covariance_ = Eigen::MatrixXd::Zero(STATE_SIZE + NOISE_SIZE,
     STATE_SIZE + NOISE_SIZE);
   ext_covariance_.block<STATE_SIZE, STATE_SIZE>(0,0) = covariance_;
   ext_covariance_.block<NOISE_SIZE, NOISE_SIZE>(
@@ -214,6 +219,8 @@ bool ViveFilter::Initialize() {
 
   if (summary.final_cost > 1e-4) return false;
 
+  std::cout << "init ";
+
   position_ = Eigen::Vector3d(pose[0], pose[1], pose[2]);
   velocity_ = Eigen::Vector3d(pose[3], pose[4], pose[5]);
   Eigen::Vector3d vAi(pose[6], pose[7], pose[8]);
@@ -222,9 +229,9 @@ bool ViveFilter::Initialize() {
   bias_ = Eigen::Vector3d(tracker_.gyr_bias.x,
     tracker_.gyr_bias.y,
     tracker_.gyr_bias.z);
-  covariance_ = Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE);
+  covariance_ = HIVE_APE_ACC * Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE);
   // UKF's extended covariance.
-  ext_covariance_ = Eigen::MatrixXd(STATE_SIZE + NOISE_SIZE,
+  ext_covariance_ = Eigen::MatrixXd::Zero(STATE_SIZE + NOISE_SIZE,
     STATE_SIZE + NOISE_SIZE);
   ext_covariance_.block<STATE_SIZE, STATE_SIZE>(0,0) = covariance_;
   ext_covariance_.block<NOISE_SIZE, NOISE_SIZE>(
@@ -253,7 +260,6 @@ void ViveFilter::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
   }
 
   valid_ = Valid();
-  if (!valid_) std::cout << "NOT VALID ";
   used_ = false;
   lastmsgwasimu_ = true;
 
@@ -291,7 +297,6 @@ void ViveFilter::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   }
 
   valid_ = Valid();
-  if (!valid_) std::cout << "NOT VALID ";
   used_ = false;
   lastmsgwasimu_ = false;
 
@@ -872,22 +877,28 @@ bool ViveFilter::Valid() {
         total_sensors * VERTICAL, total_sensors, total_sensors), sensors);
     }
     // Mahalanobis cost right here
-    // std::cout << "HERE_" << std::endl;
-    // std::cout << "R: " << R << std::endl;
-    // std::cout << "H: " << H << std::endl;
-    // std::cout << "P: " << covariance_ << std::endl;
-    // std::cout << "ms: " << msEigenAngle.transpose() << std::endl;
-    // std::cout << "pr: " << prEigenAngle.transpose() << std::endl;
     Eigen::MatrixXd V = R + H * covariance_ * H.transpose();
+    // std::cout << "R: " << R << std::endl;
+    // std::cout << "Cov: " << covariance_ << std::endl;
+    // std::cout << "H: " << H << std::endl;
+    // std::cout << "V: " << V << std::endl;
+    // Temporary
+    // V = Eigen::MatrixXd::Identity(V.rows(), V.cols());
     // std::cout << "HERE" << std::endl;
-    cost += (msEigenAngle - prEigenAngle).transpose() * V * (msEigenAngle - prEigenAngle);
-    // std::cout << "_HERE" << std::endl;
+    cost += (msEigenAngle - prEigenAngle).transpose() * V.inverse() * (msEigenAngle - prEigenAngle);
+    // std::cout << "singleCost: " << 
+    //   (msEigenAngle - prEigenAngle).transpose() * V.inverse() * (msEigenAngle - prEigenAngle) << std::endl;
     light_counter++;
   }
 
-  if (cost > MAHALANOBIS_MAX_DIST * light_counter)
+  if (cost > pow(MAHALANOBIS_MAX_DIST,2) * light_counter) {
+  // if (cost > 1e-2 * light_counter) {
+    // std::cout << "Not valid ";
+    // TODO Change this
     return false;
+  }
 
+  // std::cout << "Valid ";
   return true;
 }
 
@@ -1166,10 +1177,12 @@ Eigen::VectorXd GetExtendedDState(Eigen::Vector3d velocity,
   dotX.segment<3>(10) = Eigen::VectorXd::Zero(3);
   dotX.segment<NOISE_SIZE>(STATE_SIZE) =
     Eigen::VectorXd::Zero(NOISE_SIZE);
+  // std::cout << "dotX: " << dotX.transpose() << std::endl;
   return dotX;
 }
 
 bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
+  // std::cout << "PredictUKF ";
   Eigen::VectorXd prev_extState(STATE_SIZE + NOISE_SIZE);
   Eigen::MatrixXd prev_extCovariance(STATE_SIZE + NOISE_SIZE,
     STATE_SIZE + NOISE_SIZE);
@@ -1180,6 +1193,7 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
   Eigen::Vector3d gravity = filter::ConvertMessage(environment_.gravity);
 
   // Time difference
+  // double dT = 0.005;
   double dT = (msg.header.stamp - time_).toSec();
   if (!lastmsgwasimu_) dT = 2*dT;
 
@@ -1194,27 +1208,34 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
   prev_extState.segment<NOISE_SIZE>(13) =
     Eigen::VectorXd::Zero(NOISE_SIZE);
 
-  // Previous extended state covariance
-  // prev_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0) = covariance_;
-  // prev_extCovariance.block<STATE_SIZE, NOISE_SIZE>(STATE_SIZE,0) =
-  //   Eigen::MatrixXd::Zero(STATE_SIZE, NOISE_SIZE);
-  // prev_extCovariance.block<NOISE_SIZE, STATE_SIZE>(0,STATE_SIZE) =
-  //   Eigen::MatrixXd::Zero(NOISE_SIZE, STATE_SIZE);
-  // prev_extCovariance.block<NOISE_SIZE, NOISE_SIZE>(STATE_SIZE,STATE_SIZE) =
-  //   model_covariance_;
+  // std::cout << "prev_extState: " << prev_extState.transpose() << std::endl;
+
   prev_extCovariance = ext_covariance_;
 
   std::vector<Eigen::VectorXd> prev_unscentedStates;
   std::vector<Eigen::VectorXd> next_unscentedStates;
 
-  Eigen::MatrixXd sigma =
-    (((double)UKF_FACTOR + (double)STATE_SIZE + (double)NOISE_SIZE) *
-    prev_extCovariance).sqrt();
+  // std::cout << "prev_extCovariance: " << prev_extCovariance << std::endl;
+  // std::cout << "squaredsigma: " << 
+  //   ((double)UKF_FACTOR + (double)STATE_SIZE + (double)NOISE_SIZE) *
+  //   prev_extCovariance << std::endl;
+
+  // Eigen::MatrixXd sigma =
+  //   (((double)UKF_FACTOR + (double)STATE_SIZE + (double)NOISE_SIZE) *
+  //   prev_extCovariance).sqrt();
+  Eigen::MatrixXd sigma = Eigen::LLT<Eigen::MatrixXd>(
+    ((double)UKF_FACTOR + (double)STATE_SIZE + (double)NOISE_SIZE) *
+    prev_extCovariance).matrixL();
+
+
+  // std::cout << "sigma: " << sigma << std::endl;
 
   prev_unscentedStates.push_back(prev_extState);
   for (size_t i = 0; i < sigma.cols(); i++) {
     prev_unscentedStates.push_back(prev_extState + sigma.col(i));
     prev_unscentedStates.push_back(prev_extState - sigma.col(i));
+    // std::cout << "prev_unscentedStates: " <<
+    //   prev_unscentedStates.back().transpose() << std::endl;
   }
 
   // Next states
@@ -1222,6 +1243,7 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
   Eigen::MatrixXd next_extCovariance = 
     Eigen::MatrixXd::Zero(STATE_SIZE + NOISE_SIZE, STATE_SIZE + NOISE_SIZE);
 
+  // std::cout << "HERE4" << std::endl;
   for (size_t i = 0; i < prev_unscentedStates.size(); i++) {
     // Format change
     Eigen::Vector3d velocity = prev_unscentedStates[i].segment<3>(3);
@@ -1234,17 +1256,24 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
     Eigen::VectorXd dState = GetExtendedDState(
       velocity, rotation, linear_acceleration, angular_velocity, gravity, bias);
     // Get next state and save it
-    Eigen::VectorXd next_extState = prev_extState + dT * dState;
-    next_unscentedStates.push_back(next_extState);
+    Eigen::VectorXd tmp_extState = prev_unscentedStates[i] + dT * dState;
+    // std::cout << "prev_unscentedStates[i]: " << prev_unscentedStates[i].transpose() << std::endl;
+    // std::cout << "dState: " << dState.transpose() << std::endl;
+    // std::cout << "tmp_extState: " << tmp_extState.transpose() << std::endl;
 
-    if (i == 0) {
-      next_extState += UKF_FACTOR * next_extState;
-    } else {
-      next_extState += 0.5 * next_extState;
-    }
+    next_unscentedStates.push_back(tmp_extState);
+  }
+
+
+  next_extState = UKF_FACTOR * next_unscentedStates[0];
+  for (size_t i = 1; i < next_unscentedStates.size(); i++) {
+    next_extState += 0.5 * next_unscentedStates[i];
   }
   next_extState = 1.0 / ((double)UKF_FACTOR + (double)STATE_SIZE + (double)NOISE_SIZE) *
     next_extState;
+
+  // std::cout << "HERE5" << std::endl;
+  // std::cout << "next_extState: " << next_extState.transpose() << std::endl;
 
   next_extCovariance += UKF_FACTOR * (next_unscentedStates[0] - next_extState) *
     (next_unscentedStates[0] - next_extState).transpose();
@@ -1255,6 +1284,8 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
   next_extCovariance = 1.0 / ((double)UKF_FACTOR + (double)STATE_SIZE + (double)NOISE_SIZE) *
     next_extCovariance;
 
+  // std::cout << "next_extCovariance: " << next_extCovariance.transpose() << std::endl;
+  // std::cout << "HERE6" << std::endl;
   // Save new state
   position_ = next_extState.segment<3>(0);
   velocity_ = next_extState.segment<3>(3);
@@ -1266,10 +1297,14 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
   covariance_ = next_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
   ext_covariance_ = next_extCovariance;
   time_ = msg.header.stamp;
+  // std::cout << "HERE7" << std::endl;
+
+  // exit(0);
   return true;
 }
 
 bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
+  // std::cout << "UpdateUKF ";
   Eigen::VectorXd prev_extState(STATE_SIZE + NOISE_SIZE);
   Eigen::MatrixXd prev_extCovariance(STATE_SIZE + NOISE_SIZE,
     STATE_SIZE + NOISE_SIZE);
@@ -1284,27 +1319,25 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
   prev_extState.segment<3>(10) = bias_;
   prev_extState.segment<NOISE_SIZE>(13) =
     Eigen::VectorXd::Zero(NOISE_SIZE);
+  // std::cout << "prev_extState: " << prev_extState.transpose() << std::endl;
 
-  // Previous extended state covariance
-  // prev_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0) = covariance_;
-  // prev_extCovariance.block<STATE_SIZE, NOISE_SIZE>(STATE_SIZE,0) =
-  //   Eigen::MatrixXd::Zero(STATE_SIZE, NOISE_SIZE);
-  // prev_extCovariance.block<NOISE_SIZE, STATE_SIZE>(0,STATE_SIZE) =
-  //   Eigen::MatrixXd::Zero(NOISE_SIZE, STATE_SIZE);
-  // prev_extCovariance.block<NOISE_SIZE, NOISE_SIZE>(STATE_SIZE,STATE_SIZE) =
-  //   model_covariance_;
   prev_extCovariance = ext_covariance_;
 
+  // Eigen::MatrixXd sigma =
+  //   (((double)UKF_FACTOR + (double)STATE_SIZE + (double)NOISE_SIZE) *
+  //   prev_extCovariance).sqrt();
+  Eigen::MatrixXd sigma = Eigen::LLT<Eigen::MatrixXd>(
+    ((double)UKF_FACTOR + (double)STATE_SIZE + (double)NOISE_SIZE) *
+    prev_extCovariance).matrixL();
+  // std::cout << "sigma: " << sigma << std::endl;
+
   std::vector<Eigen::VectorXd> prev_unscentedStates;
-
-  Eigen::MatrixXd sigma =
-    (((double)UKF_FACTOR + (double)STATE_SIZE + (double)NOISE_SIZE) *
-    prev_extCovariance).sqrt();
-
   prev_unscentedStates.push_back(prev_extState);
   for (size_t i = 0; i < sigma.cols(); i++) {
     prev_unscentedStates.push_back(prev_extState + sigma.col(i));
     prev_unscentedStates.push_back(prev_extState - sigma.col(i));
+    // std::cout << "prev_unscentedStates: " <<
+    //   prev_unscentedStates.back().transpose() << std::endl;
   }
 
   // Search for outliers
@@ -1328,6 +1361,8 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
     sensors.push_back(sample.sensor);
   }
 
+  // std::cout << "Z: " << Z.transpose() << std::endl;
+
   Eigen::MatrixXd R;
   int total_sensors = tracker_.sensors.size();
   if (clean_msg.axis == HORIZONTAL) {
@@ -1344,10 +1379,11 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
   for (size_t i = 0; i < prev_unscentedStates.size(); i++) {
     // Format change
     Eigen::Vector3d position = prev_unscentedStates[i].segment<3>(0);
-    Eigen::Quaterniond rotation (prev_unscentedStates[i](6),
+    Eigen::Quaterniond rotation(prev_unscentedStates[i](6),
       prev_unscentedStates[i](7),
       prev_unscentedStates[i](8),
       prev_unscentedStates[i](9));
+    rotation.normalize();
 
     // Choose the model according to the orientation
     if (clean_msg.axis == HORIZONTAL) {
@@ -1364,6 +1400,7 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
       environment_.lighthouses[clean_msg.lighthouse],
       lighthouses_[clean_msg.lighthouse], correction_));
     }
+    // std::cout << "estZ: " << prev_unscentedSamples.back().transpose() << std::endl;
   }
   // Average and Var and Cov initialization
   Eigen::VectorXd prev_unscentedSample;
@@ -1377,8 +1414,11 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
   }
   prev_unscentedSample = 1 / ((double)UKF_FACTOR + (double)STATE_SIZE + (double)NOISE_SIZE) *
     prev_unscentedSample;
+  // std::cout << "avgZ: "
+    // << prev_unscentedSample.transpose() << std::endl;
+  // std::cout << "Z - avgZ: " << (Z - prev_unscentedSample).transpose() << std::endl;
 
-  // Pvv
+  // Pzz
   prev_unscentedSampleVar = UKF_FACTOR *
     (prev_unscentedSamples[0] - prev_unscentedSample) *
     (prev_unscentedSamples[0] - prev_unscentedSample).transpose();
@@ -1389,7 +1429,10 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
   }
   prev_unscentedSampleVar = 1 / ((double)UKF_FACTOR + (double)STATE_SIZE + (double)NOISE_SIZE) *
     prev_unscentedSampleVar;
+  // Pvv
   prev_unscentedSampleVar += R;
+  // std::cout << "prev_unscentedSampleVar: "
+  //   << prev_unscentedSampleVar << std::endl;
 
   // Pxz
   prev_unscentedCov = UKF_FACTOR *
@@ -1402,14 +1445,20 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
   }
   prev_unscentedCov = 1 / ((double)UKF_FACTOR + (double)STATE_SIZE + (double)NOISE_SIZE) *
     prev_unscentedCov;
+  // std::cout << "prev_unscentedCov: "
+  //   << prev_unscentedCov << std::endl;
 
   // Kalman Gain
   Eigen::MatrixXd K = prev_unscentedCov * prev_unscentedSampleVar.inverse();
 
+  // std::cout << "K(Z - avgZ): " << (K * (Z - prev_unscentedSample)).transpose() << std::endl;
   // New state
   Eigen::VectorXd next_extState = prev_extState + K * (Z - prev_unscentedSample);
   Eigen::MatrixXd next_extCovariance = prev_extCovariance -
     K * prev_unscentedSampleVar * K.transpose();
+
+  // std::cout << "next_extState: " << next_extState.transpose() << std::endl;
+  // std::cout << "next_extCovariance: " << next_extCovariance << std::endl;
 
   // Save new state
   position_ = next_extState.segment<3>(0);
@@ -1452,6 +1501,9 @@ void ViveFilter::PrintState() {
   std::cout << position_(0) << ", "
     << position_(1) << ", "
     << position_(2) << ", ";
+  std::cout << velocity_(0) << ", "
+    << velocity_(1) << ", "
+    << velocity_(2) << ", ";
   Eigen::AngleAxisd AA(rotation_);
   std::cout << AA.axis()(0) * AA.angle() << ", "
     << AA.axis()(1) * AA.angle() << ", "
@@ -1502,8 +1554,8 @@ int main(int argc, char ** argv) {
         cal.trackers[tr.serial],
         cal.lighthouses,
         cal.environment,
-        1e-4, 1e-10, true,
-        filter::iekf);
+        1e-3, 1e-8, true,
+        filter::ukf);
     }
   }
   ROS_INFO("Trackers' setup complete.");
