@@ -188,12 +188,14 @@ HiveSolver::HiveSolver() {
 HiveSolver::HiveSolver(Tracker & tracker,
   LighthouseMap & lighthouses,
   Environment & environment,
-  bool correction) {
+  bool correction,
+  bool verbose) {
   tracker_ = tracker;
   lighthouses_ = lighthouses;
   environment_ = environment;
   correction_ = correction;
   valid_ = false;
+  verbose_ = verbose;
   // first pose
   pose_.transform.translation.x = 0.0;
   pose_.transform.translation.y = 0.0;
@@ -219,6 +221,8 @@ void HiveSolver::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
 
 void HiveSolver::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   if (msg == NULL) return;
+
+  hive::ViveLight * clean_msg = new hive::ViveLight(*msg);
 
   light_data_.push_back(*msg);
 
@@ -319,13 +323,15 @@ bool HiveSolver::Solve() {
   options.max_solver_time_in_seconds = 0.5;
   ceres::Solve(options, &problem, &summary);
 
-  std::cout << summary.final_cost <<  " - "
-    << pose[0] << ", "
-    << pose[1] << ", "
-    << pose[2] << ", "
-    << pose[3] << ", "
-    << pose[4] << ", "
-    << pose[5] << std::endl;
+  if (verbose_) {
+    std::cout << summary.final_cost <<  " - "
+      << pose[0] << ", "
+      << pose[1] << ", "
+      << pose[2] << ", "
+      << pose[3] << ", "
+      << pose[4] << ", "
+      << pose[5] << std::endl;
+  }
 
   // Check pose
   double pose_norm = sqrt(pose[0]*pose[0] + pose[1]*pose[1] + pose[2]*pose[2]);

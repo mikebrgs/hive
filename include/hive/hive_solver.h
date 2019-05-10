@@ -43,7 +43,8 @@ class HiveSolver : public Solver {
   HiveSolver(Tracker & tracker,
     LighthouseMap & lighthouses,
     Environment & environment,
-    bool correction);
+    bool correction,
+    bool verbose = false);
   // Destructor
   ~HiveSolver();
   // Process an IMU measurement
@@ -63,6 +64,7 @@ class HiveSolver : public Solver {
   LightVector light_data_;
   bool correction_;
   bool valid_;
+  bool verbose_;
 };
 
 #endif // HIVE_HIVE_SOLVER_H_

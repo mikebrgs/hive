@@ -110,3 +110,37 @@ env5_data7.bag - same
 env5_data8.bag - moving
 
 env5_data9.bag - same
+
+ENV6
+
+data6.1.bag - static on sofa
+
+data6.2.bag - static on sofa, same orientation different position
+
+data6.3.bag - same
+
+data6.4.bag - on sofa again but different orientation
+
+data6.5.bag - same
+
+data6.6.bag - on top of pillow on top os sofa
+
+data6.7.bag - on top of chair
+
+data6.8.bag - same
+
+data6.9.bag - same
+
+data6.10.bag - movement
+
+data6.11.bag - movement - best bag
+
+data6.12.bag - movement
+
+data6.13.bag - movement - worse bag
+
+ENV7
+
+data7.1.bag - data7.8.bag - static
+
+data7.9.bag - data7.11.bag - dynamic

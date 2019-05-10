@@ -73,8 +73,8 @@ for topic, msg, t in bag.read_messages(topics=['/tf', 'tf']):
   if not (oRa is None) and not (aRt is None) and not (vRt is None) and not (oRv is None):
     test_oRv = oRa * aRt * vRt.transpose();
     test_oPv = oRa * (aRt * (-vRt.transpose() * vPt) + aPt) + oPa
-    print(oPv.transpose())
-    print(test_oPv.transpose())
+    print(oRv)
+    print(test_oRv)
     print(" ")
 
 # fig2, axs = plt.subplots(4, 2, sharex = True, sharey= False)
