@@ -5,16 +5,22 @@ import rosbag
 import numpy as np
 import tf.transformations
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 offset_bag = rosbag.Bag(sys.argv[1])
 bag = rosbag.Bag(sys.argv[2])
-vive_poses = np.empty((7,0))
-optitrack_poses = np.empty((7,0))
+vive_poses = (list(), list(), list())
+optitrack_poses = (list(), list(), list())
 
 vRt = None
+vPt = None
 oRa = None
+oPa = None
 oRv = None
+oPv = None
 aRt = None
+aPt = None
+
 for topic, msg, t in offset_bag.read_messages(topics=['/offset', 'offset']):
   if msg.header.frame_id == "optitrack":
     oPv = np.matrix([msg.transform.translation.x,
@@ -44,6 +50,9 @@ for topic, msg, t in bag.read_messages(topics=['/tf', 'tf']):
       msg.transform.rotation.y,
       msg.transform.rotation.z,
       msg.transform.rotation.w])[0:3,0:3])
+    vive_poses[0].append(float(vPt[0]))
+    vive_poses[1].append(float(vPt[1]))
+    vive_poses[2].append(float(vPt[2]))
     # print(vRt)
     # pose = np.array([[msg.transform.translation.x,
     #   msg.transform.translation.y,
@@ -61,6 +70,11 @@ for topic, msg, t in bag.read_messages(topics=['/tf', 'tf']):
       msg.transform.rotation.y,
       msg.transform.rotation.z,
       msg.transform.rotation.w])[0:3,0:3])
+    # opti_vPt = oRv.transpose() * oRa * aRt
+    opti_vPt = oRv.transpose() * (oRa * aPt + oPa) + (-oRv.transpose() * oPv)
+    optitrack_poses[0].append(float(opti_vPt[0]))
+    optitrack_poses[1].append(float(opti_vPt[1]))
+    optitrack_poses[2].append(float(opti_vPt[2]))
     # print(oRa)
     # pose = np.array([[msg.transform.translation.x,
     #   msg.transform.translation.y,
@@ -70,27 +84,17 @@ for topic, msg, t in bag.read_messages(topics=['/tf', 'tf']):
     #   msg.transform.rotation.y,
     #   msg.transform.rotation.z]]).transpose()
     # optitrack_poses = np.hstack((optitrack_poses,pose))
-  if not (oRa is None) and not (aRt is None) and not (vRt is None) and not (oRv is None):
-    test_oRv = oRa * aRt * vRt.transpose();
-    test_oPv = oRa * (aRt * (-vRt.transpose() * vPt) + aPt) + oPa
-    print(oRv)
-    print(test_oRv)
-    print(" ")
+  # if not (oRa is None) and not (aRt is None) and not (vRt is None) and not (oRv is None):
+  #   test_oRv = oRa * aRt * vRt.transpose();
+  #   test_oPv = oRa * (aRt * (-vRt.transpose() * vPt) + aPt) + oPa
+  #   print(oRv)
+  #   print(test_oRv)
+  #   print(" ")
 
-# fig2, axs = plt.subplots(4, 2, sharex = True, sharey= False)
 
-# axs[0,0].plot(poses[0,:])
-# axs[0,0].set_title("PX")
-# axs[1,0].plot(poses[1,:])
-# axs[1,0].set_title("PY")
-# axs[2,0].plot(poses[2,:])
-# axs[2,0].set_title("PZ")
-# axs[0,1].plot(poses[3,:])
-# axs[0,1].set_title("QW")
-# axs[1,1].plot(poses[4,:])
-# axs[1,1].set_title("QX")
-# axs[2,1].plot(poses[5,:])
-# axs[2,1].set_title("QY")
-# axs[3,1].plot(poses[6,:])
-# axs[3,1].set_title("QZ")
-# plt.show()
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+ax.plot(xs = vive_poses[0], ys = vive_poses[1], zs = vive_poses[2])
+ax.plot(xs = optitrack_poses[0][10:-10], ys = optitrack_poses[1][10:-10], zs = optitrack_poses[2][10:-10])
+
+plt.show()

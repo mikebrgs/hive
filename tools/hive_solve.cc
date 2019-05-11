@@ -80,6 +80,14 @@ int main(int argc, char ** argv) {
         bag_it->instantiate<tf2_msgs::TFMessage>();
       for (auto tf_it = tf->transforms.begin();
         tf_it != tf->transforms.end(); tf_it++) {
+        std::cout << "OptiTrack: " <<
+          tf_it->transform.translation.x << ", " <<
+          tf_it->transform.translation.y << ", " <<
+          tf_it->transform.translation.z << ", " <<
+          tf_it->transform.rotation.w << ", " <<
+          tf_it->transform.rotation.x << ", " <<
+          tf_it->transform.rotation.y << ", " <<
+          tf_it->transform.rotation.z << std::endl;
         wbag.write("/tf", tf_it->header.stamp, *tf_it);
       }
     }
@@ -93,7 +101,14 @@ int main(int argc, char ** argv) {
     solver[vl->header.frame_id]->ProcessLight(vl);
     geometry_msgs::TransformStamped msg;
     if (solver[vl->header.frame_id]->GetTransform(msg))
-      std::cout << "VivePose" << std::endl;
+      std::cout << "Vive: " <<
+        msg.transform.translation.x << ", " <<
+        msg.transform.translation.y << ", " <<
+        msg.transform.translation.z << ", " <<
+        msg.transform.rotation.w << ", " <<
+        msg.transform.rotation.x << ", " <<
+        msg.transform.rotation.y << ", " <<
+        msg.transform.rotation.z << std::endl;
       wbag.write("/tf", vl->header.stamp, msg);
     counter++;
   }
