@@ -92,9 +92,23 @@ for topic, msg, t in bag.read_messages(topics=['/tf', 'tf']):
   #   print(" ")
 
 
+print(vive_poses[0])
+print("***")
+print(vive_poses[1])
+print("***")
+print(vive_poses[2])
+print("***")
+
+print(optitrack_poses[0][10:-10])
+print("***")
+print(optitrack_poses[1][10:-10])
+print("***")
+print(optitrack_poses[2][10:-10])
+print("***")
+
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 ax.plot(xs = vive_poses[0], ys = vive_poses[1], zs = vive_poses[2])
 ax.plot(xs = optitrack_poses[0][10:-10], ys = optitrack_poses[1][10:-10], zs = optitrack_poses[2][10:-10])
 
-plt.show()
+# plt.show()

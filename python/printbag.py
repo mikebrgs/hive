@@ -9,7 +9,7 @@ if len(args) < 2:
 
 bag = rosbag.Bag(args[1], "r")
 
-for topic, msg, t in bag.read_messages(topics=["/loc/vive/trackers"]):
+for topic, msg, t in bag.read_messages(topics=["/tf"]):
   print(msg)
   # if topic == "/tf":
   #   for smp_msg in msg.transforms:

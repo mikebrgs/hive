@@ -143,6 +143,7 @@ add_executable(hive_print_offset tools/hive_print_offset.cc src/vive.cc src/hive
 add_executable(hive_refine src/vive_refine.cc src/vive.cc src/vive_solve.cc)
 add_executable(hive_filter src/vive_filter.cc src/vive.cc)
 add_executable(hive_pgo src/vive_pgo.cc src/vive.cc)
+add_executable(hive_analytics tools/hive_analytics.cc src/vive.cc src/hive_solver.cc)
 
 add_executable(hive_calibrate tools/hive_calibrate.cc src/vive.cc src/vive_solve.cc src/hive_calibrator.cc)
 add_executable(hive_solve tools/hive_solve.cc src/vive.cc src/hive_solver.cc)
@@ -163,6 +164,7 @@ add_dependencies(hive_print_offset hive_generate_messages_cpp)
 add_dependencies(hive_refine hive_generate_messages_cpp)
 add_dependencies(hive_filter hive_generate_messages_cpp)
 add_dependencies(hive_pgo hive_generate_messages_cpp)
+add_dependencies(hive_analytics hive_generate_messages_cpp)
 
 add_dependencies(hive_calibrate hive_generate_messages_cpp)
 add_dependencies(hive_solve hive_generate_messages_cpp)
@@ -214,6 +216,12 @@ target_link_libraries(hive_offset
 )
 
 target_link_libraries(hive_print_offset
+  ${catkin_LIBRARIES}
+  ${EIGEN_LIBRARIES}
+  ${CERES_LIBRARIES}
+)
+
+target_link_libraries(hive_analytics
   ${catkin_LIBRARIES}
   ${EIGEN_LIBRARIES}
   ${CERES_LIBRARIES}
