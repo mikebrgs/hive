@@ -10,7 +10,7 @@
 #include <hive/vive_general.h>
 #include <hive/vive_solver.h>
 #include <hive/vive_solve.h>
-#include <hive/vive_cost.h>
+// #include <hive/vive_cost.h>
 #include <hive/vive.h>
 
 // Hive msgs

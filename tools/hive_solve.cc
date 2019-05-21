@@ -5,6 +5,8 @@
 
 // Hive imports
 #include <hive/hive_solver.h>
+#include <hive/vive_filter.h>
+#include <hive/vive_pgo.h>
 #include <hive/vive_general.h>
 
 // Incoming measurements
@@ -32,6 +34,7 @@ int main(int argc, char ** argv) {
   // Data
   Calibration calibration;
   std::map<std::string, Solver*> solver;
+  std::map<std::string, Solver*> aux_solver;
 
   // Read bag with data
   if (argc < 3) {
@@ -65,14 +68,42 @@ int main(int argc, char ** argv) {
     calibration.SetTrackers(*vt);
   }
   for (auto tracker : calibration.trackers) {
-    solver[tracker.first] = new HiveSolver(calibration.trackers[tracker.first],
+    // Aux solver
+    aux_solver[tracker.first] = new HiveSolver(calibration.trackers[tracker.first],
       calibration.lighthouses,
       calibration.environment,
       true);
+    // APE
+    // solver[tracker.first] = new HiveSolver(calibration.trackers[tracker.first],
+    //   calibration.lighthouses,
+    //   calibration.environment,
+    //   true);
+    // EKF
+    solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
+      calibration.lighthouses,
+      calibration.environment,
+      1e-2, 1e-4, true, filter::ekf);
+    // // IEKF
+    // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
+    //   calibration.lighthouses,
+    //   calibration.environment,
+    //   1e-2, 1e-4, true, filter::iekf);
+    // // UKF
+    // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
+    //   calibration.lighthouses,
+    //   calibration.environment,
+    //   1e-3, 1e-8, true, filter::ukf);
+    // // PGO
+    // solver[tracker.first] = new PoseGraph(calibration.environment,
+    //   calibration.trackers[tracker.first],
+    //   calibration.lighthouses,
+    //   4, 0.4, true, true);
   }
   ROS_INFO("Trackers' setup complete.");
 
-
+  Eigen::Matrix3d vRt;
+  Eigen::Quaterniond vQt;
+  Eigen::Vector3d P;
     // Read OptiTrack poses
     rosbag::View view_ot(rbag, rosbag::TopicQuery("/tf"));
     for (auto bag_it = view_ot.begin(); bag_it != view_ot.end(); bag_it++) {
@@ -93,24 +124,90 @@ int main(int argc, char ** argv) {
     }
   ROS_INFO("OptiTrack' setup complete.");
 
-  // Light data
-  size_t counter = 0;
-  rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
+  // Data
+  std::vector<std::string> topics;
+  topics.push_back("/loc/vive/light");
+  topics.push_back("/loc/vive/light/");
+  topics.push_back("/loc/vive/imu");
+  topics.push_back("/loc/vive/imu/");
+  rosbag::View view_li(rbag, rosbag::TopicQuery(topics));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-    solver[vl->header.frame_id]->ProcessLight(vl);
-    geometry_msgs::TransformStamped msg;
-    if (solver[vl->header.frame_id]->GetTransform(msg))
-      std::cout << "Vive: " <<
-        msg.transform.translation.x << ", " <<
-        msg.transform.translation.y << ", " <<
-        msg.transform.translation.z << ", " <<
-        msg.transform.rotation.w << ", " <<
-        msg.transform.rotation.x << ", " <<
-        msg.transform.rotation.y << ", " <<
-        msg.transform.rotation.z << std::endl;
-      wbag.write("/tf", vl->header.stamp, msg);
-    counter++;
+    if (vl != NULL) {
+      // ROS_INFO("LIGHT");
+      solver[vl->header.frame_id]->ProcessLight(vl);
+      aux_solver[vl->header.frame_id]->ProcessLight(vl);
+      geometry_msgs::TransformStamped msg;
+      if (solver[vl->header.frame_id]->GetTransform(msg)) {
+        std::cout << "Vive: " <<
+          msg.transform.translation.x << ", " <<
+          msg.transform.translation.y << ", " <<
+          msg.transform.translation.z << ", " <<
+          msg.transform.rotation.w << ", " <<
+          msg.transform.rotation.x << ", " <<
+          msg.transform.rotation.y << ", " <<
+          msg.transform.rotation.z << std::endl;
+        wbag.write("/tf", vl->header.stamp, msg);
+      }
+      if (aux_solver[vl->header.frame_id]->GetTransform(msg)) {
+        P = Eigen::Vector3d(msg.transform.translation.x,
+          msg.transform.translation.y,
+          msg.transform.translation.z);
+        vQt = Eigen::Quaterniond(msg.transform.rotation.w,
+          msg.transform.rotation.x,
+          msg.transform.rotation.y,
+          msg.transform.rotation.z);
+        vRt = vQt.toRotationMatrix();
+        std::cout << "ViveAux: " <<
+          msg.transform.translation.x << ", " <<
+          msg.transform.translation.y << ", " <<
+          msg.transform.translation.z << ", " <<
+          msg.transform.rotation.w << ", " <<
+          msg.transform.rotation.x << ", " <<
+          msg.transform.rotation.y << ", " <<
+          msg.transform.rotation.z << std::endl;
+        // wbag.write("/tf", vl->header.stamp, msg);
+      }
+      std::cout << std::endl;
+    }
+    const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();
+    if (vi != NULL) {
+      // ROS_INFO("IMU");
+      Eigen::Vector3d iG(vi->linear_acceleration.x,
+        vi->linear_acceleration.y,
+        vi->linear_acceleration.z);
+      Eigen::Quaterniond tQi = Eigen::Quaterniond(
+        calibration.trackers[vi->header.frame_id].imu_transform.rotation.w,
+        calibration.trackers[vi->header.frame_id].imu_transform.rotation.x,
+        calibration.trackers[vi->header.frame_id].imu_transform.rotation.y,
+        calibration.trackers[vi->header.frame_id].imu_transform.rotation.z);
+      Eigen::Matrix3d tRi = tQi.toRotationMatrix();
+      // Eigen::Vector3d vG = vRt * tRi * iG;
+      // std::cout << "vQt: " << vQt.w() << ", "
+      //   << vQt.x() << ", "
+      //   << vQt.y() <<  ", "
+      //   << vQt.z() << std::endl;
+      // std::cout << "tQi: " << tQi.w() << ", "
+      //   << tQi.x() << ", "
+      //   << tQi.y() << ", "
+      // << tQi.z() << std::endl;
+      // std::cout << "iG: " << (iG).transpose() << std::endl;
+      // std::cout << "vRt * tRi * iG: " << (vRt * tRi * iG).transpose() << std::endl;
+      // std::cout << "vRt:\n" << vRt << std::endl; 
+      // std::cout << "tRi:\n" << tRi << std::endl; 
+      // std::cout << "iG:\n" << iG << std::endl; 
+      // std::cout << "vRt * iG: " << (vRt * iG).transpose() << std::endl;
+      // std::cout << "tRi * iG: " << (tRi * iG).transpose() << std::endl;
+      // std::cout << "cal vG: " << calibration.environment.gravity.x << " "
+      //   << calibration.environment.gravity.y << " "
+      //   << calibration.environment.gravity.z << std::endl;
+      // std::cout << "tQi" << " - "
+      //   << calibration.trackers[vi->header.frame_id].imu_transform.rotation.w << ", "
+      //   << calibration.trackers[vi->header.frame_id].imu_transform.rotation.x << ", "
+      //   << calibration.trackers[vi->header.frame_id].imu_transform.rotation.y << ", "
+      //   << calibration.trackers[vi->header.frame_id].imu_transform.rotation.z << std::endl;
+      solver[vi->header.frame_id]->ProcessImu(vi);
+    }
   }
   ROS_INFO("Light read complete.");
   rbag.close();

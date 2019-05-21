@@ -8,8 +8,11 @@ if len(args) < 2:
   sys.exit(0)
 
 bag = rosbag.Bag(args[1], "r")
-
-for topic, msg, t in bag.read_messages(topics=["/tf"]):
+# "/loc/vive/imu", "loc/vive/imu/", 
+for topic, msg, t in bag.read_messages(topics=["/loc/vive/trackers"]):
+  # print(str(msg.linear_acceleration.x) + " " +
+  #   str(msg.linear_acceleration.y) + " " +
+  #   str(msg.linear_acceleration.z))
   print(msg)
   # if topic == "/tf":
   #   for smp_msg in msg.transforms:

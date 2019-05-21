@@ -404,70 +404,70 @@ bool Calibration::SetTrackers(hive::ViveCalibrationTrackerArray const& msg) {
       trackers[tr_it->serial].imu_transform.translation.x = 0.0089908502996;
       trackers[tr_it->serial].imu_transform.translation.y = 0.0193033590913;
       trackers[tr_it->serial].imu_transform.translation.z = 0.063955232501;
-      trackers[tr_it->serial].imu_transform.rotation.w = 0.0;
-      trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
-      trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
-      trackers[tr_it->serial].imu_transform.rotation.z = 1.0;
-      // Head transform
-      trackers[tr_it->serial].imu_transform.translation.x = 0.0;
-      trackers[tr_it->serial].imu_transform.translation.y = 0.0397689975798;
-      trackers[tr_it->serial].imu_transform.translation.z = 0.0515097379684;
-      trackers[tr_it->serial].imu_transform.rotation.w = -1.0;
+      trackers[tr_it->serial].imu_transform.rotation.w = 1.0;
       trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
       trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
       trackers[tr_it->serial].imu_transform.rotation.z = 0.0;
+      // Head transform
+      trackers[tr_it->serial].head_transform.translation.x = 0.0;
+      trackers[tr_it->serial].head_transform.translation.y = 0.0397689975798;
+      trackers[tr_it->serial].head_transform.translation.z = 0.0515097379684;
+      trackers[tr_it->serial].head_transform.rotation.w = -1.0;
+      trackers[tr_it->serial].head_transform.rotation.x = 0.0;
+      trackers[tr_it->serial].head_transform.rotation.y = 0.0;
+      trackers[tr_it->serial].head_transform.rotation.z = 0.0;
     } else if (tr_it->serial == "LHR-08DE340B") {
       // IMU transform
       trackers[tr_it->serial].imu_transform.translation.x = 0.0089908502996;
       trackers[tr_it->serial].imu_transform.translation.y = 0.0193033590913;
       trackers[tr_it->serial].imu_transform.translation.z = 0.063955232501;
-      trackers[tr_it->serial].imu_transform.rotation.w = 0.0;
-      trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
-      trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
-      trackers[tr_it->serial].imu_transform.rotation.z = 1.0;
-      // Head transform
-      trackers[tr_it->serial].imu_transform.translation.x = 0.0;
-      trackers[tr_it->serial].imu_transform.translation.y = 0.0397689975798;
-      trackers[tr_it->serial].imu_transform.translation.z = 0.0515097379684;
-      trackers[tr_it->serial].imu_transform.rotation.w = -1.0;
+      trackers[tr_it->serial].imu_transform.rotation.w = 1.0;
       trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
       trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
       trackers[tr_it->serial].imu_transform.rotation.z = 0.0;
+      // Head transform
+      trackers[tr_it->serial].head_transform.translation.x = 0.0;
+      trackers[tr_it->serial].head_transform.translation.y = 0.0397689975798;
+      trackers[tr_it->serial].head_transform.translation.z = 0.0515097379684;
+      trackers[tr_it->serial].head_transform.rotation.w = -1.0;
+      trackers[tr_it->serial].head_transform.rotation.x = 0.0;
+      trackers[tr_it->serial].head_transform.rotation.y = 0.0;
+      trackers[tr_it->serial].head_transform.rotation.z = 0.0;
     } else if (tr_it->serial == "LHR-08DDBC05") {
       // IMU transform
       trackers[tr_it->serial].imu_transform.translation.x = 0.0089908502996;
       trackers[tr_it->serial].imu_transform.translation.y = 0.0193033590913;
       trackers[tr_it->serial].imu_transform.translation.z = 0.063955232501;
-      trackers[tr_it->serial].imu_transform.rotation.w = 0.0;
-      trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
-      trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
-      trackers[tr_it->serial].imu_transform.rotation.z = 1.0;
-      // Head transform
-      trackers[tr_it->serial].imu_transform.translation.x = 0.0;
-      trackers[tr_it->serial].imu_transform.translation.y = 0.0397689975798;
-      trackers[tr_it->serial].imu_transform.translation.z = 0.0515097379684;
-      trackers[tr_it->serial].imu_transform.rotation.w = -1.0;
+      trackers[tr_it->serial].imu_transform.rotation.w = 1.0;
       trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
       trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
       trackers[tr_it->serial].imu_transform.rotation.z = 0.0;
+      // Head transform
+      trackers[tr_it->serial].head_transform.translation.x = 0.0;
+      trackers[tr_it->serial].head_transform.translation.y = 0.0397689975798;
+      trackers[tr_it->serial].head_transform.translation.z = 0.0515097379684;
+      trackers[tr_it->serial].head_transform.rotation.w = -1.0;
+      trackers[tr_it->serial].head_transform.rotation.x = 0.0;
+      trackers[tr_it->serial].head_transform.rotation.y = 0.0;
+      trackers[tr_it->serial].head_transform.rotation.z = 0.0;
     } else {
       // tr_it->serial == "LHR-FD35B946"
       // IMU transform
       trackers[tr_it->serial].imu_transform.translation.x = -0.00663009984419;
       trackers[tr_it->serial].imu_transform.translation.y = -0.050469700247;
       trackers[tr_it->serial].imu_transform.translation.z = -0.0236250199378;
-      trackers[tr_it->serial].imu_transform.rotation.w = 0.0;
+      trackers[tr_it->serial].imu_transform.rotation.w = 1.0;
       trackers[tr_it->serial].imu_transform.rotation.x = 0.0;
       trackers[tr_it->serial].imu_transform.rotation.y = 0.0;
-      trackers[tr_it->serial].imu_transform.rotation.z = 1.0;
-      // Head transform
-      trackers[tr_it->serial].imu_transform.translation.x = 0.0;
-      trackers[tr_it->serial].imu_transform.translation.y = 0.0710000023246;
-      trackers[tr_it->serial].imu_transform.translation.z = -0.0309999994934;
-      trackers[tr_it->serial].imu_transform.rotation.w = 0.0;
-      trackers[tr_it->serial].imu_transform.rotation.x = 0.725374400616;
-      trackers[tr_it->serial].imu_transform.rotation.y = -0.688354551792;
       trackers[tr_it->serial].imu_transform.rotation.z = 0.0;
+      // Head transform
+      trackers[tr_it->serial].head_transform.translation.x = 0.0;
+      trackers[tr_it->serial].head_transform.translation.y = 0.0710000023246;
+      trackers[tr_it->serial].head_transform.translation.z = -0.0309999994934;
+      trackers[tr_it->serial].head_transform.rotation.w = 0.0;
+      trackers[tr_it->serial].head_transform.rotation.x = 0.725374400616;
+      trackers[tr_it->serial].head_transform.rotation.y = -0.688354551792;
+      trackers[tr_it->serial].head_transform.rotation.z = 0.0;
     }
 
     for (std::vector<hive::ViveExtrinsics>::const_iterator ss_it = tr_it->extrinsics.begin();

@@ -75,6 +75,257 @@ namespace filter {
     }
     return slicedR;
   }
+
+  class ViveHorizontalCost
+  {
+  public:
+    // Constructor
+    ViveHorizontalCost(hive::ViveLight data,
+      geometry_msgs::Transform vTl, // vive to lighthouse
+      Tracker tracker,
+      Motor lighthouse,
+      bool correction);
+    // Destructor
+    ~ViveHorizontalCost();
+    // Ceres operator
+    template <typename T>
+    bool operator()(const T* const * parameters, T* residual) const;
+  private:
+    bool correction_;
+    Tracker tracker_;
+    Motor lighthouse_;
+    hive::ViveLight data_;
+    geometry_msgs::Transform vTl_;
+  };
+
+  // Light cost - Cost using the poses from the imu frame to the vive frame
+  class ViveVerticalCost
+  {
+  public:
+    // Constructor
+    ViveVerticalCost(hive::ViveLight data,
+      geometry_msgs::Transform vTl, // Vive to lighthouse
+      Tracker tracker,
+      Motor lighthouse,
+      bool correction);
+    // Destructor
+    ~ViveVerticalCost();
+    // Ceres operator
+    template <typename T>
+    bool operator()(const T* const * parameters, T* residual) const;
+  private:
+    bool correction_;
+    Tracker tracker_;
+    Motor lighthouse_;
+    hive::ViveLight data_;
+    geometry_msgs::Transform vTl_;
+  };
+
+  ViveHorizontalCost::ViveHorizontalCost(hive::ViveLight data,
+      geometry_msgs::Transform vTl,
+      Tracker tracker,
+      Motor lighthouse,
+      bool correction) {
+    lighthouse_ = lighthouse;
+    correction_ = correction;
+    tracker_ = tracker;
+    data_ = data;
+    vTl_ = vTl;
+    return;
+  }
+
+  ViveHorizontalCost::~ViveHorizontalCost() {
+    // Do nothing
+    return;
+  }
+
+  template <typename T>
+  bool ViveHorizontalCost::operator()(const T* const * parameters,
+    T* residual) const {
+    // Optimization parameters
+    Eigen::Matrix<T, 3, 1> vPi;
+    vPi << parameters[0][0],
+      parameters[0][1],
+      parameters[0][2];
+    Eigen::Matrix<T, 3, 3> vRi;
+    ceres::AngleAxisToRotationMatrix(&parameters[0][6], vRi.data());
+
+    // Lighthouse pose
+    Eigen::Matrix<T, 3, 1> vPl;
+    vPl << T(vTl_.translation.x),
+      T(vTl_.translation.y),
+      T(vTl_.translation.z);
+    Eigen::Quaternion<T> vQl(
+      T(vTl_.rotation.w),
+      T(vTl_.rotation.x),
+      T(vTl_.rotation.y),
+      T(vTl_.rotation.z));
+    Eigen::Matrix<T, 3, 3> vRl;
+    vRl = vQl.toRotationMatrix();
+
+    // Inertial transform
+    Eigen::Matrix<T,3,1> tPi;
+    tPi << T(tracker_.imu_transform.translation.x),
+      T(tracker_.imu_transform.translation.y),
+      T(tracker_.imu_transform.translation.z);
+    Eigen::Quaternion<T> tQi(
+      T(tracker_.imu_transform.rotation.w),
+      T(tracker_.imu_transform.rotation.x),
+      T(tracker_.imu_transform.rotation.y),
+      T(tracker_.imu_transform.rotation.z));
+    Eigen::Matrix<T, 3, 3> tRi;
+    tRi = tQi.toRotationMatrix();
+
+    // Invert inertial transform
+    Eigen::Matrix<T,3,1> iPt = - tRi.transpose() * tPi;
+    Eigen::Matrix<T,3,3> iRt = tRi.transpose();
+
+    // Vive and IMU frame to lighthouse and tracker
+    Eigen::Matrix<T, 3, 1> lPv;
+    lPv = - vRl.transpose() * vPl;
+    Eigen::Matrix<T, 3, 3> lRv;
+    lRv = vRl.transpose();
+    Eigen::Matrix<T, 3, 1> lPt;
+    lPt = lRv * (vRi * iPt + vPi) + lPv;
+    Eigen::Matrix<T, 3, 3> lRt;
+    lRt = lRv * vRi * iRt;
+
+    size_t counter = 0;
+    for (auto li_it = data_.samples.begin();
+      li_it != data_.samples.end(); li_it++) {
+      auto sensor_it = tracker_.sensors.find((uint8_t)li_it->sensor);
+      if (sensor_it == tracker_.sensors.end()) return false;
+      Eigen::Matrix<T, 3, 1> tPs;
+      tPs << T(sensor_it->second.position.x),
+        T(sensor_it->second.position.y),
+        T(sensor_it->second.position.z);
+
+      Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
+
+      T ang; // The final angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
+      T phase = T(lighthouse_.phase);
+      T tilt = T(lighthouse_.tilt);
+      T gib_phase = T(lighthouse_.gib_phase);
+      T gib_mag = T(lighthouse_.gib_magnitude);
+      T curve = T(lighthouse_.curve);
+
+      if (correction_) {
+        ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
+      } else {
+        ang = atan(x);
+      }
+
+      residual[counter] = T(li_it->angle) - ang;
+      counter++;
+    }
+    return true;
+  }
+
+  ViveVerticalCost::ViveVerticalCost(hive::ViveLight data,
+    geometry_msgs::Transform vTl,
+    Tracker tracker,
+    Motor lighthouse,
+    bool correction) {
+    lighthouse_ = lighthouse;
+    correction_ = correction;
+    tracker_ = tracker;
+    data_ = data;
+    vTl_ = vTl;
+    return;
+  }
+
+  ViveVerticalCost::~ViveVerticalCost() {
+    // Do nothing
+    return;
+  }
+
+  template <typename T>
+  bool ViveVerticalCost::operator()(const T* const * parameters,
+    T* residual) const {
+    // Optimization parameters
+    Eigen::Matrix<T, 3, 1> vPi;
+    vPi << parameters[0][0],
+      parameters[0][1],
+      parameters[0][2];
+    Eigen::Matrix<T, 3, 3> vRi;
+    ceres::AngleAxisToRotationMatrix(&parameters[0][6], vRi.data());
+
+    // Lighthouse pose
+    Eigen::Matrix<T, 3, 1> vPl;
+    vPl << T(vTl_.translation.x),
+      T(vTl_.translation.y),
+      T(vTl_.translation.z);
+    Eigen::Quaternion<T> vQl(
+      T(vTl_.rotation.w),
+      T(vTl_.rotation.x),
+      T(vTl_.rotation.y),
+      T(vTl_.rotation.z));
+    Eigen::Matrix<T, 3, 3> vRl;
+    vRl = vQl.toRotationMatrix();
+
+    // Inertial transform
+    Eigen::Matrix<T,3,1> tPi;
+    tPi << T(tracker_.imu_transform.translation.x),
+      T(tracker_.imu_transform.translation.y),
+      T(tracker_.imu_transform.translation.z);
+    Eigen::Quaternion<T> tQi(
+      T(tracker_.imu_transform.rotation.w),
+      T(tracker_.imu_transform.rotation.x),
+      T(tracker_.imu_transform.rotation.y),
+      T(tracker_.imu_transform.rotation.z));
+    Eigen::Matrix<T, 3, 3> tRi;
+    tRi = tQi.toRotationMatrix();
+
+    // Invert inertial transform
+    Eigen::Matrix<T,3,1> iPt = - tRi.transpose() * tPi;
+    Eigen::Matrix<T,3,3> iRt = tRi.transpose();
+
+    // Vive and IMU frame to lighthouse and tracker
+    Eigen::Matrix<T, 3, 1> lPv;
+    lPv = - vRl.transpose() * vPl;
+    Eigen::Matrix<T, 3, 3> lRv;
+    lRv = vRl.transpose();
+    Eigen::Matrix<T, 3, 1> lPt;
+    lPt = lRv * (vRi * iPt + vPi) + lPv;
+    Eigen::Matrix<T, 3, 3> lRt;
+    lRt = lRv * vRi * iRt;
+
+    size_t counter = 0;
+    for (auto li_it = data_.samples.begin();
+      li_it != data_.samples.end(); li_it++) {
+      auto sensor_it = tracker_.sensors.find((uint8_t)li_it->sensor);
+      if (sensor_it == tracker_.sensors.end()) return false;
+      Eigen::Matrix<T, 3, 1> tPs;
+      tPs << T(sensor_it->second.position.x),
+        T(sensor_it->second.position.y),
+        T(sensor_it->second.position.z);
+
+      Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
+
+      T ang; // The final angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
+      T phase = T(lighthouse_.phase);
+      T tilt = T(lighthouse_.tilt);
+      T gib_phase = T(lighthouse_.gib_phase);
+      T gib_mag = T(lighthouse_.gib_magnitude);
+      T curve = T(lighthouse_.curve);
+
+      if (correction_) {
+        ang = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
+      } else {
+        ang = atan(y);
+      }
+
+
+      residual[counter] = T(li_it->angle) - ang;
+      counter++;
+    }
+    return true;
+  }
+
 }
 
 ViveFilter::ViveFilter() {}
@@ -185,9 +436,9 @@ bool ViveFilter::Initialize() {
     // Horizontal
     if (sample.axis == HORIZONTAL) {
       // Horizontal data
-      ceres::DynamicAutoDiffCostFunction<ViveHorizontalCost, 4> * hcost =
-        new ceres::DynamicAutoDiffCostFunction<ViveHorizontalCost, 4>
-        (new ViveHorizontalCost(sample,
+      ceres::DynamicAutoDiffCostFunction<filter::ViveHorizontalCost, 4> * hcost =
+        new ceres::DynamicAutoDiffCostFunction<filter::ViveHorizontalCost, 4>
+        (new filter::ViveHorizontalCost(sample,
           lhTF,
           tracker_,
           lighthouses_[sample.lighthouse].horizontal_motor,
@@ -199,9 +450,9 @@ bool ViveFilter::Initialize() {
     // Vertical
     if (sample.axis == VERTICAL) {
       // Vertical data
-      ceres::DynamicAutoDiffCostFunction<ViveVerticalCost, 4> * vcost =
-        new ceres::DynamicAutoDiffCostFunction<ViveVerticalCost, 4>
-        (new ViveVerticalCost(sample,
+      ceres::DynamicAutoDiffCostFunction<filter::ViveVerticalCost, 4> * vcost =
+        new ceres::DynamicAutoDiffCostFunction<filter::ViveVerticalCost, 4>
+        (new filter::ViveVerticalCost(sample,
           lhTF,
           tracker_,
           lighthouses_[sample.lighthouse].vertical_motor,
@@ -220,6 +471,7 @@ bool ViveFilter::Initialize() {
   if (summary.final_cost > 1e-4) return false;
 
   std::cout << "init ";
+  ROS_FATAL("INIT");
 
   position_ = Eigen::Vector3d(pose[0], pose[1], pose[2]);
   velocity_ = Eigen::Vector3d(pose[3], pose[4], pose[5]);
@@ -325,9 +577,9 @@ bool ViveFilter::GetTransform(geometry_msgs::TransformStamped& msg) {
   Eigen::Quaterniond vQt(vRt);
 
   // Change to this to be in the light frame
-  msg.transform.translation.x = vRt(0);
-  msg.transform.translation.y = vRt(1);
-  msg.transform.translation.z = vRt(2);
+  msg.transform.translation.x = vPt(0);
+  msg.transform.translation.y = vPt(1);
+  msg.transform.translation.z = vPt(2);
   msg.transform.rotation.w = vQt.w();
   msg.transform.rotation.x = vQt.x();
   msg.transform.rotation.y = vQt.y();
@@ -625,15 +877,16 @@ Eigen::VectorXd GetDState(Eigen::Vector3d velocity,
   Eigen::Vector3d linear_acceleration,
   Eigen::Vector3d angular_velocity,
   Eigen::Vector3d gravity,
-  Eigen::Vector3d bias) {
+  Eigen::Vector3d acc_bias,
+  Eigen::Vector3d ang_bias) {
   Eigen::VectorXd dotX(STATE_SIZE);
   // Position
   dotX.segment<3>(0) = velocity;
   // Velocity - assumed constant
-  dotX.segment<3>(3) = - rotation.toRotationMatrix() * linear_acceleration + gravity;
+  dotX.segment<3>(3) = - rotation.toRotationMatrix() * (linear_acceleration - acc_bias) + gravity;
   // Orientation
   Eigen::MatrixXd Omega = filter::GetOmega(rotation);
-  dotX.segment<4>(6) = 0.5 * (Omega * (angular_velocity - bias));
+  dotX.segment<4>(6) = 0.5 * (Omega * (angular_velocity - ang_bias));
   dotX.segment<3>(10) = Eigen::VectorXd::Zero(3);
   return dotX;
 }
@@ -704,21 +957,21 @@ Eigen::MatrixXd GetVerticalZ(Eigen::Vector3d position,
   Eigen::VectorXd Z = Eigen::VectorXd(sensors.size());
 
   // Data conversion
-  Eigen::Vector3d vPt = position;
-  Eigen::Matrix3d vRt = rotation.toRotationMatrix();
+  Eigen::Vector3d vPi = position;
+  Eigen::Matrix3d vRi = rotation.toRotationMatrix();
   Eigen::Vector3d vPl = filter::ConvertMessage(lhTransform.translation);
   Eigen::Matrix3d vRl = filter::ConvertMessage(lhTransform.rotation).toRotationMatrix();
   Eigen::Vector3d lPv = - vRl.transpose() * vPl;
   Eigen::Matrix3d lRv = vRl.transpose();
   // lightPimu - transform the imu frame to the light frame
-  Eigen::Vector3d tlPt = filter::ConvertMessage(
+  Eigen::Vector3d tPi = filter::ConvertMessage(
     tracker.imu_transform.translation);
   // lightRimu - transform the imu frame to the light frame
-  Eigen::Matrix3d tlRt = filter::ConvertMessage(
+  Eigen::Matrix3d tRi = filter::ConvertMessage(
     tracker.imu_transform.rotation).toRotationMatrix();
   // conversion from tlTt to tTtl
-  Eigen::Vector3d tPtl = - tlRt.transpose() * tlPt;
-  Eigen::Matrix3d tRtl = tlRt.transpose();
+  Eigen::Vector3d tPt = - tRi.transpose() * tPi;
+  Eigen::Matrix3d tRt = tRi.transpose();
   // Lighthouse parameters
   double phase = lhSpecs.vertical_motor.phase;
   double tilt = lhSpecs.vertical_motor.tilt;
@@ -728,14 +981,25 @@ Eigen::MatrixXd GetVerticalZ(Eigen::Vector3d position,
 
   size_t row = 0;
   for (auto sensor : sensors) {
-    Eigen::Vector3d tlPs = filter::ConvertMessage(tracker.sensors[sensor].position);
-    Eigen::Vector3d lPs = lRv * ( vRt * (tRtl * tlPs + tPtl) + vPt ) + lPv;
+    Eigen::Vector3d tPs = filter::ConvertMessage(tracker.sensors[sensor].position);
+    Eigen::Vector3d lPs = lRv * ( vRi * (tRt * tPs + tPt) + vPi ) + lPv;
+
+    // std::cout << "lPs " << sensor << ": " << lPs(0) << ", " << lPs(1) << ", " << lPs(2) << std::endl;
 
     double x = (lPs(0)/lPs(2));
     double y = (lPs(1)/lPs(2));
 
+    // std::cout << "x: " << x << std::endl;
+    // std::cout << "y: " << y << std::endl;
+
+    // std::cout << "phase: " << phase << std::endl;
+    // std::cout << "tilt: " << tilt << std::endl;
+    // std::cout << "curve: " << curve << std::endl;
+    // std::cout << "gib_phase: " << gib_phase << std::endl;
+    // std::cout << "gib_mag: " << gib_mag << std::endl;
     if (correction) {
       Z(row) = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
+      // std::cout << "Z: " << Z(row) << std::endl;
     } else {
       Z(row) = atan(y);
     }
@@ -759,6 +1023,8 @@ bool ViveFilter::Valid() {
     std::isnan(bias_(0)) ||
     std::isnan(bias_(1)) ||
     std::isnan(bias_(2))) return false;
+
+  // if (covariance_.trace() == 0) return false;
 
   double cost = 0;
   double light_counter = 0;
@@ -884,11 +1150,14 @@ bool ViveFilter::Valid() {
     // std::cout << "V: " << V << std::endl;
     // Temporary
     // V = Eigen::MatrixXd::Identity(V.rows(), V.cols());
-    // std::cout << "HERE" << std::endl;
     cost += (msEigenAngle - prEigenAngle).transpose() * V.inverse() * (msEigenAngle - prEigenAngle);
+    // cost += (msEigenAngle - prEigenAngle).transpose() * (msEigenAngle - prEigenAngle);
     // std::cout << "singleCost: " << 
     //   (msEigenAngle - prEigenAngle).transpose() * V.inverse() * (msEigenAngle - prEigenAngle) << std::endl;
     light_counter++;
+    // std::cout << "V^-1: " << V.inverse() << std::endl;
+    // std::cout << "changedCost: " << (msEigenAngle - prEigenAngle).transpose() * (msEigenAngle - prEigenAngle) << std::endl;
+    // std::cout << "thisCost: " << (msEigenAngle - prEigenAngle).transpose() * V.inverse() * (msEigenAngle - prEigenAngle) << std::endl;
   }
 
   if (cost > pow(MAHALANOBIS_MAX_DIST,2) * light_counter) {
@@ -910,6 +1179,7 @@ bool ViveFilter::PredictIEKF(const sensor_msgs::Imu & msg) {
 
 // Time update (Inertial data)
 bool ViveFilter::PredictEKF(const sensor_msgs::Imu & msg) {
+  // std::cout << "Predict" << std::endl;
   // Convert measurements
   Eigen::Vector3d linear_acceleration = filter::ConvertMessage(msg.linear_acceleration);
   Eigen::Vector3d angular_velocity = filter::ConvertMessage(msg.angular_velocity);
@@ -918,13 +1188,21 @@ bool ViveFilter::PredictEKF(const sensor_msgs::Imu & msg) {
   double dT = (msg.header.stamp - time_).toSec();
   if (!lastmsgwasimu_) dT = 2*dT;
 
+  Eigen::Vector3d acc_bias(tracker_.acc_bias.x,
+    tracker_.acc_bias.y,
+    tracker_.acc_bias.z);
   // Derivative of the state in time
   Eigen::VectorXd dState = GetDState(velocity_,
     rotation_,
     linear_acceleration,
     angular_velocity,
     gravity,
+    acc_bias,
     bias_);
+
+  // std::cout << "cG: " << gravity.transpose() << std::endl;
+  // std::cout << "mG: " << (rotation_.toRotationMatrix() * linear_acceleration).transpose() << std::endl;
+  // std::cout << "dState: " << dState.transpose() << std::endl;
   // Old state
   Eigen::VectorXd oldX(STATE_SIZE);
   oldX.segment<3>(0) = position_;
@@ -946,17 +1224,29 @@ bool ViveFilter::PredictEKF(const sensor_msgs::Imu & msg) {
   Eigen::MatrixXd Q = model_covariance_;
   Eigen::MatrixXd I = Eigen::MatrixXd::Identity(STATE_SIZE,
     STATE_SIZE);
-
+  Eigen::MatrixXd Pnoise = Eigen::MatrixXd::Zero(STATE_SIZE,
+    STATE_SIZE);
+  // Pnoise(0,0) = 1e-2;
+  // Pnoise(1,1) = 1e-2;
+  // Pnoise(2,2) = 1e-2;
+  // Pnoise(3,3) = 1e-2;
+  // Pnoise(4,4) = 1e-2;
+  // Pnoise(5,5) = 1e-2;
   Eigen::MatrixXd newP = (I + dT * F) *
-    oldP * (I + dT * F).transpose() + (dT * dT) * (G * Q * G.transpose());
+    oldP * (I + dT * F).transpose() + (dT * dT) * (G * Q * G.transpose()) + Pnoise;
 
   // New state
   Eigen::VectorXd newX = oldX + dT * dState;
+  // std::cout << "oldX: " << oldX.transpose() << std::endl;
+  // std::cout << "dT * dState: " << dT * dState.transpose() << std::endl;
+  // std::cout << "newX: " << newX.transpose() << std::endl;
+
   position_ = newX.segment<3>(0);
   velocity_ = newX.segment<3>(3);
   rotation_ = Eigen::Quaterniond(newX(6), newX(7), newX(8),
     newX(9)).normalized();
   bias_ = newX.segment<3>(10);
+  
   covariance_ = newP;
   time_ = msg.header.stamp;
   return true;
@@ -964,7 +1254,7 @@ bool ViveFilter::PredictEKF(const sensor_msgs::Imu & msg) {
 
 // Measure upate (Light data)
 bool ViveFilter::UpdateEKF(const hive::ViveLight & msg) {
-
+  // std::cout << "Update" << std::endl;
   // Search for outliers
   hive::ViveLight clean_msg = msg;
   auto msg_it = clean_msg.samples.begin();
@@ -977,6 +1267,7 @@ bool ViveFilter::UpdateEKF(const hive::ViveLight & msg) {
 
   size_t row = 0;
   Eigen::VectorXd Z(clean_msg.samples.size());
+  Eigen::VectorXd pZ;
   std::vector<int> sensors;
   for (auto sample : clean_msg.samples) {
     // Put angle in Vector
@@ -984,6 +1275,10 @@ bool ViveFilter::UpdateEKF(const hive::ViveLight & msg) {
     row++;
     // For later usage
     sensors.push_back(sample.sensor);
+    // std::cout << sample.sensor << " - "
+    //   << tracker_.sensors[sample.sensor].position.x << " "
+    //   << tracker_.sensors[sample.sensor].position.y << " "
+    //   << tracker_.sensors[sample.sensor].position.z << std::endl;
   }
   // EKF update
   Eigen::MatrixXd H, R, K, oldP, newP;
@@ -1001,34 +1296,87 @@ bool ViveFilter::UpdateEKF(const hive::ViveLight & msg) {
   int total_sensors = tracker_.sensors.size();
   // Choose the model according to the orientation
   if (clean_msg.axis == HORIZONTAL) {
+    // std::cout << "HORIZONTAL" << std::endl;
+    // std::cout << environment_.lighthouses[clean_msg.lighthouse].translation.x << ", "
+    //   << environment_.lighthouses[clean_msg.lighthouse].translation.y << ", "
+    //   << environment_.lighthouses[clean_msg.lighthouse].translation.z << " | "
+    //   << environment_.lighthouses[clean_msg.lighthouse].rotation.w << ", "
+    //   << environment_.lighthouses[clean_msg.lighthouse].rotation.x << ", "
+    //   << environment_.lighthouses[clean_msg.lighthouse].rotation.y << ", "
+    //   << environment_.lighthouses[clean_msg.lighthouse].rotation.z << std::endl;
+    // std::cout << tracker_.imu_transform.translation.x << ", "
+    //   << tracker_.imu_transform.translation.y << ", "
+    //   << tracker_.imu_transform.translation.z << " | "
+    //   << tracker_.imu_transform.rotation.w << ", "
+    //   << tracker_.imu_transform.rotation.x << ", "
+    //   << tracker_.imu_transform.rotation.y << ", "
+    //   << tracker_.imu_transform.rotation.z << std::endl;
+    // std::cout << "Phase: " << lighthouses_[clean_msg.lighthouse].horizontal_motor.phase << "\n"
+    //   << "Tilt: " << lighthouses_[clean_msg.lighthouse].horizontal_motor.tilt << "\n"
+    //   << "gib_phase: " << lighthouses_[clean_msg.lighthouse].horizontal_motor.gib_phase << "\n"
+    //   << "gib_magnitude: " << lighthouses_[clean_msg.lighthouse].horizontal_motor.gib_magnitude << "\n"
+    //   << "curve: " << lighthouses_[clean_msg.lighthouse].horizontal_motor.curve << "\n";
     // Derivative of measurement model
     H = GetHorizontalH(position_, rotation_, sensors,
       tracker_, environment_.lighthouses[clean_msg.lighthouse],
       lighthouses_[clean_msg.lighthouse], correction_);
     // Difference between prediction and real measures
-    Y = Z - GetHorizontalZ(position_, rotation_, sensors,
+    pZ = GetHorizontalZ(position_, rotation_, sensors,
       tracker_, environment_.lighthouses[clean_msg.lighthouse],
       lighthouses_[clean_msg.lighthouse], correction_);
+    Y = Z - pZ;
     // Sliced measurement covariance matrix
     R = filter::SliceR(measure_covariance_.block(total_sensors * HORIZONTAL,
       total_sensors * HORIZONTAL, total_sensors, total_sensors), sensors);
   } else {
+    // std::cout << "VERTICAL" << std::endl;
+    // std::cout << environment_.lighthouses[clean_msg.lighthouse].translation.x << ", "
+    //   << environment_.lighthouses[clean_msg.lighthouse].translation.y << ", "
+    //   << environment_.lighthouses[clean_msg.lighthouse].translation.z << " | "
+    //   << environment_.lighthouses[clean_msg.lighthouse].rotation.w << ", "
+    //   << environment_.lighthouses[clean_msg.lighthouse].rotation.x << ", "
+    //   << environment_.lighthouses[clean_msg.lighthouse].rotation.y << ", "
+    //   << environment_.lighthouses[clean_msg.lighthouse].rotation.z << std::endl;
+    // std::cout << tracker_.imu_transform.translation.x << ", "
+    //   << tracker_.imu_transform.translation.y << ", "
+    //   << tracker_.imu_transform.translation.z << " | "
+    //   << tracker_.imu_transform.rotation.w << ", "
+    //   << tracker_.imu_transform.rotation.x << ", "
+    //   << tracker_.imu_transform.rotation.y << ", "
+    //   << tracker_.imu_transform.rotation.z << std::endl;
+    // std::cout << "Phase: " << lighthouses_[clean_msg.lighthouse].vertical_motor.phase << "\n"
+    //   << "Tilt: " << lighthouses_[clean_msg.lighthouse].vertical_motor.tilt << "\n"
+    //   << "gib_phase: " << lighthouses_[clean_msg.lighthouse].vertical_motor.gib_phase << "\n"
+    //   << "gib_magnitude: " << lighthouses_[clean_msg.lighthouse].vertical_motor.gib_magnitude << "\n"
+    //   << "curve: " << lighthouses_[clean_msg.lighthouse].vertical_motor.curve << "\n";
     // Derivative of measurement model
     H = GetVerticalH(position_, rotation_, sensors,
       tracker_, environment_.lighthouses[clean_msg.lighthouse],
       lighthouses_[clean_msg.lighthouse], correction_);
     // Difference between prediction and real measures
-    Y = Z - GetVerticalZ(position_, rotation_, sensors,
+    pZ = GetVerticalZ(position_, rotation_, sensors,
       tracker_, environment_.lighthouses[clean_msg.lighthouse],
       lighthouses_[clean_msg.lighthouse], correction_);
+    Y = Z - pZ;
     // Sliced measurement covariance matrix
     R = filter::SliceR(measure_covariance_.block(total_sensors * VERTICAL,
       total_sensors  *VERTICAL, total_sensors, total_sensors), sensors);
   }
-  // std::cout << "oldP " << oldP << std::endl;
+
   // Kalman Gain
+  // Eigen::MatrixXd AUX = 1e-6 * Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE);
+  // K = AUX * H.transpose() * (H * AUX * H.transpose() + R).inverse();
+  // R = Eigen::MatrixXd::Identity(R.rows(), R.cols());
   K = oldP * H.transpose() * (H * oldP * H.transpose() + R).inverse();
   newX = oldX + K * Y;
+  // std::cout << "oldP:\n" << oldP << std::endl;
+  // std::cout << "H:\n" << H << std::endl;
+  // std::cout << "Z: " << (Z).transpose() << std::endl;
+  // std::cout << "pZ: " << (pZ).transpose() << std::endl;
+  // std::cout << "Y: " << (Y).transpose() << std::endl;
+  // std::cout << "K*Y: " << (K*Y).transpose() << std::endl;
+  // std::cout << "oldX: " << oldX.transpose() << std::endl;
+  // std::cout << "newX: " << newX.transpose() << std::endl;
   newP = (Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE) - K * H) * oldP;
   // std::cout << "newP " << newP << std::endl;
 
@@ -1511,81 +1859,83 @@ void ViveFilter::PrintState() {
   return;
 }
 
-int main(int argc, char ** argv) {
-  ROS_INFO("FILTERING");
+// int main(int argc, char ** argv) {
+//   ROS_INFO("FILTERING");
 
-  std::map<std::string, ViveFilter> filter_map;
-  Calibration cal;
-  rosbag::View view;
-  rosbag::Bag rbag;
+//   std::map<std::string, ViveFilter> filter_map;
+//   Calibration cal;
+//   rosbag::View view;
+//   rosbag::Bag rbag;
 
-  if (argc < 2) {
-    std::cout << "Usage: ... hive_offset name_of_read_bag.bag "
-      << std::endl;
-    return -1;
-  }
+//   if (argc < 2) {
+//     std::cout << "Usage: ... hive_offset name_of_read_bag.bag "
+//       << std::endl;
+//     return -1;
+//   }
 
-  // Calibration
-  if (!ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE, &cal)) {
-    ROS_FATAL("Can't find calibration file.");
-    return -1;
-  } else {
-    ROS_INFO("Read calibration file.");
-  }
+//   // Calibration
+//   if (!ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE, &cal)) {
+//     ROS_FATAL("Can't find calibration file.");
+//     return -1;
+//   } else {
+//     ROS_INFO("Read calibration file.");
+//   }
 
-  rbag.open(argv[1], rosbag::bagmode::Read);
-  // Lighthouses
-  rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
-  for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
-    const hive::ViveCalibrationLighthouseArray::ConstPtr vl =
-      bag_it->instantiate<hive::ViveCalibrationLighthouseArray>();
-    cal.SetLighthouses(*vl);
-  }
-  ROS_INFO("Lighthouses' setup complete.");
+//   rbag.open(argv[1], rosbag::bagmode::Read);
+//   // Lighthouses
+//   rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
+//   for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
+//     const hive::ViveCalibrationLighthouseArray::ConstPtr vl =
+//       bag_it->instantiate<hive::ViveCalibrationLighthouseArray>();
+//     cal.SetLighthouses(*vl);
+//   }
+//   ROS_INFO("Lighthouses' setup complete.");
 
-  // Trackers
-  rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
-  for (auto bag_it = view_tr.begin(); bag_it != view_tr.end(); bag_it++) {
-    const hive::ViveCalibrationTrackerArray::ConstPtr vt =
-      bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
-    cal.SetTrackers(*vt);
-    for (auto tr : vt->trackers) {
-      filter_map[tr.serial] = ViveFilter(
-        cal.trackers[tr.serial],
-        cal.lighthouses,
-        cal.environment,
-        1e-3, 1e-8, true,
-        filter::ukf);
-    }
-  }
-  ROS_INFO("Trackers' setup complete.");
+//   // Trackers
+//   rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
+//   for (auto bag_it = view_tr.begin(); bag_it != view_tr.end(); bag_it++) {
+//     const hive::ViveCalibrationTrackerArray::ConstPtr vt =
+//       bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
+//     cal.SetTrackers(*vt);
+//     for (auto tr : vt->trackers) {
+//       filter_map[tr.serial] = ViveFilter(
+//         cal.trackers[tr.serial],
+//         cal.lighthouses,
+//         cal.environment,
+//         1e-2, 1e-6, true,
+//         filter::ekf);
+//     }
+//   }
+//   // UKF: 1e-3, 1e-8, true,
+//   // (I)EKF: , true,
+//   ROS_INFO("Trackers' setup complete.");
 
-  size_t counter = 0;
-  // Light data
-  std::vector<std::string> run_topics; 
-  run_topics.push_back("/loc/vive/light");
-  run_topics.push_back("/loc/vive/imu/");
-  run_topics.push_back("/loc/vive/imu");
-  rosbag::View view_li(rbag, rosbag::TopicQuery(run_topics));
-  for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
-    const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-    if (vl != NULL) {
-      std::cout << "LIG  ";// << (int)vl->axis << std::endl;
-      filter_map[vl->header.frame_id].ProcessLight(vl);
-      filter_map[vl->header.frame_id].PrintState();
-      counter++;
-    }
-    const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();
-    if (vi != NULL) {
-      std::cout << "IMU  ";// << std::endl;
-      filter_map[vi->header.frame_id].ProcessImu(vi);
-      filter_map[vi->header.frame_id].PrintState();
-      counter++;
-    }
-    // if (counter >= 2600) break;
-  }
-  ROS_INFO("Data processment complete.");
+//   size_t counter = 0;
+//   // Light data
+//   std::vector<std::string> run_topics; 
+//   run_topics.push_back("/loc/vive/light");
+//   run_topics.push_back("/loc/vive/imu/");
+//   run_topics.push_back("/loc/vive/imu");
+//   rosbag::View view_li(rbag, rosbag::TopicQuery(run_topics));
+//   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
+//     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
+//     if (vl != NULL) {
+//       std::cout << "LIG  ";// << (int)vl->axis << std::endl;
+//       filter_map[vl->header.frame_id].ProcessLight(vl);
+//       filter_map[vl->header.frame_id].PrintState();
+//       counter++;
+//     }
+//     const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();
+//     if (vi != NULL) {
+//       std::cout << "IMU  ";// << std::endl;
+//       filter_map[vi->header.frame_id].ProcessImu(vi);
+//       filter_map[vi->header.frame_id].PrintState();
+//       counter++;
+//     }
+//     // if (counter >= 2600) break;
+//   }
+//   ROS_INFO("Data processment complete.");
 
-  return 0;
+//   return 0;
 
-}
+// }

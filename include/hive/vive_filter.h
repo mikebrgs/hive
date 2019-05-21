@@ -6,7 +6,7 @@
 
 // Hive includes
 #include <hive/vive.h>
-#include <hive/vive_cost.h>
+// #include <hive/vive_cost.h>
 #include <hive/vive_solver.h>
 #include <hive/vive_general.h>
 
@@ -39,7 +39,7 @@
 #define STATE_SIZE 13         // Size of the state vector
 #define NOISE_SIZE 9          // Size of the noise vector
 #define LIGHT_DATA_BUFFER 4   // Size of the light data vector
-#define MAHALANOBIS_MAX_DIST 5
+#define MAHALANOBIS_MAX_DIST 10
 #define IEFK_THRESHOLD 1e-5
 #define UKF_FACTOR -17.0
 #define HIVE_APE_ACC 1e-4

@@ -111,4 +111,4 @@ ax = fig.add_subplot(111, projection='3d')
 ax.plot(xs = vive_poses[0], ys = vive_poses[1], zs = vive_poses[2])
 ax.plot(xs = optitrack_poses[0][10:-10], ys = optitrack_poses[1][10:-10], zs = optitrack_poses[2][10:-10])
 
-# plt.show()
+plt.show()

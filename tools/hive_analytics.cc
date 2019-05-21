@@ -175,13 +175,13 @@ int main(int argc, char ** argv) {
 
   // Saving poses
   geometry_msgs::TransformStamped opti_msg, vive_msg;
-  ros::Time opti_time, vive_time;
+  ros::Time opti_time(0), vive_time(0);
   Eigen::Matrix3d vRt, oRa;
   Eigen::Vector3d vPt, oPa;
   // Interpolation
-  // Eigen::Matrix3d prev_oRa, next_oRa;
-  // Eigen::Vector3d prev_oPa, next_oPa;
-  // ros::Time prev_opti_time, next_opti_time;
+  Eigen::Matrix3d prev_oRa, next_oRa;
+  Eigen::Vector3d prev_oPa, next_oPa;
+  ros::Time prev_opti_time, next_opti_time;
 
   // Light data
   std::vector<std::string> topics;
@@ -205,8 +205,12 @@ int main(int argc, char ** argv) {
   double mA = 0.0;
   // Counter
   double pose_counter = 0;
+  // Initializations
+  bool vive_init = false, opti_init = false;
+  bool prev_opti = false, next_opti = false;
   // Scan bag
   rosbag::View view_li(data_bag, rosbag::TopicQuery(topics));
+
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     // Light data
     {
@@ -266,6 +270,8 @@ int main(int argc, char ** argv) {
           vt->transform.rotation.y,
           vt->transform.rotation.z).toRotationMatrix();
         vive_time = vt->header.stamp;
+        vive_init = true;
+        continue;
       // Optitrack transform
       } else if (vt != NULL && vt->header.frame_id == "optitrack") {
         oPa = Eigen::Vector3d(vt->transform.translation.x,
@@ -276,11 +282,62 @@ int main(int argc, char ** argv) {
           vt->transform.rotation.y,
           vt->transform.rotation.z).toRotationMatrix();
         opti_time = vt->header.stamp;
+        opti_init = true;
         // Interpolation
-        // prev_opti_time = next_opti_time;
-        // next_opti_time = vt->header.stamp;
+        prev_opti_time = next_opti_time;
+        next_opti_time = vt->header.stamp;
+        prev_oPa = next_oPa;
+        prev_oRa = next_oRa;
+        next_oPa = oPa;
+        next_oRa = oRa;
+        prev_opti = next_opti;
+        next_opti = true;
+        if (!next_opti || !prev_opti ) continue;
+        double prev_dt = abs((vive_time - prev_opti_time).toNSec());
+        double next_dt = abs((next_opti_time - vive_time).toNSec());
+        oPa = (prev_dt/(prev_dt + next_dt)) * prev_oPa +
+          (next_dt/(prev_dt + next_dt)) * next_oPa;
+        // std::cout << "prev_dt " << prev_dt << std::endl;
+        // std::cout << "next_dt " << next_dt << std::endl;
+        // std::cout << "oPa: " << oPa.transpose() << std::endl;
+        //
+        Eigen::Quaterniond prev_oQa(prev_oRa);
+        Eigen::Quaterniond next_oQa(next_oRa);
+        geometry_msgs::Quaternion prev_msg_oQa;
+        prev_msg_oQa.w = prev_oQa.w();
+        prev_msg_oQa.x = prev_oQa.x();
+        prev_msg_oQa.y = prev_oQa.y();
+        prev_msg_oQa.z = prev_oQa.z();
+        geometry_msgs::Quaternion next_msg_oQa;
+        next_msg_oQa.w = next_oQa.w();
+        next_msg_oQa.x = next_oQa.x();
+        next_msg_oQa.y = next_oQa.y();
+        next_msg_oQa.z = next_oQa.z();
+        ceres::Problem iproblem;
+        double iA[3];
+        Eigen::AngleAxisd next_auxAA(next_oRa);
+        iA[0] = (next_auxAA.axis() * next_auxAA.angle())(0);
+        iA[1] = (next_auxAA.axis() * next_auxAA.angle())(1);
+        iA[2] = (next_auxAA.axis() * next_auxAA.angle())(2);
+        ceres::CostFunction * prev_cost =
+          new ceres::AutoDiffCostFunction<OrientationAverageCost, 1, 3>
+          (new OrientationAverageCost(prev_msg_oQa, prev_dt));
+        iproblem.AddResidualBlock(prev_cost, NULL, iA);
+        ceres::CostFunction * next_cost =
+          new ceres::AutoDiffCostFunction<OrientationAverageCost, 1, 3>
+          (new OrientationAverageCost(next_msg_oQa, next_dt));
+        iproblem.AddResidualBlock(next_cost, NULL, iA);
+        ceres::Solve(options, &iproblem, &summary);
+        Eigen::Vector3d iV(iA[0], iA[1], iA[2]);
+        // std::cout << "next_auxAA: " << (next_auxAA.axis() * next_auxAA.angle()).transpose() << std::endl;
+        // Eigen::AngleAxisd prev_auxAA(prev_oRa);
+        // std::cout << "prev_auxAA: " << (prev_auxAA.axis() * prev_auxAA.angle()).transpose() << std::endl;
+        // std::cout << "iV: " << iV.transpose() << std::endl;
+        Eigen::AngleAxisd iAA(iV.norm(), iV.normalized());
+        oRa = iAA.toRotationMatrix();
       }
     }
+    if (!vive_init || !opti_init || !next_opti || !prev_opti) continue;
     // Transform
     if (((opti_time - vive_time).toSec()) < 0.05) {
       Eigen::Matrix3d est_aRt = oRa.transpose() * oRv * vRt;
@@ -296,6 +353,7 @@ int main(int argc, char ** argv) {
       Eigen::Vector3d dP = est_aPt - aPt;
       sP += dP;
       sD += dP.norm();
+      // std::cout << dP.norm() << " ";
       if (dP.norm() > mD) mD = dP.norm();
       // Orientation averaging
       Eigen::Quaterniond dQ(dR);
@@ -308,6 +366,7 @@ int main(int argc, char ** argv) {
         new ceres::AutoDiffCostFunction<OrientationAverageCost, 1, 3>
         (new OrientationAverageCost(msgQ, 1.0));
       problem.AddResidualBlock(cost, NULL, dA);
+      // std::cout << dAA.angle() << " ";
       sA += dAA.angle();
       if (dAA.angle() > mA) mA = dAA.angle();
       // Prints
@@ -319,7 +378,7 @@ int main(int argc, char ** argv) {
 
   ceres::Solve(options, &problem, &summary);
 
-  std::cout << "Calibration Quality:\n";
+  std::cout << "\nCalibration Quality:\n";
   std::cout << "Average Position Offset: " << (sP / pose_counter).transpose() << std::endl;
   std::cout << "Average Distance: " << (sP / pose_counter).norm() << std::endl;
   std::cout << "Average Rotation Offset: " << 

@@ -729,10 +729,10 @@ bool GetLhTransformInVive(Calibration * calibration,
   (*calibration).environment.vive.translation.x = vive_pose.first(0);
   (*calibration).environment.vive.translation.y = vive_pose.first(1);
   (*calibration).environment.vive.translation.z = vive_pose.first(2);
+  (*calibration).environment.vive.rotation.w = vive_quaternion.w();
   (*calibration).environment.vive.rotation.x = vive_quaternion.x();
   (*calibration).environment.vive.rotation.y = vive_quaternion.y();
   (*calibration).environment.vive.rotation.z = vive_quaternion.z();
-  (*calibration).environment.vive.rotation.w = vive_quaternion.w();
 
   // Clear past lighthouse data
   (*calibration).environment.lighthouses.clear();
@@ -786,13 +786,31 @@ bool GetGravity(Calibration * cal,
       cal->environment.vive.rotation.y,
       cal->environment.vive.rotation.z);
     // imu to light transform
-    Eigen::Quaterniond lQi(cal->trackers[tracker_data.first].imu_transform.rotation.w,
+    Eigen::Quaterniond tQi(cal->trackers[tracker_data.first].imu_transform.rotation.w,
       cal->trackers[tracker_data.first].imu_transform.rotation.x,
       cal->trackers[tracker_data.first].imu_transform.rotation.y,
       cal->trackers[tracker_data.first].imu_transform.rotation.z);
+
+    std::cout << "vQw: " << wQv.inverse().w() << ", "
+      << wQv.inverse().x() << ", "
+      << wQv.inverse().y() <<  ", "
+      << wQv.inverse().z() << std::endl;
+    std::cout << "tQi: " << tQi.w() << ", "
+      << tQi.x() << ", "
+      << tQi.y() << ", "
+      << tQi.z() << std::endl;
+
+    std::cout << "iG: " << (tracker_iG).transpose() << std::endl;
+    std::cout << "vG: " << (wQv.toRotationMatrix().transpose() *
+      tQi.toRotationMatrix() * tracker_iG).transpose() << std::endl;
+    std::cout << "vG: " << (wQv.toRotationMatrix().transpose() *
+      tracker_iG).transpose() << std::endl;
+    std::cout << "vG: " << (tQi.toRotationMatrix() *
+      tracker_iG).transpose() << std::endl;
+
     // convert the gravity to the vive frame
     Eigen::Vector3d tracker_vG = wQv.toRotationMatrix().transpose() *
-      lQi.toRotationMatrix() * tracker_iG;
+      tQi.toRotationMatrix() * tracker_iG;
     std::cout << "Vive: " << tracker_vG.transpose() << std::endl;
     vG += tracker_vG;
     g_count++;
