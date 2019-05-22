@@ -488,15 +488,26 @@ namespace pgo {
     next_vPt << next_vTt[0],
       next_vTt[1],
       next_vTt[2];
+    // Eigen::Matrix<T, 3, 1> prev_vVt;
+    // prev_vVt << prev_vTt[3],
+    //   prev_vTt[4],
+    //   prev_vTt[5];
+    // Eigen::Matrix<T, 3, 1> next_vVt;
+    // next_vVt << next_vTt[3],
+    //   next_vTt[4],
+    //   next_vTt[5];
     Eigen::Matrix<T, 3, 3> prev_vRt;
-    ceres::AngleAxisToRotationMatrix(&prev_vTt[3], prev_vRt.data());
+    ceres::AngleAxisToRotationMatrix(&prev_vTt[6], prev_vRt.data());
     Eigen::Matrix<T, 3, 3> next_vRt;
-    ceres::AngleAxisToRotationMatrix(&next_vTt[3], next_vRt.data());
+    ceres::AngleAxisToRotationMatrix(&next_vTt[6], next_vRt.data());
 
     // // Translation cost with smoothing
     residual[0] = T(smoothing_) * (prev_vPt(0) - next_vPt(0));
     residual[1] = T(smoothing_) * (prev_vPt(1) - next_vPt(1));
     residual[2] = T(smoothing_) * (prev_vPt(2) - next_vPt(2));
+    // residual[3] = T(1e-1 * smoothing_) * (prev_vVt(0) - next_vVt(0));
+    // residual[4] = T(1e-1 * smoothing_) * (prev_vVt(1) - next_vVt(1));
+    // residual[5] = T(1e-1 * smoothing_) * (prev_vVt(2) - next_vVt(2));
     // // Rotation cost with smoothing
     T aa[3];
     Eigen::Matrix<T, 3, 3> R = next_vRt.transpose() * prev_vRt;
@@ -651,7 +662,7 @@ bool PoseGraph::Valid() {
 
   std::cout << "COST: " << cost << std::endl;
 
-  if (cost > 1e-5 * sample_counter)
+  if (cost > 5e-5 * sample_counter)
     return false;
 
   return true;
@@ -660,6 +671,19 @@ bool PoseGraph::Valid() {
 void PoseGraph::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   // Create copy to clean
   hive::ViveLight * clone_msg = new hive::ViveLight(*msg);
+  // Erase outliers
+  auto sample_it = clone_msg->samples.begin();
+    while (sample_it != clone_msg->samples.end()) {
+    if (sample_it->angle > -M_PI/3.0 && sample_it->angle < M_PI / 3.0) {
+      sample_it++;
+    } else {
+      clone_msg->samples.erase(sample_it);
+    }
+  }
+  if (clone_msg->samples.size() == 0) {
+    clone_msg++;
+    return;
+  }
   // Save the copy
   light_data_.push_back(*clone_msg);
 
@@ -805,60 +829,36 @@ bool PoseGraph::Solve() {
   if (light_data_.size() < window_) return true;
   // Lighthouse and pose
   // std::vector<double*> poses;
-  double * prev_pose = NULL;
+  // double * prev_pose = NULL;
   DataType prev_type;
   double prev_time = 0;
-  double * next_pose = NULL;
-  std::string next_lighthouse;
+  // double * next_pose = NULL;
+  // std::string next_lighthouse;
 
   ceres::Problem problem;
   ceres::Solver::Options options;
   ceres::Solver::Summary summary;
 
-  double * thepose = poses_.back();
+  double rigid_pose[9];
+  if (force_first_ && valid_) {
+    for(size_t i = 0; i < 9; i++)
+      rigid_pose[i] = poses_.front()[i];
+  }
 
-  // Iterate over light data
+  // Iterators
   auto li_it = light_data_.begin();
   auto imu_it = imu_data_.begin();
-  auto pose_it = poses_.begin();
   bool lastposewasimu = false;
-  size_t next_counter = 0, prev_counter = 0, pose_counter = 0;
-  // Preliminary pointer for pre poses
-  auto last_pre_pointer = poses_.begin();
 
   // Preliminary light data - first HORIZONTAL / second VERTICAL
   std::map<std::string, std::pair<hive::ViveLight*,hive::ViveLight*>> pre_data;
-  double pre_pose[9];
-  pre_pose[0] = poses_.back()[0];
-  pre_pose[1] = poses_.back()[1];
-  pre_pose[2] = poses_.back()[2];
-  pre_pose[3] = poses_.back()[3];
-  pre_pose[4] = poses_.back()[4];
-  pre_pose[5] = poses_.back()[5];
-  pre_pose[6] = poses_.back()[6];
-  pre_pose[7] = poses_.back()[7];
-  pre_pose[8] = poses_.back()[8];
 
+  std::vector<double*> new_poses;
+  new_poses.push_back(new double[9]);
+  lastposewasimu_ = true;
+  size_t pose_index = 0;
 
-  // std::cout << "Poses: " << poses_.size() << std::endl;
   while (li_it != light_data_.end()) {
-    // Remove outliers
-    // std::cout << "bSize: " << li_it->samples.size() << std::endl;
-    auto sample_it = li_it->samples.begin();
-    while (sample_it != li_it->samples.end()) {
-      if (sample_it->angle > -M_PI/3.0 && sample_it->angle < M_PI / 3.0) {
-        sample_it++;
-      } else {
-        li_it->samples.erase(sample_it);
-      }
-    }
-    if (li_it->samples.size() == 0) continue;
-    // std::cout << "aSize: " << li_it->samples.size() << std::endl;
-
-    prev_pose = next_pose;
-    next_pose = *pose_it;
-    prev_counter = next_counter;
-    next_counter = pose_counter;
 
     // Convert lighthouse to geometry_msgs
     geometry_msgs::Transform lhTF;
@@ -870,10 +870,8 @@ bool PoseGraph::Solve() {
     lhTF.rotation.y = environment_.lighthouses[li_it->lighthouse].rotation.y;
     lhTF.rotation.z = environment_.lighthouses[li_it->lighthouse].rotation.z;
 
-
-    // Iterate IMU data
-    while(li_it != light_data_.begin() &&
-      imu_it != imu_data_.end() &&
+    // Inertial measurements
+    while(imu_it != imu_data_.end() &&
       imu_it->header.stamp < li_it->header.stamp) {
       // Time difference for iteration
       double dt;
@@ -883,9 +881,9 @@ bool PoseGraph::Solve() {
         dt = 2 * (imu_it->header.stamp.toSec() - prev_time);
       else
         dt = 0.0;
-      // Change to the next pose
-      // Cost related to inertial measurements
-      // std::cout << "InertialCost " << prev_counter << " " << next_counter << std::endl;
+      auto prev_pose = new_poses.back();
+      new_poses.push_back(new double[9]);
+      auto next_pose = new_poses.back();
       ceres::CostFunction * cost =
         new ceres::AutoDiffCostFunction<pgo::InertialCost, 7, 9, 9>
         (new pgo::InertialCost(*imu_it,
@@ -894,98 +892,46 @@ bool PoseGraph::Solve() {
           dt,
           trust_));
       problem.AddResidualBlock(cost, NULL, prev_pose, next_pose);
-      // std::cout << "IPPose: "
-      //   << prev_pose[0] << ", "
-      //   << prev_pose[1] << ", "
-      //   << prev_pose[2] << ", "
-      //   << prev_pose[3] << ", "
-      //   << prev_pose[4] << ", "
-      //   << prev_pose[5] << ", "
-      //   << prev_pose[6] << ", "
-      //   << prev_pose[7] << ", "
-      //   << prev_pose[8] << std::endl;
-      // std::cout << "INPose: "
-      //   << next_pose[0] << ", "
-      //   << next_pose[1] << ", "
-      //   << next_pose[2] << ", "
-      //   << next_pose[3] << ", "
-      //   << next_pose[4] << ", "
-      //   << next_pose[5] << ", "
-      //   << next_pose[6] << ", "
-      //   << next_pose[7] << ", "
-      //   << next_pose[8] << std::endl;
-      pose_it++;
-      pose_counter++;
-      prev_pose = next_pose;
-      next_pose = *pose_it;
-      prev_counter = next_counter;
-      next_counter = pose_counter;
-      lastposewasimu = true;
-      // DeltaT
+      lastposewasimu_ = true;
       prev_type = imu;
       prev_time = imu_it->header.stamp.toSec();
-      // Next sample
       imu_it++;
     }
-
-    // Go one pose back
-    if (lastposewasimu){
-      pose_it--;
-      pose_counter--;
-      prev_pose = *(pose_it-1);
-      next_pose = *pose_it;
-      prev_counter = pose_counter-1;
-      next_counter = pose_counter;
-    }
-
     // Cost related to light measurements
+    if (!lastposewasimu_) {
+      new_poses.push_back(new double[9]);
+      lastposewasimu_ = false;
+    }
     if (li_it->axis == HORIZONTAL) {
-      // std::cout << "ViveHorizontalCost " << next_counter << std::endl;
       ceres::DynamicAutoDiffCostFunction<pgo::ViveHorizontalCost, 4> * hcost =
         new ceres::DynamicAutoDiffCostFunction<pgo::ViveHorizontalCost, 4>
         (new pgo::ViveHorizontalCost(*li_it,
           lhTF,
-          // tracker_.imu_transform,
           tracker_,
           lighthouses_[li_it->lighthouse].horizontal_motor,
           correction_));
       hcost->AddParameterBlock(9);
       hcost->SetNumResiduals(li_it->samples.size());
-      problem.AddResidualBlock(hcost, NULL, next_pose); // replace with next_pose
-      // std::cout << "HPose: "
-      //   << next_pose[0] << ", "
-      //   << next_pose[1] << ", "
-      //   << next_pose[2] << ", "
-      //   << next_pose[3] << ", "
-      //   << next_pose[4] << ", "
-      //   << next_pose[5] << ", "
-      //   << next_pose[6] << ", "
-      //   << next_pose[7] << ", "
-      //   << next_pose[8] << std::endl;
+      problem.AddResidualBlock(hcost, NULL, new_poses.back());
+      // Delta time
+      prev_type = light;
+      prev_time = li_it->header.stamp.toSec();
     } else if (li_it->axis == VERTICAL) {
-      // std::cout << "ViveVerticalCost " << next_counter << std::endl;
       ceres::DynamicAutoDiffCostFunction<pgo::ViveVerticalCost, 4> * vcost =
         new ceres::DynamicAutoDiffCostFunction<pgo::ViveVerticalCost, 4>
         (new pgo::ViveVerticalCost(*li_it,
           lhTF,
-          // tracker_.imu_transform,
           tracker_,
           lighthouses_[li_it->lighthouse].vertical_motor,
           correction_));
       vcost->AddParameterBlock(9);
       vcost->SetNumResiduals(li_it->samples.size());
-      problem.AddResidualBlock(vcost, NULL, next_pose); // replace with next_pose
-      // std::cout << "VPose: "
-      //   << next_pose[0] << ", "
-      //   << next_pose[1] << ", "
-      //   << next_pose[2] << ", "
-      //   << next_pose[3] << ", "
-      //   << next_pose[4] << ", "
-      //   << next_pose[5] << ", "
-      //   << next_pose[6] << ", "
-      //   << next_pose[7] << ", "
-      //   << next_pose[8] << std::endl;
+      problem.AddResidualBlock(vcost, NULL, new_poses.back());
+      // Delta time
+      prev_type = light;
+      prev_time = li_it->header.stamp.toSec();
     }
+
 
     // Preliminary solver data
     if (li_it->axis == HORIZONTAL)
@@ -995,7 +941,7 @@ bool PoseGraph::Solve() {
     // Solve preliminary data
     if (pre_data[li_it->lighthouse].first != NULL
       && pre_data[li_it->lighthouse].second != NULL) {
-
+      double pre_pose[9];
       pre_pose[0] = 0.0;
       pre_pose[1] = 0.0;
       pre_pose[2] = 1.0;
@@ -1035,65 +981,55 @@ bool PoseGraph::Solve() {
       pre_problem.AddResidualBlock(vcost, NULL, pre_pose);
       pre_options.minimizer_progress_to_stdout = false;
       pre_options.max_num_iterations = 1000;
+      pre_options.max_solver_time_in_seconds = 1.0;
       std::cout << "PreSolve " << light_data_.size() << " "
         << pre_data[li_it->lighthouse].first->samples.size() << " "
         << pre_data[li_it->lighthouse].second->samples.size() << std::endl;
       ceres::Solve(pre_options, &pre_problem, &pre_summary);
       // Copy paste
 
-      auto pointer_pose = last_pre_pointer;
-      while (pointer_pose != pose_it + 1) {
-        for (size_t i = 0; i < 9; i++) {
-          (*pointer_pose)[i] = pre_pose[i];
-        }
-        pointer_pose++;
+      while (pose_index != new_poses.size()) {
+        for (size_t i = 0; i < 9; i++)
+          new_poses[pose_index][i] = pre_pose[i];
+        pose_index++;
       }
-      last_pre_pointer = pose_it + 1;
+      pose_index = new_poses.size()-1;
     }
-
-    // Next pose
-    pose_it++;
-    pose_counter++;
-    lastposewasimu = false;
-
-    // Delta time
-    prev_type = light;
-    prev_time = li_it->header.stamp.toSec();
-
-    // Next sample
     li_it++;
   }
 
   // If we want to force the first pose to be close
   // to its previous estimate
-  double rigid_pose[9];
   if (force_first_ && valid_) {
     for(size_t i = 0; i < 9; i++)
-      rigid_pose[i] = poses_.front()[i];
+      new_poses.front()[i] = rigid_pose[i];
     ceres::CostFunction * cost =
       new ceres::AutoDiffCostFunction<pgo::ClosenessCost, 4, 9, 9>
       (new pgo::ClosenessCost(smoothing_, ROTATION_FACTOR));
-    problem.AddResidualBlock(cost, NULL, rigid_pose, poses_.front());
-    // std::cout << "RPose: "
-    //   << rigid_pose[0] << ", "
-    //   << rigid_pose[1] << ", "
-    //   << rigid_pose[2] << ", "
-    //   << rigid_pose[3] << ", "
-    //   << rigid_pose[4] << ", "
-    //   << rigid_pose[5] << ", "
-    //   << rigid_pose[6] << ", "
-    //   << rigid_pose[7] << ", "
-    //   << rigid_pose[8] << std::endl;
+    problem.AddResidualBlock(cost, NULL, rigid_pose, new_poses.front());
+    std::cout << "RPose: "
+      << rigid_pose[0] << ", "
+      << rigid_pose[1] << ", "
+      << rigid_pose[2] << ", "
+      << rigid_pose[3] << ", "
+      << rigid_pose[4] << ", "
+      << rigid_pose[5] << ", "
+      << rigid_pose[6] << ", "
+      << rigid_pose[7] << ", "
+      << rigid_pose[8] << std::endl;
     problem.SetParameterBlockConstant(rigid_pose);
   }
+  // problem.SetParameterBlockConstant(poses_.front());
 
   options.minimizer_progress_to_stdout = false;
   options.max_num_iterations = 1000;
-  std::cout << "Solve " << poses_.size() << " " << light_data_.size() << std::endl;
+  // options.max_solver_time_in_seconds = 30.0;
+  std::cout << "Solve " << new_poses.size() << " " << light_data_.size() << std::endl;
   ceres::Solve(options, &problem, &summary);
 
+
   size_t counter = 0;
-  for (auto pose : poses_) {
+  for (auto pose : new_poses) {
     std::cout << counter << " "
       << summary.final_cost <<  " - "
       << pose[0] << ", "
@@ -1108,6 +1044,7 @@ bool PoseGraph::Solve() {
       counter++;
   }
 
+
   last_cost_ = summary.final_cost;
 
   // Save pose -- light frame in the vive frame
@@ -1115,12 +1052,12 @@ bool PoseGraph::Solve() {
   pose_.header.frame_id = "vive";
   pose_.child_frame_id = tracker_.serial;
   // The computed pose
-  Eigen::Vector3d vPi(poses_.back()[0],
-    poses_.back()[1],
-    poses_.back()[2]);
-  Eigen::Vector3d vAi(poses_.back()[6],
-    poses_.back()[7],
-    poses_.back()[8]);
+  Eigen::Vector3d vPi(new_poses.back()[0],
+    new_poses.back()[1],
+    new_poses.back()[2]);
+  Eigen::Vector3d vAi(new_poses.back()[6],
+    new_poses.back()[7],
+    new_poses.back()[8]);
   Eigen::AngleAxisd vAAi(vAi.norm(), vAi.normalized());
   Eigen::Matrix3d vRi = vAAi.toRotationMatrix();
   // Imu to light
@@ -1145,6 +1082,12 @@ bool PoseGraph::Solve() {
   pose_.transform.rotation.x = vQt.x();
   pose_.transform.rotation.y = vQt.y();
   pose_.transform.rotation.z = vQt.z();
+
+  if (!Valid()) return false;
+
+  for (size_t i = 0; i < poses_.size(); i++)
+    delete poses_[i];
+  poses_ = new_poses;
 
   return true;
 }

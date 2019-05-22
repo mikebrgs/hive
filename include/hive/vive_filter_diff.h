@@ -1,4 +1,5 @@
 // EKF big functions
+#include <hive/vive_filter.h>
 
 // Horizontal
 Eigen::MatrixXd HorizontalMeasureModelDiff(double vPi_x, double vPi_y, double vPi_z,
@@ -14,7 +15,7 @@ Eigen::MatrixXd HorizontalMeasureModelDiff(double vPi_x, double vPi_y, double vP
   double tPs_x, double tPs_y, double tPs_z,
   double phase, double tilt, double gib_phase, double gib_mag, double curve,
   bool correction){
-  Eigen::MatrixXd H(1,13);
+  Eigen::MatrixXd H(1,STATE_SIZE);
   if (correction) {
     // correction
     // d alpha / d Px
@@ -50,6 +51,12 @@ Eigen::MatrixXd HorizontalMeasureModelDiff(double vPi_x, double vPi_y, double vP
     H(0,11) = 0.0;
     // d alpha / d bz
     H(0,12) = 0.0;
+    // d alpha / d gx
+    H(0,13) = 0.0;
+    // d alpha / d gy
+    H(0,14) = 0.0;
+    // d alpha / d gz
+    H(0,15) = 0.0;
   } else {
     // no correction
     // d alpha / d Px
@@ -96,7 +103,7 @@ Eigen::MatrixXd VerticalMeasureModelDiff(double vPi_x, double vPi_y, double vPi_
   double tPs_x, double tPs_y, double tPs_z,
   double phase, double tilt, double gib_phase, double gib_mag, double curve,
   bool correction){
-  Eigen::MatrixXd H(1,13);
+  Eigen::MatrixXd H(1,STATE_SIZE);
   if (correction) {
     // correction
     // d alpha / d Px
@@ -132,6 +139,12 @@ Eigen::MatrixXd VerticalMeasureModelDiff(double vPi_x, double vPi_y, double vPi_
     H(0,11) = 0.0;
     // d alpha / d Bz
     H(0,12) = 0.0;
+    // d alpha / d gx
+    H(0,13) = 0.0;
+    // d alpha / d gy
+    H(0,14) = 0.0;
+    // d alpha / d gz
+    H(0,15) = 0.0;
   } else {
     // // no correction
     // // d alpha / d Px

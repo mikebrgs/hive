@@ -36,8 +36,8 @@
 #include <string>
 #include <cmath>
 
-#define STATE_SIZE 13         // Size of the state vector
-#define NOISE_SIZE 9          // Size of the noise vector
+#define STATE_SIZE 16         // Size of the state vector
+#define NOISE_SIZE 12          // Size of the noise vector
 #define LIGHT_DATA_BUFFER 4   // Size of the light data vector
 #define MAHALANOBIS_MAX_DIST 10
 #define IEFK_THRESHOLD 1e-5
@@ -87,6 +87,8 @@ private:
   Eigen::Quaterniond rotation_;
   // Bias of the imu frame in the Vive frame
   Eigen::Vector3d bias_;
+  // Gravity estimator (in the vive frame)
+  Eigen::Vector3d gravity_;
   // Last update to the solver
   ros::Time time_;
   // Covariances
@@ -151,6 +153,8 @@ private:
   Eigen::Quaterniond rotation_;
   // Bias of the imu frame in the Vive frame
   Eigen::Vector3d bias_;
+  // Gravity estimator (in the vive frame)
+  Eigen::Vector3d gravity_;
   // Last update to the solver
   ros::Time time_;
   // Covatiances
@@ -212,6 +216,8 @@ private:
   Eigen::Quaterniond rotation_;
   // Bias of the imu frame in the Vive frame
   Eigen::Vector3d bias_;
+  // Gravity estimator (in the vive frame)
+  Eigen::Vector3d gravity_;
   // Last update to the solver
   ros::Time time_;
   // Covatiances
@@ -295,6 +301,8 @@ private:
   Eigen::Quaterniond rotation_;
   // Bias of the imu frame in the Vive frame
   Eigen::Vector3d bias_;
+  // Gravity estimator (in the vive frame)
+  Eigen::Vector3d gravity_;
   // Last update to the solver
   ros::Time time_;
   // Covatiances

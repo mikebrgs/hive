@@ -341,6 +341,9 @@ ViveFilter::ViveFilter(Tracker & tracker,
   rotation_ = Eigen::Quaterniond::Identity();
   velocity_ = Eigen::Vector3d::Zero();
   bias_ = Eigen::Vector3d::Zero();
+  gravity_ = Eigen::Vector3d(environment_.gravity.x,
+    environment_.gravity.y,
+    environment_.gravity.z);
   tracker_ = tracker;
   lighthouses_ = lighthouses;
   environment_ = environment;
@@ -376,6 +379,9 @@ ViveFilter::ViveFilter(Tracker & tracker,
   rotation_ = Eigen::Quaterniond::Identity();
   velocity_ = Eigen::Vector3d::Zero();
   bias_ = Eigen::Vector3d::Zero();
+  gravity_ = Eigen::Vector3d(environment_.gravity.x,
+    environment_.gravity.y,
+    environment_.gravity.z);
   tracker_ = tracker;
   lighthouses_ = lighthouses;
   environment_ = environment;
@@ -481,6 +487,9 @@ bool ViveFilter::Initialize() {
   bias_ = Eigen::Vector3d(tracker_.gyr_bias.x,
     tracker_.gyr_bias.y,
     tracker_.gyr_bias.z);
+  gravity_ = Eigen::Vector3d(environment_.gravity.x,
+    environment_.gravity.y,
+    environment_.gravity.z);
   covariance_ = HIVE_APE_ACC * Eigen::MatrixXd::Identity(STATE_SIZE, STATE_SIZE);
   // UKF's extended covariance.
   ext_covariance_ = Eigen::MatrixXd::Zero(STATE_SIZE + NOISE_SIZE,
@@ -632,6 +641,12 @@ Eigen::MatrixXd GetF(Eigen::Quaterniond rotation,
   F.block<3,3>(10,3) = Eigen::MatrixXd::Zero(3,3);
   F.block<3,4>(10,6) = Eigen::MatrixXd::Zero(3,4);
   F.block<3,3>(10,10) = Eigen::MatrixXd::Zero(3,3);
+  // g
+  F.block<3,3>(0,13) = Eigen::MatrixXd::Zero(3,3);
+  F.block<3,3>(3,13) = Eigen::MatrixXd::Identity(3,3);
+  F.block<10,3>(6,13) = Eigen::MatrixXd::Zero(10,3);
+  F.block<7,3>(6,13) = Eigen::MatrixXd::Zero(7,3);
+  F.block<3,16>(13,0) = Eigen::MatrixXd::Zero(3,16);
 
   // TODO check this over here
   // new d\dot{V}/d_qw
@@ -747,7 +762,7 @@ Eigen::MatrixXd GetHorizontalH(Eigen::Vector3d translation,
     double tlPs_y = tracker.sensors[sensor].position.y;
     double tlPs_z = tracker.sensors[sensor].position.z;
 
-    H.block<1,13>(row,0) = HorizontalMeasureModelDiff(vPt_x, vPt_y, vPt_z,
+    H.block<1,STATE_SIZE>(row,0) = HorizontalMeasureModelDiff(vPt_x, vPt_y, vPt_z,
       vQt_w, vQt_x, vQt_y, vQt_z,
       tPtl_x, tPtl_y, tPtl_z,
       tRtl_11, tRtl_12, tRtl_13,
@@ -838,7 +853,7 @@ Eigen::MatrixXd GetVerticalH(Eigen::Vector3d translation,
     double tlPs_x = tracker.sensors[sensor].position.x;
     double tlPs_y = tracker.sensors[sensor].position.y;
     double tlPs_z = tracker.sensors[sensor].position.z;
-    H.block<1,13>(row,0) = VerticalMeasureModelDiff(vPt_x, vPt_y, vPt_z,
+    H.block<1,STATE_SIZE>(row,0) = VerticalMeasureModelDiff(vPt_x, vPt_y, vPt_z,
       vQt_w, vQt_x, vQt_y, vQt_z,
       tPtl_x, tPtl_y, tPtl_z,
       tRtl_11, tRtl_12, tRtl_13,
@@ -868,6 +883,10 @@ Eigen::MatrixXd GetG(Eigen::Quaterniond rotation) {
   G.block<7,3>(3,6) = Eigen::MatrixXd::Zero(7,3);
   G.block<3,6>(10,0) = Eigen::MatrixXd::Zero(3,6);
   G.block<3,3>(10,6) = Eigen::MatrixXd::Identity(3,3);
+  // g
+  G.block<13,3>(0,9) = Eigen::MatrixXd::Zero(13,3);
+  G.block<3,9>(13,0) = Eigen::MatrixXd::Zero(3,9);
+  G.block<3,3>(13,9) = Eigen::MatrixXd::Identity(3,3);
   return G;
 }
 
@@ -887,7 +906,9 @@ Eigen::VectorXd GetDState(Eigen::Vector3d velocity,
   // Orientation
   Eigen::MatrixXd Omega = filter::GetOmega(rotation);
   dotX.segment<4>(6) = 0.5 * (Omega * (angular_velocity - ang_bias));
+  // biases
   dotX.segment<3>(10) = Eigen::VectorXd::Zero(3);
+  dotX.segment<3>(13) = Eigen::VectorXd::Zero(3);
   return dotX;
 }
 
@@ -1183,7 +1204,7 @@ bool ViveFilter::PredictEKF(const sensor_msgs::Imu & msg) {
   // Convert measurements
   Eigen::Vector3d linear_acceleration = filter::ConvertMessage(msg.linear_acceleration);
   Eigen::Vector3d angular_velocity = filter::ConvertMessage(msg.angular_velocity);
-  Eigen::Vector3d gravity = filter::ConvertMessage(environment_.gravity);
+  // Eigen::Vector3d gravity = filter::ConvertMessage(environment_.gravity);
   // Time difference
   double dT = (msg.header.stamp - time_).toSec();
   if (!lastmsgwasimu_) dT = 2*dT;
@@ -1196,7 +1217,7 @@ bool ViveFilter::PredictEKF(const sensor_msgs::Imu & msg) {
     rotation_,
     linear_acceleration,
     angular_velocity,
-    gravity,
+    gravity_,
     acc_bias,
     bias_);
 
@@ -1213,6 +1234,7 @@ bool ViveFilter::PredictEKF(const sensor_msgs::Imu & msg) {
     rotation_.y(),
     rotation_.z());
   oldX.segment<3>(10) = bias_;
+  oldX.segment<3>(13) = gravity_;
 
   // Covariance update
   Eigen::MatrixXd oldP = covariance_;
@@ -1246,7 +1268,8 @@ bool ViveFilter::PredictEKF(const sensor_msgs::Imu & msg) {
   rotation_ = Eigen::Quaterniond(newX(6), newX(7), newX(8),
     newX(9)).normalized();
   bias_ = newX.segment<3>(10);
-  
+  gravity_ = newX.segment<3>(13);
+
   covariance_ = newP;
   time_ = msg.header.stamp;
   return true;
@@ -1292,6 +1315,7 @@ bool ViveFilter::UpdateEKF(const hive::ViveLight & msg) {
     rotation_.y(),
     rotation_.z());
   oldX.segment<3>(10) = bias_;
+  oldX.segment<3>(13) = gravity_;
   oldP = covariance_;
 
   int total_sensors = tracker_.sensors.size();
@@ -1389,6 +1413,7 @@ bool ViveFilter::UpdateEKF(const hive::ViveLight & msg) {
     newX(8),
     newX(9)).normalized();
   bias_ = newX.segment<3>(10);
+  gravity_ = newX.segment<3>(13);
   covariance_ = newP;
   time_ = clean_msg.header.stamp;
 
@@ -1431,6 +1456,7 @@ bool ViveFilter::UpdateIEKF(const hive::ViveLight & msg) {
     rotation_.y(),
     rotation_.z());
   oldX.segment<3>(10) = bias_;
+  oldX.segment<3>(13) = gravity_;
   Eigen::VectorXd next_tmpX = oldX;
   Eigen::VectorXd prev_tmpX = oldX;
   oldP = Eigen::MatrixXd(covariance_);
@@ -1503,6 +1529,7 @@ bool ViveFilter::UpdateIEKF(const hive::ViveLight & msg) {
     newX(8),
     newX(9)).normalized();
   bias_ = newX.segment<3>(10);
+  gravity_ = newX.segment<3>(13);
   covariance_ = newP;
   time_ = clean_msg.header.stamp;
 
@@ -1525,6 +1552,7 @@ Eigen::VectorXd GetExtendedDState(Eigen::Vector3d velocity,
   Eigen::MatrixXd Omega = filter::GetOmega(rotation);
   dotX.segment<4>(6) = 0.5 * (Omega * (angular_velocity - bias));
   dotX.segment<3>(10) = Eigen::VectorXd::Zero(3);
+  dotX.segment<3>(13) = Eigen::VectorXd::Zero(3);
   dotX.segment<NOISE_SIZE>(STATE_SIZE) =
     Eigen::VectorXd::Zero(NOISE_SIZE);
   // std::cout << "dotX: " << dotX.transpose() << std::endl;
@@ -1540,7 +1568,7 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
   // Convert measurements
   Eigen::Vector3d linear_acceleration = filter::ConvertMessage(msg.linear_acceleration);
   Eigen::Vector3d angular_velocity = filter::ConvertMessage(msg.angular_velocity);
-  Eigen::Vector3d gravity = filter::ConvertMessage(environment_.gravity);
+  // Eigen::Vector3d gravity = filter::ConvertMessage(environment_.gravity);
 
   // Time difference
   // double dT = 0.005;
@@ -1555,7 +1583,8 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
   prev_extState(8) = rotation_.y();
   prev_extState(9) = rotation_.z();
   prev_extState.segment<3>(10) = bias_;
-  prev_extState.segment<NOISE_SIZE>(13) =
+  prev_extState.segment<3>(13) = gravity_;
+  prev_extState.segment<NOISE_SIZE>(STATE_SIZE) =
     Eigen::VectorXd::Zero(NOISE_SIZE);
 
   // std::cout << "prev_extState: " << prev_extState.transpose() << std::endl;
@@ -1602,6 +1631,7 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
       prev_unscentedStates[i](8),
       prev_unscentedStates[i](9));
     Eigen::Vector3d bias = prev_unscentedStates[i].segment<3>(10);
+    Eigen::Vector3d gravity = prev_unscentedStates[i].segment<3>(13);
     // Get time derivative
     Eigen::VectorXd dState = GetExtendedDState(
       velocity, rotation, linear_acceleration, angular_velocity, gravity, bias);
@@ -1644,6 +1674,7 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
     next_extState(8),
     next_extState(9)).normalized();
   bias_ = next_extState.segment<3>(10);
+  gravity_ = next_extState.segment<3>(13);
   covariance_ = next_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
   ext_covariance_ = next_extCovariance;
   time_ = msg.header.stamp;
@@ -1667,7 +1698,8 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
   prev_extState(8) = rotation_.y();
   prev_extState(9) = rotation_.z();
   prev_extState.segment<3>(10) = bias_;
-  prev_extState.segment<NOISE_SIZE>(13) =
+  prev_extState.segment<3>(13) = gravity_;
+  prev_extState.segment<NOISE_SIZE>(STATE_SIZE) =
     Eigen::VectorXd::Zero(NOISE_SIZE);
   // std::cout << "prev_extState: " << prev_extState.transpose() << std::endl;
 
@@ -1819,6 +1851,7 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
     next_extState(8),
     next_extState(9)).normalized();
   bias_ = next_extState.segment<3>(10);
+  gravity_ = next_extState.segment<3>(13);
   covariance_ = next_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
   ext_covariance_ = next_extCovariance;
   time_ = msg.header.stamp;

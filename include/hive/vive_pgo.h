@@ -32,7 +32,7 @@
 #include <map>
 #include <string>
 
-#define SMOOTHING 10.0
+#define SMOOTHING 1e-1
 #define ROTATION_FACTOR 1.0
 
 class PoseGraph : public Solver {

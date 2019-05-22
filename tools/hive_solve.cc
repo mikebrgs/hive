@@ -83,12 +83,12 @@ int main(int argc, char ** argv) {
     //   calibration.lighthouses,
     //   calibration.environment,
     //   1e-2, 1e-4, true, filter::ekf);
-    // // IEKF
+    // IEKF
     // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
     //   calibration.lighthouses,
     //   calibration.environment,
     //   1e-2, 1e-4, true, filter::iekf);
-    // // UKF
+    // UKF
     // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
     //   calibration.lighthouses,
     //   calibration.environment,
@@ -130,10 +130,13 @@ int main(int argc, char ** argv) {
   topics.push_back("/loc/vive/light/");
   topics.push_back("/loc/vive/imu");
   topics.push_back("/loc/vive/imu/");
+  size_t counter = 0;
   rosbag::View view_li(rbag, rosbag::TopicQuery(topics));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
     if (vl != NULL) {
+      counter++;
+      if (counter < 3000) continue;
       // ROS_INFO("LIGHT");
       solver[vl->header.frame_id]->ProcessLight(vl);
       aux_solver[vl->header.frame_id]->ProcessLight(vl);
@@ -172,6 +175,7 @@ int main(int argc, char ** argv) {
     }
     const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();
     if (vi != NULL) {
+      if (counter < 3000) continue;
       // ROS_INFO("IMU");
       Eigen::Vector3d iG(vi->linear_acceleration.x,
         vi->linear_acceleration.y,
