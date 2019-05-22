@@ -843,6 +843,7 @@ bool PoseGraph::Solve() {
   // std::cout << "Poses: " << poses_.size() << std::endl;
   while (li_it != light_data_.end()) {
     // Remove outliers
+    // std::cout << "bSize: " << li_it->samples.size() << std::endl;
     auto sample_it = li_it->samples.begin();
     while (sample_it != li_it->samples.end()) {
       if (sample_it->angle > -M_PI/3.0 && sample_it->angle < M_PI / 3.0) {
@@ -851,6 +852,8 @@ bool PoseGraph::Solve() {
         li_it->samples.erase(sample_it);
       }
     }
+    if (li_it->samples.size() == 0) continue;
+    // std::cout << "aSize: " << li_it->samples.size() << std::endl;
 
     prev_pose = next_pose;
     next_pose = *pose_it;
@@ -1032,6 +1035,9 @@ bool PoseGraph::Solve() {
       pre_problem.AddResidualBlock(vcost, NULL, pre_pose);
       pre_options.minimizer_progress_to_stdout = false;
       pre_options.max_num_iterations = 1000;
+      std::cout << "PreSolve " << light_data_.size() << " "
+        << pre_data[li_it->lighthouse].first->samples.size() << " "
+        << pre_data[li_it->lighthouse].second->samples.size() << std::endl;
       ceres::Solve(pre_options, &pre_problem, &pre_summary);
       // Copy paste
 
@@ -1083,6 +1089,7 @@ bool PoseGraph::Solve() {
 
   options.minimizer_progress_to_stdout = false;
   options.max_num_iterations = 1000;
+  std::cout << "Solve " << poses_.size() << " " << light_data_.size() << std::endl;
   ceres::Solve(options, &problem, &summary);
 
   size_t counter = 0;

@@ -1264,6 +1264,7 @@ bool ViveFilter::UpdateEKF(const hive::ViveLight & msg) {
     else
       msg_it++;
   }
+  if (clean_msg.samples.size() == 0) return false;
 
   size_t row = 0;
   Eigen::VectorXd Z(clean_msg.samples.size());
@@ -1406,6 +1407,7 @@ bool ViveFilter::UpdateIEKF(const hive::ViveLight & msg) {
     else
       sample_it++;
   }
+  if (clean_msg.samples.size() == 0) return false;
 
   size_t row = 0;
   Eigen::VectorXd Z(clean_msg.samples.size());
@@ -1697,6 +1699,7 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
     else
       sample_it++;
   }
+  if (clean_msg.samples.size() == 0) return false;
 
   size_t row = 0;
   Eigen::VectorXd Z(clean_msg.samples.size());
