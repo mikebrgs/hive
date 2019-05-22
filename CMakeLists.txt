@@ -142,11 +142,11 @@ add_executable(hive_offset tools/vive_offset.cc src/hive_offset.cc src/vive.cc s
 add_executable(hive_print_offset tools/hive_print_offset.cc src/vive.cc src/hive_solver.cc)
 add_executable(hive_refine src/vive_refine.cc src/vive.cc src/vive_solve.cc)
 # add_executable(hive_filter src/vive_filter.cc src/vive.cc)
-add_executable(hive_pgo src/vive_pgo.cc src/vive.cc)
+# add_executable(hive_pgo src/vive_pgo.cc src/vive.cc)
 add_executable(hive_analytics tools/hive_analytics.cc src/vive.cc src/hive_solver.cc)
 
 add_executable(hive_calibrate tools/hive_calibrate.cc src/vive.cc src/vive_solve.cc src/hive_calibrator.cc)
-add_executable(hive_solve tools/hive_solve.cc src/vive.cc src/vive_filter.cc src/hive_solver.cc)
+add_executable(hive_solve tools/hive_solve.cc src/vive.cc src/vive_filter.cc src/hive_solver.cc src/vive_pgo.cc)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
@@ -163,7 +163,7 @@ add_dependencies(hive_offset hive_generate_messages_cpp)
 add_dependencies(hive_print_offset hive_generate_messages_cpp)
 add_dependencies(hive_refine hive_generate_messages_cpp)
 # add_dependencies(hive_filter hive_generate_messages_cpp)
-add_dependencies(hive_pgo hive_generate_messages_cpp)
+# add_dependencies(hive_pgo hive_generate_messages_cpp)
 add_dependencies(hive_analytics hive_generate_messages_cpp)
 
 add_dependencies(hive_calibrate hive_generate_messages_cpp)
@@ -239,11 +239,11 @@ target_link_libraries(hive_refine
 #   ${EIGEN_LIBRARIES}
 # )
 
-target_link_libraries(hive_pgo
-  ${catkin_LIBRARIES}
-  ${CERES_LIBRARIES}
-  ${EIGEN_LIBRARIES}
-)
+# target_link_libraries(hive_pgo
+#   ${catkin_LIBRARIES}
+#   ${CERES_LIBRARIES}
+#   ${EIGEN_LIBRARIES}
+# )
 
 target_link_libraries(hive_calibrate
   ${catkin_LIBRARIES}

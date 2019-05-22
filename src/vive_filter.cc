@@ -1024,7 +1024,7 @@ bool ViveFilter::Valid() {
     std::isnan(bias_(1)) ||
     std::isnan(bias_(2))) return false;
 
-  // if (covariance_.trace() == 0) return false;
+  if (covariance_.trace() == 0) return false;
 
   double cost = 0;
   double light_counter = 0;

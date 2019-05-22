@@ -792,10 +792,11 @@ void PoseGraph::AddPoseFront() {
 }
 
 bool PoseGraph::GetTransform(geometry_msgs::TransformStamped& msg) {
+  if (!valid_) return false;
   // Set the output
   msg = pose_;
   // Change the time stamp
-  msg.header.stamp == ros::Time::now();
+  msg.header.stamp == light_data_.back().header.stamp;
   return true;
 }
 
@@ -1157,76 +1158,76 @@ void PoseGraph::PrintState() {
 }
 
 
-int main(int argc, char ** argv) {
-  // ros intializations
-  std::map<std::string, PoseGraph> smap;
-  Calibration cal;
-  rosbag::View view;
-  rosbag::Bag rbag;
+// int main(int argc, char ** argv) {
+//   // ros intializations
+//   std::map<std::string, PoseGraph> smap;
+//   Calibration cal;
+//   rosbag::View view;
+//   rosbag::Bag rbag;
 
-  if (argc < 2) {
-    std::cout << "Usage: ... hive_offset name_of_read_bag.bag "
-      << std::endl;
-    return -1;
-  }
+//   if (argc < 2) {
+//     std::cout << "Usage: ... hive_offset name_of_read_bag.bag "
+//       << std::endl;
+//     return -1;
+//   }
 
-  // Calibration
-  if (!ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE, &cal)) {
-    ROS_FATAL("Can't find calibration file.");
-    return -1;
-  } else {
-    ROS_INFO("Read calibration file.");
-  }
+//   // Calibration
+//   if (!ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE, &cal)) {
+//     ROS_FATAL("Can't find calibration file.");
+//     return -1;
+//   } else {
+//     ROS_INFO("Read calibration file.");
+//   }
 
-  rbag.open(argv[1], rosbag::bagmode::Read);
-  // Lighthouses
-  rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
-  for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
-    const hive::ViveCalibrationLighthouseArray::ConstPtr vl =
-      bag_it->instantiate<hive::ViveCalibrationLighthouseArray>();
-    cal.SetLighthouses(*vl);
-  }
-  ROS_INFO("Lighthouses' setup complete.");
+//   rbag.open(argv[1], rosbag::bagmode::Read);
+//   // Lighthouses
+//   rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
+//   for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
+//     const hive::ViveCalibrationLighthouseArray::ConstPtr vl =
+//       bag_it->instantiate<hive::ViveCalibrationLighthouseArray>();
+//     cal.SetLighthouses(*vl);
+//   }
+//   ROS_INFO("Lighthouses' setup complete.");
 
-  // Trackers
-  rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
-  for (auto bag_it = view_tr.begin(); bag_it != view_tr.end(); bag_it++) {
-    const hive::ViveCalibrationTrackerArray::ConstPtr vt =
-      bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
-    cal.SetTrackers(*vt);
-    for (auto tr : vt->trackers) {
-      smap[tr.serial] = PoseGraph(cal.environment,
-        cal.trackers[tr.serial],
-        cal.lighthouses,
-        4, TRUST, true, true);
-    }
-  }
-  ROS_INFO("Trackers' setup complete.");
+//   // Trackers
+//   rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
+//   for (auto bag_it = view_tr.begin(); bag_it != view_tr.end(); bag_it++) {
+//     const hive::ViveCalibrationTrackerArray::ConstPtr vt =
+//       bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
+//     cal.SetTrackers(*vt);
+//     for (auto tr : vt->trackers) {
+//       smap[tr.serial] = PoseGraph(cal.environment,
+//         cal.trackers[tr.serial],
+//         cal.lighthouses,
+//         4, TRUST, true, true);
+//     }
+//   }
+//   ROS_INFO("Trackers' setup complete.");
 
-  size_t counter = 0;
-  // Light data
-  std::vector<std::string> run_topics; 
-  run_topics.push_back("/loc/vive/light");
-  run_topics.push_back("/loc/vive/imu/");
-  run_topics.push_back("/loc/vive/imu");
-  rosbag::View view_li(rbag, rosbag::TopicQuery(run_topics));
-  for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
-    const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-    if (vl != NULL) {
-      // std::cout << "LIGHT" << std::endl;
-      smap[vl->header.frame_id].ProcessLight(vl);
-      smap[vl->header.frame_id].PrintState();
-      counter++;
-    }
-    const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();
-    if (vi != NULL) {
-      // std::cout << "IMU" << std::endl;
-      smap[vi->header.frame_id].ProcessImu(vi);
-      counter++;
-    }
-    // if (counter >= 200) break;
-  }
-  ROS_INFO("Data processment complete.");
+//   size_t counter = 0;
+//   // Light data
+//   std::vector<std::string> run_topics; 
+//   run_topics.push_back("/loc/vive/light");
+//   run_topics.push_back("/loc/vive/imu/");
+//   run_topics.push_back("/loc/vive/imu");
+//   rosbag::View view_li(rbag, rosbag::TopicQuery(run_topics));
+//   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
+//     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
+//     if (vl != NULL) {
+//       // std::cout << "LIGHT" << std::endl;
+//       smap[vl->header.frame_id].ProcessLight(vl);
+//       smap[vl->header.frame_id].PrintState();
+//       counter++;
+//     }
+//     const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();
+//     if (vi != NULL) {
+//       // std::cout << "IMU" << std::endl;
+//       smap[vi->header.frame_id].ProcessImu(vi);
+//       counter++;
+//     }
+//     // if (counter >= 200) break;
+//   }
+//   ROS_INFO("Data processment complete.");
 
-  return 0;
-}
+//   return 0;
+// }

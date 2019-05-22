@@ -71,10 +71,10 @@ void Convert(const T from[3], geometry_msgs::Vector3 & to) {
 
 template <typename T> inline
 void Convert(const T from[4], geometry_msgs::Quaternion & to) {
-  to.w = from[0];
-  to.x = from[1];
-  to.y = from[2];
-  to.z = from[3];
+  to.x = from[0];
+  to.y = from[1];
+  to.z = from[2];
+  to.w = from[3];
 }
 
 class HiveBridge {

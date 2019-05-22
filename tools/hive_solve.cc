@@ -79,10 +79,10 @@ int main(int argc, char ** argv) {
     //   calibration.environment,
     //   true);
     // EKF
-    solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
-      calibration.lighthouses,
-      calibration.environment,
-      1e-2, 1e-4, true, filter::ekf);
+    // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
+    //   calibration.lighthouses,
+    //   calibration.environment,
+    //   1e-2, 1e-4, true, filter::ekf);
     // // IEKF
     // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
     //   calibration.lighthouses,
@@ -92,12 +92,12 @@ int main(int argc, char ** argv) {
     // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
     //   calibration.lighthouses,
     //   calibration.environment,
-    //   1e-3, 1e-8, true, filter::ukf);
+    //   1e-1, 1e-4, true, filter::ukf);
     // // PGO
-    // solver[tracker.first] = new PoseGraph(calibration.environment,
-    //   calibration.trackers[tracker.first],
-    //   calibration.lighthouses,
-    //   4, 0.4, true, true);
+    solver[tracker.first] = new PoseGraph(calibration.environment,
+      calibration.trackers[tracker.first],
+      calibration.lighthouses,
+      4, 0.4, true, true);
   }
   ROS_INFO("Trackers' setup complete.");
 
