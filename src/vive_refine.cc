@@ -7,6 +7,959 @@ typedef std::vector<TF> TFs;
 typedef std::map<std::string, std::pair<hive::ViveLight*,
   hive::ViveLight*>> LightMap;
 
+namespace refine {
+  // Light cost - Cost using the poses from the imu frame to the vive frame
+  class ViveHorizontalCost
+  {
+  public:
+    // Constructor
+    ViveHorizontalCost(hive::ViveLight data,
+      geometry_msgs::Transform vTl, // vive to lighthouse
+      Tracker tracker,
+      Motor lighthouse,
+      bool correction);
+    // Destructor
+    ~ViveHorizontalCost();
+    // Ceres operator
+    template <typename T>
+    bool operator()(const T* const * parameters, T* residual) const;
+  private:
+    bool correction_;
+    Tracker tracker_;
+    Motor lighthouse_;
+    hive::ViveLight data_;
+    geometry_msgs::Transform vTl_;
+  };
+
+  ViveHorizontalCost::ViveHorizontalCost(hive::ViveLight data,
+      geometry_msgs::Transform vTl,
+      Tracker tracker,
+      Motor lighthouse,
+      bool correction) {
+    lighthouse_ = lighthouse;
+    correction_ = correction;
+    tracker_ = tracker;
+    data_ = data;
+    vTl_ = vTl;
+    return;
+  }
+
+  ViveHorizontalCost::~ViveHorizontalCost() {
+    // Do nothing
+    return;
+  }
+
+  template <typename T>
+  bool ViveHorizontalCost::operator()(const T* const * parameters,
+    T* residual) const {
+    // Optimization parameters
+    Eigen::Matrix<T, 3, 1> vPi;
+    vPi << parameters[0][0],
+      parameters[0][1],
+      parameters[0][2];
+    Eigen::Matrix<T, 3, 3> vRi;
+    ceres::AngleAxisToRotationMatrix(&parameters[0][6], vRi.data());
+
+    // Lighthouse pose
+    Eigen::Matrix<T, 3, 1> vPl;
+    vPl << T(vTl_.translation.x),
+      T(vTl_.translation.y),
+      T(vTl_.translation.z);
+    Eigen::Quaternion<T> vQl(
+      T(vTl_.rotation.w),
+      T(vTl_.rotation.x),
+      T(vTl_.rotation.y),
+      T(vTl_.rotation.z));
+    Eigen::Matrix<T, 3, 3> vRl;
+    vRl = vQl.toRotationMatrix();
+
+    // Inertial transform
+    Eigen::Matrix<T,3,1> tPi;
+    tPi << T(tracker_.imu_transform.translation.x),
+      T(tracker_.imu_transform.translation.y),
+      T(tracker_.imu_transform.translation.z);
+    Eigen::Quaternion<T> tQi(
+      T(tracker_.imu_transform.rotation.w),
+      T(tracker_.imu_transform.rotation.x),
+      T(tracker_.imu_transform.rotation.y),
+      T(tracker_.imu_transform.rotation.z));
+    Eigen::Matrix<T, 3, 3> tRi;
+    tRi = tQi.toRotationMatrix();
+
+    // Invert inertial transform
+    Eigen::Matrix<T,3,1> iPt = - tRi.transpose() * tPi;
+    Eigen::Matrix<T,3,3> iRt = tRi.transpose();
+
+    // Vive and IMU frame to lighthouse and tracker
+    Eigen::Matrix<T, 3, 1> lPv;
+    lPv = - vRl.transpose() * vPl;
+    Eigen::Matrix<T, 3, 3> lRv;
+    lRv = vRl.transpose();
+    Eigen::Matrix<T, 3, 1> lPt;
+    lPt = lRv * (vRi * iPt + vPi) + lPv;
+    Eigen::Matrix<T, 3, 3> lRt;
+    lRt = lRv * vRi * iRt;
+
+    size_t counter = 0;
+    for (auto li_it = data_.samples.begin();
+      li_it != data_.samples.end(); li_it++) {
+      auto sensor_it = tracker_.sensors.find((uint8_t)li_it->sensor);
+      if (sensor_it == tracker_.sensors.end()) return false;
+      Eigen::Matrix<T, 3, 1> tPs;
+      tPs << T(sensor_it->second.position.x),
+        T(sensor_it->second.position.y),
+        T(sensor_it->second.position.z);
+
+      Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
+
+      T ang; // The final angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
+      T phase = T(lighthouse_.phase);
+      T tilt = T(lighthouse_.tilt);
+      T gib_phase = T(lighthouse_.gib_phase);
+      T gib_mag = T(lighthouse_.gib_magnitude);
+      T curve = T(lighthouse_.curve);
+
+      if (correction_) {
+        ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
+      } else {
+        ang = atan(x);
+      }
+
+      residual[counter] = T(li_it->angle) - ang;
+      counter++;
+    }
+    return true;
+  }
+
+  // Light cost - Cost using the poses from the imu frame to the vive frame
+  class ViveVerticalCost
+  {
+  public:
+    // Constructor
+    ViveVerticalCost(hive::ViveLight data,
+      geometry_msgs::Transform vTl, // Vive to lighthouse
+      Tracker tracker,
+      Motor lighthouse,
+      bool correction);
+    // Destructor
+    ~ViveVerticalCost();
+    // Ceres operator
+    template <typename T>
+    bool operator()(const T* const * parameters, T* residual) const;
+  private:
+    bool correction_;
+    Tracker tracker_;
+    Motor lighthouse_;
+    hive::ViveLight data_;
+    geometry_msgs::Transform vTl_;
+  };
+
+  ViveVerticalCost::ViveVerticalCost(hive::ViveLight data,
+    geometry_msgs::Transform vTl,
+    Tracker tracker,
+    Motor lighthouse,
+    bool correction) {
+    lighthouse_ = lighthouse;
+    correction_ = correction;
+    tracker_ = tracker;
+    data_ = data;
+    vTl_ = vTl;
+    return;
+  }
+
+  ViveVerticalCost::~ViveVerticalCost() {
+    // Do nothing
+    return;
+  }
+
+  template <typename T>
+  bool ViveVerticalCost::operator()(const T* const * parameters,
+    T* residual) const {
+    // Optimization parameters
+    Eigen::Matrix<T, 3, 1> vPi;
+    vPi << parameters[0][0],
+      parameters[0][1],
+      parameters[0][2];
+    Eigen::Matrix<T, 3, 3> vRi;
+    ceres::AngleAxisToRotationMatrix(&parameters[0][6], vRi.data());
+
+    // Lighthouse pose
+    Eigen::Matrix<T, 3, 1> vPl;
+    vPl << T(vTl_.translation.x),
+      T(vTl_.translation.y),
+      T(vTl_.translation.z);
+    Eigen::Quaternion<T> vQl(
+      T(vTl_.rotation.w),
+      T(vTl_.rotation.x),
+      T(vTl_.rotation.y),
+      T(vTl_.rotation.z));
+    Eigen::Matrix<T, 3, 3> vRl;
+    vRl = vQl.toRotationMatrix();
+
+    // Inertial transform
+    Eigen::Matrix<T,3,1> tPi;
+    tPi << T(tracker_.imu_transform.translation.x),
+      T(tracker_.imu_transform.translation.y),
+      T(tracker_.imu_transform.translation.z);
+    Eigen::Quaternion<T> tQi(
+      T(tracker_.imu_transform.rotation.w),
+      T(tracker_.imu_transform.rotation.x),
+      T(tracker_.imu_transform.rotation.y),
+      T(tracker_.imu_transform.rotation.z));
+    Eigen::Matrix<T, 3, 3> tRi;
+    tRi = tQi.toRotationMatrix();
+
+    // Invert inertial transform
+    Eigen::Matrix<T,3,1> iPt = - tRi.transpose() * tPi;
+    Eigen::Matrix<T,3,3> iRt = tRi.transpose();
+
+    // Vive and IMU frame to lighthouse and tracker
+    Eigen::Matrix<T, 3, 1> lPv;
+    lPv = - vRl.transpose() * vPl;
+    Eigen::Matrix<T, 3, 3> lRv;
+    lRv = vRl.transpose();
+    Eigen::Matrix<T, 3, 1> lPt;
+    lPt = lRv * (vRi * iPt + vPi) + lPv;
+    Eigen::Matrix<T, 3, 3> lRt;
+    lRt = lRv * vRi * iRt;
+
+    size_t counter = 0;
+    for (auto li_it = data_.samples.begin();
+      li_it != data_.samples.end(); li_it++) {
+      auto sensor_it = tracker_.sensors.find((uint8_t)li_it->sensor);
+      if (sensor_it == tracker_.sensors.end()) return false;
+      Eigen::Matrix<T, 3, 1> tPs;
+      tPs << T(sensor_it->second.position.x),
+        T(sensor_it->second.position.y),
+        T(sensor_it->second.position.z);
+
+      Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
+
+      T ang; // The final angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
+      T phase = T(lighthouse_.phase);
+      T tilt = T(lighthouse_.tilt);
+      T gib_phase = T(lighthouse_.gib_phase);
+      T gib_mag = T(lighthouse_.gib_magnitude);
+      T curve = T(lighthouse_.curve);
+
+      if (correction_) {
+        ang = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
+      } else {
+        ang = atan(y);
+      }
+
+
+      residual[counter] = T(li_it->angle) - ang;
+      counter++;
+    }
+    return true;
+  }
+
+  // Inertial cost function
+  class InertialCost {
+  public:
+    InertialCost(sensor_msgs::Imu imu,
+      geometry_msgs::Vector3 gravity,
+      geometry_msgs::Vector3 acc_bias,
+      geometry_msgs::Vector3 gyr_bias,
+      double time_step,
+      double trust_weight,
+      bool verbose = false);
+    ~InertialCost();
+    template <typename T> bool operator()(const T* const prev_vTi,
+      const T* const next_vTi,
+      T * residual) const;
+  private:
+    // Inertial data
+    sensor_msgs::Imu imu_;
+    // Light data
+    hive::ViveLight prev_, next_;
+    // Gravity
+    geometry_msgs::Vector3 gravity_, gyr_bias_, acc_bias_;
+    // Time step and weight
+    double time_step_, trust_weight_;
+    // Other
+    bool verbose_;
+  };
+
+  InertialCost::InertialCost(sensor_msgs::Imu imu,
+    geometry_msgs::Vector3 gravity,
+    geometry_msgs::Vector3 acc_bias,
+    geometry_msgs::Vector3 gyr_bias,
+    double time_step,
+    double trust_weight,
+    bool verbose) {
+    imu_ = imu;
+    gravity_ = gravity;
+    time_step_ = time_step;
+    trust_weight_ = trust_weight;
+    gyr_bias_ = gyr_bias;
+    verbose_ = verbose;
+    return;
+  }
+
+  InertialCost::~InertialCost() {
+    // Nothing happens
+    return;
+  }
+
+  template <typename T>
+  bool InertialCost::operator()(const T* const prev_vTi,
+    const T* const next_vTi,
+    T * residual) const {
+
+    // prev_vTt's state
+    // Position
+    Eigen::Matrix<T,3,1> prev_vPi;
+    prev_vPi << prev_vTi[0],
+      prev_vTi[1],
+      prev_vTi[2];
+    // Velocity
+    Eigen::Matrix<T,3,1> prev_vVi;
+    prev_vVi << prev_vTi[3],
+      prev_vTi[4],
+      prev_vTi[5];
+    // Angle axis in vector
+    Eigen::Matrix<T,3,1> prev_vAi;
+    prev_vAi << prev_vTi[6],
+      prev_vTi[7],
+      prev_vTi[8];
+    // Angle axis eigen structure
+    Eigen::AngleAxis<T> prev_vAAi(prev_vAi.norm(),
+      prev_vAi.normalized());
+    // Eigen Quaternion
+    Eigen::Quaternion<T> prev_vQi(prev_vAAi);
+    // Rotation matrix
+    Eigen::Matrix<T,3,3> prev_vRi;// = prev_vQi.toRotationMatrix();
+    ceres::AngleAxisToRotationMatrix(&prev_vTi[6], prev_vRi.data());
+
+    // next_vTt's state
+    // Position
+    Eigen::Matrix<T,3,1> next_vPi;
+    next_vPi << next_vTi[0],
+      next_vTi[1],
+      next_vTi[2];
+    // Velocity
+    Eigen::Matrix<T,3,1> next_vVi;
+    next_vVi << next_vTi[3],
+      next_vTi[4],
+      next_vTi[5];
+    // Angle axis in vector
+    Eigen::Matrix<T,3,1> next_vAi;
+    next_vAi << next_vTi[6],
+      next_vTi[7],
+      next_vTi[8];
+    // Angle axis eigen structure
+    Eigen::AngleAxis<T> next_vAAi(next_vAi.norm(),
+      next_vAi.normalized());
+    // Eigen Quaternion
+    Eigen::Quaternion<T> next_vQi(next_vAAi);
+    // Rotation matrix
+    Eigen::Matrix<T,3,3> next_vRi;// = next_vQi.toRotationMatrix();
+    ceres::AngleAxisToRotationMatrix(&next_vTi[6], next_vRi.data());
+
+    // Inertial measurements
+    Eigen::Matrix<T,3,1> iW;
+    iW << T(imu_.angular_velocity.x),
+      T(imu_.angular_velocity.y),
+      T(imu_.angular_velocity.z);
+    Eigen::Matrix<T,3,1> iA;
+    iA << T(imu_.linear_acceleration.x),
+      T(imu_.linear_acceleration.y),
+      T(imu_.linear_acceleration.z);
+
+    // Inertial bias
+    Eigen::Matrix<T,3,1> iBa;
+    iBa << T(acc_bias_.x),
+      T(acc_bias_.y),
+      T(acc_bias_.z);
+    Eigen::Matrix<T,3,1> iBw;
+    iBw << T(gyr_bias_.x),
+      T(gyr_bias_.y),
+      T(gyr_bias_.z);
+
+    // Gravity
+    Eigen::Matrix<T,3,1> vG;
+    vG << T(gravity_.x),
+      T(gravity_.y),
+      T(gravity_.z);
+
+    // Inertial predictions
+    // Position prediction
+    T dt = T(0.0);
+    Eigen::Matrix<T,3,1> est_vPi;
+    est_vPi = prev_vPi + T(dt) * prev_vVi;// + T(0.5 * dt * dt) * (vG - prev_vRi * iA);
+    // Velocity prediction
+    Eigen::Matrix<T,3,1> est_vVi;
+    est_vVi = prev_vVi + T(dt) * (vG - (prev_vRi * (iA-iBa)));
+    if (verbose_) {
+      std::cout << "vA" << " "
+        << (prev_vRi * iA)(0) << ", "
+        << (prev_vRi * iA)(1) << ", "
+        << (prev_vRi * iA)(2) << std::endl;
+      std::cout << "vG" << " "
+        << vG(0) << ", "
+        << vG(1) << ", "
+        << vG(2) << std::endl;
+    }
+    // std::cout << (prev_vRi * iA)(0) << ", " << (prev_vRi * iA)(1) << ", " << (prev_vRi * iA)(2) << std::endl;
+    // Quaternion derivative matrix
+    Eigen::Matrix<T,4,3> Omega;
+    Omega << -prev_vQi.x(), -prev_vQi.y(), -prev_vQi.z(),
+      prev_vQi.w(), -prev_vQi.z(), prev_vQi.y(),
+      prev_vQi.z(), prev_vQi.w(), -prev_vQi.x(),
+      -prev_vQi.y(), prev_vQi.x(), prev_vQi.w();
+    // Temporary previous orientation in vector
+    Eigen::Matrix<T,4,1> trev_vQi; // temporary previous
+    trev_vQi << prev_vQi.w(),
+      prev_vQi.x(),
+      prev_vQi.y(),
+      prev_vQi.z();
+    Eigen::Matrix<T,4,1> text_vQi; // temporary next
+    // Temporary next orientation in vector
+    text_vQi = trev_vQi + T(dt) * T(0.5) * Omega * (iW - iBw);
+    // text_vQi.normalize(); // maybe remove
+    // Fix small errors
+    Eigen::Quaternion<T> est_vQi(text_vQi(0),
+      text_vQi(1),
+      text_vQi(2),
+      text_vQi(3));
+    Eigen::Matrix<T,3,3> est_vRi = est_vQi.toRotationMatrix();
+
+    // Estimated from inertia vs next
+    Eigen::Matrix<T,3,1> dP;
+    Eigen::Matrix<T,3,1> dV;
+    Eigen::Matrix<T,3,3> dR;
+    dP = next_vPi - est_vPi;
+    dV = next_vVi - est_vVi;
+    dR = next_vRi.transpose() * est_vRi;
+
+    // Position cost
+    residual[0] = T(trust_weight_) * dP(0);
+    residual[1] = T(trust_weight_) * dP(1);
+    residual[2] = T(trust_weight_) * dP(2);
+    // Velocity cost
+    // residual[3] = prev_vPi(0) - next_vPi(0);
+    // residual[4] = prev_vPi(1) - next_vPi(1);
+    // residual[5] = prev_vPi(2) - next_vPi(2);
+    residual[3] = T(trust_weight_) * dV(0);
+    residual[4] = T(trust_weight_) * dV(1);
+    residual[5] = T(trust_weight_) * dV(2);
+    // Orientation cost
+    T aa[3];
+    ceres::RotationMatrixToAngleAxis(dR.data(), aa);
+    // std::cout << aa[0] << ", " << aa[1] << ", " << aa[2] << std::endl;
+    residual[6] = T(trust_weight_) *
+      (aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]); // WATCH OUT FOR THIS
+      // Watch out for bias
+    return true;
+  }
+
+  // How close the poses should be to each other
+  class SmoothingCost {
+  public:
+    // Constructor to pass data
+    // A good smoothing factor is 0.1, but it may be changed
+    explicit SmoothingCost(double smoothing,
+      double rotation_factor);
+
+    // Function for ceres solver with parameters (different frames)
+    template <typename T> bool operator()(const T* const prev_lTt,
+      const T* const prev_vTl,
+      const T* const next_lTt,
+      const T* const next_vTl,
+      T * residual) const;
+
+    // Function for ceres solver with parameters (same frame)
+    template <typename T> bool operator()(const T* const prev_lTt,
+      const T* const next_lTt,
+      const T* const vTl,
+      T * residual) const;
+
+  private:
+    double smoothing_;
+    double rotation_factor_;
+  };
+
+  // Constructor to pass data
+  SmoothingCost::SmoothingCost(double smoothing,
+    double rotation_factor) {
+    smoothing_ = smoothing;
+    rotation_factor_ = rotation_factor;
+  }
+  // Function for ceres solver with parameters
+  template <typename T> bool SmoothingCost::operator()(const T* const prev_lTt,
+    const T* const prev_vTl,
+    const T* const next_lTt,
+    const T* const next_vTl,
+    T * residual) const {
+    // cost function here
+
+    // Frame conversion
+    Eigen::Matrix<T, 3, 1> prev_lPt;
+    prev_lPt << prev_lTt[0],
+      prev_lTt[1],
+      prev_lTt[2];
+    Eigen::Matrix<T, 3, 1> next_lPt;
+    next_lPt << next_lTt[0],
+      next_lTt[1],
+      next_lTt[2];
+    Eigen::Matrix<T, 3, 3> prev_lRt;
+    ceres::AngleAxisToRotationMatrix(&prev_lTt[3], prev_lRt.data());
+    Eigen::Matrix<T, 3, 3> next_lRt;
+    ceres::AngleAxisToRotationMatrix(&next_lTt[3], next_lRt.data());
+
+    Eigen::Matrix<T, 3, 1> prev_vPl;
+    prev_vPl << prev_vTl[0],
+      prev_vTl[1],
+      prev_vTl[2];
+    Eigen::Matrix<T, 3, 1> next_vPl;
+    next_vPl << next_vTl[0],
+      next_vTl[1],
+      next_vTl[2];
+    Eigen::Matrix<T, 3, 3> prev_vRl;
+    ceres::AngleAxisToRotationMatrix(&prev_vTl[3], prev_vRl.data());
+    Eigen::Matrix<T, 3, 3> next_vRl;
+    ceres::AngleAxisToRotationMatrix(&next_vTl[3], next_vRl.data());
+
+    Eigen::Matrix<T, 3, 1> prev_vPt = prev_vRl * prev_lPt + prev_vPl;
+    Eigen::Matrix<T, 3, 3> prev_vRt = prev_vRl * prev_lRt;
+
+    Eigen::Matrix<T, 3, 1> next_vPt = next_vRl * next_lPt + next_vPl;
+    Eigen::Matrix<T, 3, 3> next_vRt = next_vRl * next_lRt;
+
+    // // Translation cost with smoothing
+    residual[0] = T(smoothing_) * (prev_vPt(0) - next_vPt(0));
+    residual[1] = T(smoothing_) * (prev_vPt(1) - next_vPt(1));
+    residual[2] = T(smoothing_) * (prev_vPt(2) - next_vPt(2));
+    // // Rotation cost with smoothing
+    T aa[3];
+    Eigen::Matrix<T, 3, 3> R = next_vRt.transpose() * prev_vRt;
+    ceres::RotationMatrixToAngleAxis(R.data(), aa);
+    residual[3] = T(rotation_factor_) * T(smoothing_)*
+      sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
+    return true;
+  }
+
+  template <typename T> bool SmoothingCost::operator()(const T* const prev_lTt,
+    const T* const next_lTt,
+    const T* const vTl,
+    T * residual) const {
+    // Frame conversion
+    Eigen::Matrix<T, 3, 1> prev_lPt;
+    prev_lPt << prev_lTt[0],
+      prev_lTt[1],
+      prev_lTt[2];
+    Eigen::Matrix<T, 3, 1> next_lPt;
+    next_lPt << next_lTt[0],
+      next_lTt[1],
+      next_lTt[2];
+    Eigen::Matrix<T, 3, 3> prev_lRt;
+    ceres::AngleAxisToRotationMatrix(&prev_lTt[3], prev_lRt.data());
+    Eigen::Matrix<T, 3, 3> next_lRt;
+    ceres::AngleAxisToRotationMatrix(&next_lTt[3], next_lRt.data());
+
+    Eigen::Matrix<T, 3, 1> vPl;
+    vPl << vTl[0],
+      vTl[1],
+      vTl[2];
+    Eigen::Matrix<T, 3, 3> vRl;
+    ceres::AngleAxisToRotationMatrix(&vTl[3], vRl.data());
+
+    Eigen::Matrix<T, 3, 1> prev_vPt = vRl * prev_lPt + vPl;
+    Eigen::Matrix<T, 3, 3> prev_vRt = vRl * prev_lRt;
+
+    Eigen::Matrix<T, 3, 1> next_vPt = vRl * next_lPt + vPl;
+    Eigen::Matrix<T, 3, 3> next_vRt = vRl * next_lRt;
+
+    // // Translation cost with smoothing
+    residual[0] = T(smoothing_) * (prev_vPt(0) - next_vPt(0));
+    residual[1] = T(smoothing_) * (prev_vPt(1) - next_vPt(1));
+    residual[2] = T(smoothing_) * (prev_vPt(2) - next_vPt(2));
+    // // Rotation cost with smoothing
+    T aa[3];
+    Eigen::Matrix<T, 3, 3> R = next_vRt.transpose() * prev_vRt;
+    ceres::RotationMatrixToAngleAxis(R.data(), aa);
+    residual[3] = T(rotation_factor_) * T(smoothing_) *
+      sqrt(aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
+    return true;
+  }
+
+  // Light cost - Cost using the poses from the imu frame to the vive frame
+  class ViveCalibrationHorizontalCost
+  {
+  public:
+    // Constructor
+    ViveCalibrationHorizontalCost(hive::ViveLight data,
+      Tracker tracker,
+      Motor lighthouse,
+      bool correction);
+    // Destructor
+    ~ViveCalibrationHorizontalCost();
+    // Ceres operator - First parameters are Vive Pose, second are lighthouse pose
+    template <typename T>
+    bool operator()(const T* const * parameters, T* residual) const;
+  private:
+    bool correction_;
+    Tracker tracker_;
+    Motor lighthouse_;
+    hive::ViveLight data_;
+  };
+
+  ViveCalibrationHorizontalCost::ViveCalibrationHorizontalCost(hive::ViveLight data,
+      Tracker tracker,
+      Motor lighthouse,
+      bool correction) {
+    lighthouse_ = lighthouse;
+    correction_ = correction;
+    tracker_ = tracker;
+    data_ = data;
+    return;
+  }
+
+  ViveCalibrationHorizontalCost::~ViveCalibrationHorizontalCost() {
+    // Do nothing
+    return;
+  }
+
+  template <typename T>
+  bool ViveCalibrationHorizontalCost::operator()(const T* const * parameters,
+    T* residual) const {
+    // Optimization parameters
+    Eigen::Matrix<T, 3, 1> vPi;
+    vPi << parameters[0][0],
+      parameters[0][1],
+      parameters[0][2];
+    Eigen::Matrix<T, 3, 3> vRi;
+    ceres::AngleAxisToRotationMatrix(&parameters[0][6], vRi.data());
+
+    // Lighthouse pose
+    Eigen::Matrix<T, 3, 1> vPl;
+    vPl << parameters[1][0],
+      parameters[1][1],
+      parameters[1][2];
+    Eigen::Matrix<T, 3, 3> vRl;
+    ceres::AngleAxisToRotationMatrix(&parameters[1][3], vRl.data());
+
+    // Inertial transform
+    Eigen::Matrix<T,3,1> tPi;
+    tPi << T(tracker_.imu_transform.translation.x),
+      T(tracker_.imu_transform.translation.y),
+      T(tracker_.imu_transform.translation.z);
+    Eigen::Quaternion<T> tQi(
+      T(tracker_.imu_transform.rotation.w),
+      T(tracker_.imu_transform.rotation.x),
+      T(tracker_.imu_transform.rotation.y),
+      T(tracker_.imu_transform.rotation.z));
+    Eigen::Matrix<T, 3, 3> tRi;
+    tRi = tQi.toRotationMatrix();
+
+    // Invert inertial transform
+    Eigen::Matrix<T,3,1> iPt = - tRi.transpose() * tPi;
+    Eigen::Matrix<T,3,3> iRt = tRi.transpose();
+
+    // Vive and IMU frame to lighthouse and tracker
+    Eigen::Matrix<T, 3, 1> lPv;
+    lPv = - vRl.transpose() * vPl;
+    Eigen::Matrix<T, 3, 3> lRv;
+    lRv = vRl.transpose();
+    Eigen::Matrix<T, 3, 1> lPt;
+    lPt = lRv * (vRi * iPt + vPi) + lPv;
+    Eigen::Matrix<T, 3, 3> lRt;
+    lRt = lRv * vRi * iRt;
+
+    size_t counter = 0;
+    for (auto li_it = data_.samples.begin();
+      li_it != data_.samples.end(); li_it++) {
+      auto sensor_it = tracker_.sensors.find((uint8_t)li_it->sensor);
+      if (sensor_it == tracker_.sensors.end()) return false;
+      Eigen::Matrix<T, 3, 1> tPs;
+      tPs << T(sensor_it->second.position.x),
+        T(sensor_it->second.position.y),
+        T(sensor_it->second.position.z);
+
+      Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
+
+      T ang; // The final angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
+      T phase = T(lighthouse_.phase);
+      T tilt = T(lighthouse_.tilt);
+      T gib_phase = T(lighthouse_.gib_phase);
+      T gib_mag = T(lighthouse_.gib_magnitude);
+      T curve = T(lighthouse_.curve);
+
+      if (correction_) {
+        ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
+      } else {
+        ang = atan(x);
+      }
+
+      residual[counter] = T(li_it->angle) - ang;
+      counter++;
+    }
+    return true;
+  }
+
+  // Light cost - Cost using the poses from the imu frame to the vive frame
+  class ViveCalibrationVerticalCost
+  {
+  public:
+    // Constructor
+    ViveCalibrationVerticalCost(hive::ViveLight data,
+      Tracker tracker,
+      Motor lighthouse,
+      bool correction);
+    // Destructor
+    ~ViveCalibrationVerticalCost();
+    // Ceres operator - First parameters are Vive Pose, second are lighthouse pose
+    template <typename T>
+    bool operator()(const T* const * parameters, T* residual) const;
+  private:
+    bool correction_;
+    Tracker tracker_;
+    Motor lighthouse_;
+    hive::ViveLight data_;
+  };
+
+  ViveCalibrationVerticalCost::ViveCalibrationVerticalCost(hive::ViveLight data,
+    Tracker tracker,
+    Motor lighthouse,
+    bool correction) {
+    lighthouse_ = lighthouse;
+    correction_ = correction;
+    tracker_ = tracker;
+    data_ = data;
+    return;
+  }
+
+  ViveCalibrationVerticalCost::~ViveCalibrationVerticalCost() {
+    // Do nothing
+    return;
+  }
+
+  template <typename T>
+  bool ViveCalibrationVerticalCost::operator()(const T* const * parameters,
+    T* residual) const {
+    // Optimization parameters
+    Eigen::Matrix<T, 3, 1> vPi;
+    vPi << parameters[0][0],
+      parameters[0][1],
+      parameters[0][2];
+    Eigen::Matrix<T, 3, 3> vRi;
+    ceres::AngleAxisToRotationMatrix(&parameters[0][6], vRi.data());
+
+    // Lighthouse pose
+    Eigen::Matrix<T, 3, 1> vPl;
+    vPl << parameters[1][0],
+      parameters[1][1],
+      parameters[1][2];
+    Eigen::Matrix<T, 3, 3> vRl;
+    ceres::AngleAxisToRotationMatrix(&parameters[1][3], vRl.data());
+
+    // Inertial transform
+    Eigen::Matrix<T,3,1> tPi;
+    tPi << T(tracker_.imu_transform.translation.x),
+      T(tracker_.imu_transform.translation.y),
+      T(tracker_.imu_transform.translation.z);
+    Eigen::Quaternion<T> tQi(
+      T(tracker_.imu_transform.rotation.w),
+      T(tracker_.imu_transform.rotation.x),
+      T(tracker_.imu_transform.rotation.y),
+      T(tracker_.imu_transform.rotation.z));
+    Eigen::Matrix<T, 3, 3> tRi;
+    tRi = tQi.toRotationMatrix();
+
+    // Invert inertial transform
+    Eigen::Matrix<T,3,1> iPt = - tRi.transpose() * tPi;
+    Eigen::Matrix<T,3,3> iRt = tRi.transpose();
+
+    // Vive and IMU frame to lighthouse and tracker
+    Eigen::Matrix<T, 3, 1> lPv;
+    lPv = - vRl.transpose() * vPl;
+    Eigen::Matrix<T, 3, 3> lRv;
+    lRv = vRl.transpose();
+    Eigen::Matrix<T, 3, 1> lPt;
+    lPt = lRv * (vRi * iPt + vPi) + lPv;
+    Eigen::Matrix<T, 3, 3> lRt;
+    lRt = lRv * vRi * iRt;
+
+    size_t counter = 0;
+    for (auto li_it = data_.samples.begin();
+      li_it != data_.samples.end(); li_it++) {
+      auto sensor_it = tracker_.sensors.find((uint8_t)li_it->sensor);
+      if (sensor_it == tracker_.sensors.end()) return false;
+      Eigen::Matrix<T, 3, 1> tPs;
+      tPs << T(sensor_it->second.position.x),
+        T(sensor_it->second.position.y),
+        T(sensor_it->second.position.z);
+
+      Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
+
+      T ang; // The final angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
+      T phase = T(lighthouse_.phase);
+      T tilt = T(lighthouse_.tilt);
+      T gib_phase = T(lighthouse_.gib_phase);
+      T gib_mag = T(lighthouse_.gib_magnitude);
+      T curve = T(lighthouse_.curve);
+
+      if (correction_) {
+        ang = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
+      } else {
+        ang = atan(y);
+      }
+
+
+      residual[counter] = T(li_it->angle) - ang;
+      counter++;
+    }
+    return true;
+  }
+
+  class PoseHorizontalCost {
+  public:
+    explicit PoseHorizontalCost(hive::ViveLight data,
+      Tracker tracker,
+      Motor lighthouse,
+      bool correction);
+
+    template <typename T> bool operator()(const T* const * parameters,
+      T * residual) const;
+  private:
+    bool correction_;
+    Tracker tracker_;
+    Motor lighthouse_;
+    hive::ViveLight data_;
+  };
+
+  class PoseVerticalCost {
+  public:
+    explicit PoseVerticalCost(hive::ViveLight data,
+      Tracker tracker,
+      Motor lighthouse,
+      bool correction);
+
+    template <typename T> bool operator()(const T* const * parameters,
+      T * residual) const;
+  private:
+    bool correction_;
+    Tracker tracker_;
+    Motor lighthouse_;
+    hive::ViveLight data_;
+  };
+
+  PoseHorizontalCost::PoseHorizontalCost(hive::ViveLight data,
+      Tracker tracker,
+      Motor lighthouse,
+      bool correction) {
+      data_ = data;
+      correction_ = correction;
+      tracker_ = tracker;
+      lighthouse_ = lighthouse;
+    }
+
+  template <typename T> bool PoseHorizontalCost::operator()(const T* const * parameters,
+    T * residual) const {
+    Eigen::Matrix<T, 3, 1> lPt;
+    lPt << parameters[0][0],
+      parameters[0][1],
+      parameters[0][2];
+    Eigen::Matrix<T, 3, 3> lRt;
+    ceres::AngleAxisToRotationMatrix(&parameters[0][3], lRt.data());
+
+    size_t counter = 0;
+    for (auto li_it = data_.samples.begin();
+      li_it != data_.samples.end(); li_it++) {
+      auto sensor_it = tracker_.sensors.find((uint8_t)li_it->sensor);
+      if (sensor_it == tracker_.sensors.end()) return false;
+      Eigen::Matrix<T, 3, 1> tPs;
+      tPs << T(sensor_it->second.position.x),
+        T(sensor_it->second.position.y),
+        T(sensor_it->second.position.z);
+
+      Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
+
+      T ang; // The final angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
+      T phase = T(lighthouse_.phase);
+      T tilt = T(lighthouse_.tilt);
+      T gib_phase = T(lighthouse_.gib_phase);
+      T gib_mag = T(lighthouse_.gib_magnitude);
+      T curve = T(lighthouse_.curve);
+
+      if (correction_) {
+        ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
+      } else {
+        ang = atan(x);
+      }
+
+
+      residual[counter] = T(li_it->angle) - ang;
+      counter++;
+    }
+    return true;
+  }
+
+  PoseVerticalCost::PoseVerticalCost(hive::ViveLight data,
+    Tracker tracker,
+    Motor lighthouse,
+    bool correction) {
+    data_ = data;
+    correction_ = correction;
+    tracker_ = tracker;
+    lighthouse_ = lighthouse;
+  }
+
+  template <typename T> bool PoseVerticalCost::operator()(const T* const * parameters,
+    T * residual) const {
+    Eigen::Matrix<T, 3, 1> lPt;
+    lPt << parameters[0][0],
+      parameters[0][1],
+      parameters[0][2];
+    Eigen::Matrix<T, 3, 3> lRt;
+    ceres::AngleAxisToRotationMatrix(&parameters[0][3], lRt.data());
+
+    size_t counter = 0;
+    for (auto li_it = data_.samples.begin();
+      li_it != data_.samples.end(); li_it++) {
+      auto sensor_it = tracker_.sensors.find((uint8_t)li_it->sensor);
+      if (sensor_it == tracker_.sensors.end()) return false;
+      Eigen::Matrix<T, 3, 1> tPs;
+      tPs << T(sensor_it->second.position.x),
+        T(sensor_it->second.position.y),
+        T(sensor_it->second.position.z);
+
+      Eigen::Matrix<T, 3, 1> lPs = lRt * tPs + lPt;
+
+      T ang; // The final angle
+      T x = (lPs(0)/lPs(2)); // Horizontal angle
+      T y = (lPs(1)/lPs(2)); // Vertical angle
+      T phase = T(lighthouse_.phase);
+      T tilt = T(lighthouse_.tilt);
+      T gib_phase = T(lighthouse_.gib_phase);
+      T gib_mag = T(lighthouse_.gib_magnitude);
+      T curve = T(lighthouse_.curve);
+
+      if (correction_) {
+        ang = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
+      } else {
+        ang = atan(y);
+      }
+
+      residual[counter] = T(li_it->angle) - ang;
+      counter++;
+    }
+    return true;
+  }
+
+}
 
 Refinery::Refinery(Calibration & calibration) {
   // Initialize calibration (reference)
@@ -55,7 +1008,6 @@ Refinery::~Refinery() {
 }
 
 bool Refinery::AddImu(const sensor_msgs::Imu::ConstPtr& msg) {
-  return true; // nothing for now
   if (msg == NULL) return false;
 
   data_[msg->header.frame_id].second.push_back(*msg);
@@ -139,12 +1091,12 @@ bool Refinery::SolveInertial() {
     size_t pose_it = 0;
     // Iterate light data
     while (li_it != light_data.end()) {
-      std::cout << "Light " << li_it->header.stamp << std::endl;
+      std::cout << "Light " << li_it->lighthouse << std::endl;
 
       // Iterate imu data
       while (imu_it != imu_data.end()
-        && imu_it->header.stamp < li_it->header.stamp
-        && li_it != light_data.begin()) {
+        && imu_it->header.stamp < li_it->header.stamp) {
+        std::cout << "IMU " << li_it->lighthouse << std::endl;
         // New pose for imu data
         poses[tracker.serial].push_back(new double[9]);
         prev_pose = next_pose;
@@ -157,13 +1109,14 @@ bool Refinery::SolveInertial() {
         // Cost related to inertial measurements
         // std::cout << "InertialCost " << prev_counter << " " << next_counter << std::endl;
         ceres::CostFunction * cost =
-          new ceres::AutoDiffCostFunction<InertialCost, 7, 9, 9>
-          (new InertialCost(*imu_it,
+          new ceres::AutoDiffCostFunction<refine::InertialCost, 7, 9, 9>
+          (new refine::InertialCost(*imu_it,
             calibration_.environment.gravity,
+            tracker.acc_bias,
             tracker.gyr_bias,
             dt,
             smoothing_));
-        problem.AddResidualBlock(cost, NULL, prev_pose, next_pose);
+        problem.AddResidualBlock(cost, new ceres::CauchyLoss(0.5), prev_pose, next_pose);
 
         prev_time = imu_it->header.stamp;
 
@@ -182,29 +1135,29 @@ bool Refinery::SolveInertial() {
       // Cost related to light measurements
       if (li_it->axis == HORIZONTAL) {
         // std::cout << "ViveCalibrationHorizontalCost " << next_counter << std::endl;
-        ceres::DynamicAutoDiffCostFunction<ViveCalibrationHorizontalCost, 4> * hcost =
-          new ceres::DynamicAutoDiffCostFunction<ViveCalibrationHorizontalCost, 4>
-          (new ViveCalibrationHorizontalCost(*li_it,
+        ceres::DynamicAutoDiffCostFunction<refine::ViveCalibrationHorizontalCost, 4> * hcost =
+          new ceres::DynamicAutoDiffCostFunction<refine::ViveCalibrationHorizontalCost, 4>
+          (new refine::ViveCalibrationHorizontalCost(*li_it,
             tracker,
             calibration_.lighthouses[li_it->lighthouse].horizontal_motor,
             correction_));
         hcost->AddParameterBlock(9);
         hcost->AddParameterBlock(6);
         hcost->SetNumResiduals(li_it->samples.size());
-        problem.AddResidualBlock(hcost, NULL,
+        problem.AddResidualBlock(hcost, new ceres::CauchyLoss(0.5),
           next_pose, lighthouses[li_it->lighthouse]); // replace with next_pose
       } else if (li_it->axis == VERTICAL) {
         // std::cout << "ViveCalibrationVerticalCost " << next_counter << std::endl;
-        ceres::DynamicAutoDiffCostFunction<ViveCalibrationVerticalCost, 4> * vcost =
-          new ceres::DynamicAutoDiffCostFunction<ViveCalibrationVerticalCost, 4>
-          (new ViveCalibrationVerticalCost(*li_it,
+        ceres::DynamicAutoDiffCostFunction<refine::ViveCalibrationVerticalCost, 4> * vcost =
+          new ceres::DynamicAutoDiffCostFunction<refine::ViveCalibrationVerticalCost, 4>
+          (new refine::ViveCalibrationVerticalCost(*li_it,
             tracker,
             calibration_.lighthouses[li_it->lighthouse].vertical_motor,
             correction_));
         vcost->AddParameterBlock(9);
         vcost->AddParameterBlock(6);
         vcost->SetNumResiduals(li_it->samples.size());
-        problem.AddResidualBlock(vcost, NULL,
+        problem.AddResidualBlock(vcost, new ceres::CauchyLoss(0.5),
           next_pose, lighthouses[li_it->lighthouse]); // replace with next_pose
       }
       prev_time = li_it->header.stamp;
@@ -241,9 +1194,9 @@ bool Refinery::SolveInertial() {
         ceres::Solver::Options pre_options;
         ceres::Solver::Summary pre_summary;
         // Horizontal data
-        ceres::DynamicAutoDiffCostFunction<ViveHorizontalCost, 4> * hcost =
-          new ceres::DynamicAutoDiffCostFunction<ViveHorizontalCost, 4>
-          (new ViveHorizontalCost(*pre_data[li_it->lighthouse].first,
+        ceres::DynamicAutoDiffCostFunction<refine::ViveHorizontalCost, 4> * hcost =
+          new ceres::DynamicAutoDiffCostFunction<refine::ViveHorizontalCost, 4>
+          (new refine::ViveHorizontalCost(*pre_data[li_it->lighthouse].first,
             lighthouse,
             tracker,
             calibration_.lighthouses[li_it->lighthouse].horizontal_motor,
@@ -252,9 +1205,9 @@ bool Refinery::SolveInertial() {
         hcost->SetNumResiduals(pre_data[li_it->lighthouse].first->samples.size());
         pre_problem.AddResidualBlock(hcost, NULL, pre_pose);
         // Vertical data
-        ceres::DynamicAutoDiffCostFunction<ViveVerticalCost, 4> * vcost =
-          new ceres::DynamicAutoDiffCostFunction<ViveVerticalCost, 4>
-          (new ViveVerticalCost(*pre_data[li_it->lighthouse].second,
+        ceres::DynamicAutoDiffCostFunction<refine::ViveVerticalCost, 4> * vcost =
+          new ceres::DynamicAutoDiffCostFunction<refine::ViveVerticalCost, 4>
+          (new refine::ViveVerticalCost(*pre_data[li_it->lighthouse].second,
             lighthouse,
             tracker,
             calibration_.lighthouses[li_it->lighthouse].vertical_motor,
@@ -285,7 +1238,7 @@ bool Refinery::SolveInertial() {
             poses[tracker.serial][pose_it][i] = pre_pose[i];
           pose_it++;
         }
-        std::cout << "HERE" << std::endl;
+        // std::cout << "HERE" << std::endl;
         // End of Copy Past
       }
       // End of Initializer
@@ -311,7 +1264,7 @@ bool Refinery::SolveInertial() {
   std::cout << std::endl;
   // Solver's options
   options.minimizer_progress_to_stdout = true;
-  options.max_num_iterations = 1000; // TODO change this
+  options.max_num_iterations = 500; // TODO change this
 
   ceres::Solve(options, &problem, &summary);
 
@@ -425,12 +1378,42 @@ bool Refinery::SolveStatic() {
       }
       TF tf;
       if (observations[li_it->lighthouse].first != NULL &&
-        observations[li_it->lighthouse].second != NULL &&
-        ViveSolve::SolvePose(*observations[li_it->lighthouse].first,
-          *observations[li_it->lighthouse].second,
-          tf, calibration_.trackers[tr_it->first],
-          calibration_.lighthouses[li_it->lighthouse],
-          correction_)) {
+        observations[li_it->lighthouse].second != NULL) {
+        {
+          ceres::Problem pre_problem;
+          // Horizontal
+          ceres::DynamicAutoDiffCostFunction<refine::PoseHorizontalCost, 4> * hcost =
+            new ceres::DynamicAutoDiffCostFunction<refine::PoseHorizontalCost, 4>
+            (new refine::PoseHorizontalCost(*observations[li_it->lighthouse].first,
+              calibration_.trackers[tr_it->first],
+              calibration_.lighthouses[li_it->lighthouse].horizontal_motor,
+              correction_));
+          hcost->AddParameterBlock(6);
+          hcost->SetNumResiduals(observations[li_it->lighthouse].first->samples.size());
+          pre_problem.AddResidualBlock(hcost, new ceres::HuberLoss(0.05), next_pose);
+          // Vertical
+          ceres::DynamicAutoDiffCostFunction<refine::PoseVerticalCost, 4> * vcost =
+            new ceres::DynamicAutoDiffCostFunction<refine::PoseVerticalCost, 4>
+            (new refine::PoseVerticalCost(*observations[li_it->lighthouse].second,
+              calibration_.trackers[tr_it->first],
+              calibration_.lighthouses[li_it->lighthouse].vertical_motor,
+              correction_));
+          vcost->AddParameterBlock(6);
+          vcost->SetNumResiduals(observations[li_it->lighthouse].second->samples.size());
+          pre_problem.AddResidualBlock(vcost, new ceres::HuberLoss(0.05), next_pose);
+          // Solve
+          ceres::Solve(options, &problem, &summary);
+          if (summary.final_cost > 1e-5 * (
+            observations[li_it->lighthouse].second->samples.size() +
+            observations[li_it->lighthouse].first->samples.size()))
+            continue;
+        }
+        //  &&
+        // ViveSolve::SolvePose(*observations[li_it->lighthouse].first,
+        //   *observations[li_it->lighthouse].second,
+        //   tf, calibration_.trackers[tr_it->first],
+        //   calibration_.lighthouses[li_it->lighthouse],
+        //   correction_)) {
         double * pose = new double[6];
         // Set new pose from solver
         pose[0] = tf.transform.translation.x;
@@ -449,11 +1432,13 @@ bool Refinery::SolveStatic() {
         next = li_it->lighthouse;
         prev_pose = next_pose;
         next_pose = pose;
+        ROS_WARN("HERE");
         // Horizontal cost
         if (li_it->axis == HORIZONTAL) {
-          ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4> * hcost =
-            new ceres::DynamicAutoDiffCostFunction<PoseHorizontalCost, 4>
-            (new PoseHorizontalCost(*observations[li_it->lighthouse].first,
+          std::cout << "Light H " << li_it->lighthouse << std::endl;
+          ceres::DynamicAutoDiffCostFunction<refine::PoseHorizontalCost, 4> * hcost =
+            new ceres::DynamicAutoDiffCostFunction<refine::PoseHorizontalCost, 4>
+            (new refine::PoseHorizontalCost(*observations[li_it->lighthouse].first,
               calibration_.trackers[tr_it->first],
               calibration_.lighthouses[li_it->lighthouse].horizontal_motor,
               correction_));
@@ -462,9 +1447,10 @@ bool Refinery::SolveStatic() {
           problem.AddResidualBlock(hcost, new ceres::HuberLoss(0.05), next_pose);
         // Vertical cost
         } else if (li_it->axis == VERTICAL) {
-          ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4> * vcost =
-            new ceres::DynamicAutoDiffCostFunction<PoseVerticalCost, 4>
-            (new PoseVerticalCost(*observations[li_it->lighthouse].second,
+          std::cout << "Light V " << li_it->lighthouse << std::endl;
+          ceres::DynamicAutoDiffCostFunction<refine::PoseVerticalCost, 4> * vcost =
+            new ceres::DynamicAutoDiffCostFunction<refine::PoseVerticalCost, 4>
+            (new refine::PoseVerticalCost(*observations[li_it->lighthouse].second,
               calibration_.trackers[tr_it->first],
               calibration_.lighthouses[li_it->lighthouse].vertical_motor,
               correction_));
@@ -476,16 +1462,18 @@ bool Refinery::SolveStatic() {
         // Smoothing cost
         // If the poses are in the same frame
         if (next == prev && prev_pose != NULL && next_pose != NULL) {
+          std::cout << "Inertial " << prev << " " << next << std::endl;
           ceres::CostFunction * cost =
-            new ceres::AutoDiffCostFunction<SmoothingCost, 4, 6, 6, 6>
-            (new SmoothingCost(smoothing_, ROTATION_COST_FACTOR));
+            new ceres::AutoDiffCostFunction<refine::SmoothingCost, 4, 6, 6, 6>
+            (new refine::SmoothingCost(smoothing_, ROTATION_COST_FACTOR));
           problem.AddResidualBlock(cost, new ceres::HuberLoss(0.01),
             prev_pose, next_pose, vTl[li_it->lighthouse]);
         // If the poses are in different frames
         } else if (prev_pose != NULL && next_pose != NULL) {
+          std::cout << "Inertial " << prev << " " << next << std::endl;
           ceres::CostFunction * cost =
-            new ceres::AutoDiffCostFunction<SmoothingCost, 4, 6, 6, 6, 6>
-            (new SmoothingCost(smoothing_, ROTATION_COST_FACTOR));
+            new ceres::AutoDiffCostFunction<refine::SmoothingCost, 4, 6, 6, 6, 6>
+            (new refine::SmoothingCost(smoothing_, ROTATION_COST_FACTOR));
           problem.AddResidualBlock(cost, new ceres::HuberLoss(0.01),
             prev_pose, vTl[prev], next_pose, vTl[next]);
         }
@@ -557,69 +1545,4 @@ bool Refinery::SolveStatic() {
 
 Calibration Refinery::GetCalibration() {
   return calibration_;
-}
-
-// This is a test function
-int main(int argc, char ** argv)
-{
-  // ros intializations
-  rosbag::View view;
-  rosbag::Bag rbag;
-
-  // Refinery initializations
-  Calibration cal;
-
-  // Read the bag name
-  if (argc < 2) {
-    std::cout << "Usage: ... hive_offset name_of_read_bag.bag "
-      << "name_of_write_bag.bag" << std::endl;
-    return -1;
-  }
-
-  // Calibration
-  if (!ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE, &cal)) {
-    ROS_FATAL("Can't find calibration file.");
-    return -1;
-  } else {
-    ROS_INFO("Read calibration file.");
-  }
-
-  rbag.open(argv[1], rosbag::bagmode::Read);
-  // Lighthouses
-  rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
-  for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
-    const hive::ViveCalibrationLighthouseArray::ConstPtr vl =
-      bag_it->instantiate<hive::ViveCalibrationLighthouseArray>();
-    cal.SetLighthouses(*vl);
-  }
-  ROS_INFO("Lighthouses' setup complete.");
-
-  // Trackers
-  rosbag::View view_tr(rbag, rosbag::TopicQuery("/loc/vive/trackers"));
-  for (auto bag_it = view_tr.begin(); bag_it != view_tr.end(); bag_it++) {
-    const hive::ViveCalibrationTrackerArray::ConstPtr vt =
-      bag_it->instantiate<hive::ViveCalibrationTrackerArray>();
-    cal.SetTrackers(*vt);
-  }
-  ROS_INFO("Trackers' setup complete.");
-
-  size_t counter = 0;
-  Refinery ref = Refinery(cal, true, 1e1, true);
-  // Light data
-  rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
-  for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
-    const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-    ref.AddLight(vl);
-    counter++;
-    if (counter >= 100) break;
-  }
-  ROS_INFO("Data processment complete.");
-
-  // Solve the refinement
-  ref.Solve();
-
-  ViveUtils::WriteConfig(HIVE_CALIBRATION_FILE,
-    ref.GetCalibration());
-
-  return 0;
 }
