@@ -26,28 +26,40 @@ for topic, msg, t in bag.read_messages(topics=["/loc/vive/light"]):
     for sample in msg.samples:
       if sample.angle > math.pi/3 or sample.angle < -math.pi / 3:
         continue
-      if (sample.sensor == 21):
-        print(str(msg.axis) + " - " + str(sample.angle))
+      # if (sample.sensor == 21):
+        # print(str(msg.axis) + " - " + str(sample.angle))
       alphaV[sample.sensor].append(sample.angle)
   elif msg.axis == 0:
     for sample in msg.samples:
       if sample.angle > math.pi/3 or sample.angle < -math.pi / 3:
         continue
-      if (sample.sensor == 21):
-        print(str(msg.axis) + " - " + str(sample.angle))
+      # if (sample.sensor == 21):
+        # print(str(msg.axis) + " - " + str(sample.angle))
       alphaH[sample.sensor].append(sample.angle)
+
+counter = 0.0
+stds = 0.0;
+print("Horizontal")
+for i in range(0,24):
+  if len(alphaH[i]) < 10:
+    continue
+  # print("Sensor " + str(i) + " --- " + str(alphaH[i]))
+  # print("\n\n\n\n\n")
+  print("Sensor " + str(i) + " " + str(np.std(alphaH[i])))
+  counter += 1
+  stds += np.std(alphaH[i])
 
 print("Vertical")
 for i in range(0,24):
   if len(alphaV[i]) < 10:
     continue
+  # print("Sensor " + str(i) + " --- " + str(alphaV[i]))
+  # print("\n\n\n\n\n")
   print("Sensor " + str(i) + " " + str(np.std(alphaV[i])))
+  counter += 1
+  stds += np.std(alphaV[i])
 
-print("Horizontal")
-for i in range(0,24):
-  if len(alphaH[i]) < 10:
-    continue
-  print("Sensor " + str(i) + " " + str(np.std(alphaH[i])))
+print(stds/counter)
 
 # import matplotlib.pyplot as plt
 # for i in range(0, 24):

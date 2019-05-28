@@ -19,7 +19,7 @@ include(ExternalProject)
 
 
 ExternalProject_Add(deepdive
-  GIT_REPOSITORY https://github.com/asymingt/libdeepdive
+  GIT_REPOSITORY https://github.com/mikebrgs/deepdive
   GIT_TAG master
   BUILD_COMMAND cmake --build .
   INSTALL_COMMAND "")
@@ -133,7 +133,7 @@ include_directories(
 add_executable(hive_server src/vive_server.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc src/vive_calibrate.cc)
 add_executable(hive_base_solve src/vive_base_solve.cc src/vive_base.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc)
 add_executable(hive_base_calibrate src/vive_base_calibrate.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc)
-add_executable(hive_print tools/vive_print.cc src/vive.cc src/vive_solve.cc src/vive_visualization.cc src/vive_calibrate.cc)
+add_executable(hive_print tools/vive_print.cc src/vive.cc)
 add_executable(hive_tool tools/vive_tool.cc)
 add_executable(hive_optimize tools/vive_optimize.cc src/vive.cc src/vive_solve.cc)
 add_executable(hive_bridge src/vive_bridge.cc)

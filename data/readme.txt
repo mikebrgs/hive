@@ -144,3 +144,17 @@ ENV7
 data7.1.bag - data7.8.bag - static
 
 data7.9.bag - data7.11.bag - dynamic
+
+ENV8
+
+data8.1.bag - data8.10.bag - static
+
+data8.11.bag - data8.17.bag - dynamic
+
+data8.11.bag & data8.16.bag & data8.17.bag - loops
+
+ENV9
+
+data9.1.bag - data9.10.bag - static
+
+data9.11.bag - data9.17.bag - dynamic
