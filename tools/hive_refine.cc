@@ -50,7 +50,7 @@ int main(int argc, char ** argv)
   ROS_INFO("Trackers' setup complete.");
 
   size_t counter = 0;
-  Refinery ref = Refinery(cal, true, 1e-1, true);
+  Refinery ref = Refinery(cal, true, 1e-1, false);
   // Light data
   std::vector<std::string> topics;
   topics.push_back("/loc/vive/imu");
@@ -63,7 +63,7 @@ int main(int argc, char ** argv)
     if (vl != NULL) {
       ref.AddLight(vl);
       counter++;
-      if (counter >= 200) break;
+      if (counter >= 20) break;
     }
     const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();
     if (vi != NULL) {
