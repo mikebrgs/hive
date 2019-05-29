@@ -89,9 +89,10 @@ int main(int argc, char ** argv) {
   rosbag::View view_li(rbag, rosbag::TopicQuery("/loc/vive/light"));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-    calibrator.AddLight(vl);
     counter++;
-    if (counter >= 100) break;
+    // if (counter < 100) continue;
+    if (counter > 50) break;
+    calibrator.AddLight(vl);
   }
   ROS_INFO("Light read complete.");
   rbag.close();

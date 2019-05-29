@@ -651,7 +651,7 @@ bool BundleObservations(PoseLighthouses * world_lighthouses,
           //   << lh_horizontal_extrinsics[sw_it->lighthouse][3] << ", "
           //   << lh_horizontal_extrinsics[sw_it->lighthouse][4] << std::endl;
           ceres::ResidualBlockId hrb = problem.AddResidualBlock(horizontal_cost,
-            NULL,
+            new ceres::CauchyLoss(0.05),
             bundle_lighthouses_world[sw_it->lighthouse],
             extrinsics[tr_it->first].positions,
             &(extrinsics[tr_it->first].radius),
@@ -696,7 +696,7 @@ bool BundleObservations(PoseLighthouses * world_lighthouses,
           //   << lh_vertical_extrinsics[sw_it->lighthouse][4] << std::endl;
 
           ceres::ResidualBlockId vrb = problem.AddResidualBlock(vertical_cost,
-            NULL,
+            new ceres::CauchyLoss(0.05),
             bundle_lighthouses_world[sw_it->lighthouse],
             extrinsics[tr_it->first].positions,
             &(extrinsics[tr_it->first].radius),

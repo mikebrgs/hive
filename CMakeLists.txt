@@ -19,7 +19,7 @@ include(ExternalProject)
 
 
 ExternalProject_Add(deepdive
-  GIT_REPOSITORY https://github.com/mikebrgs/deepdive
+  GIT_REPOSITORY https://github.com/asymingt/libdeepdive
   GIT_TAG master
   BUILD_COMMAND cmake --build .
   INSTALL_COMMAND "")
