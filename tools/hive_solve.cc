@@ -69,30 +69,30 @@ int main(int argc, char ** argv) {
   }
   for (auto tracker : calibration.trackers) {
     // Aux solver
-    // aux_solver[tracker.first] = new HiveSolver(calibration.trackers[tracker.first],
-    //   calibration.lighthouses,
-    //   calibration.environment,
-    //   true);
-    // APE
-    solver[tracker.first] = new HiveSolver(calibration.trackers[tracker.first],
+    aux_solver[tracker.first] = new HiveSolver(calibration.trackers[tracker.first],
       calibration.lighthouses,
       calibration.environment,
       true);
+    // APE
+    // solver[tracker.first] = new HiveSolver(calibration.trackers[tracker.first],
+    //   calibration.lighthouses,
+    //   calibration.environment,
+    //   true);
     // EKF
     // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
     //   calibration.lighthouses,
     //   calibration.environment,
-    //   1e-2, 1e-4, true, filter::ekf);
+    //   1e-3, 1e-6, true, filter::ekf);
     // IEKF
     // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
     //   calibration.lighthouses,
     //   calibration.environment,
-    //   1e-2, 1e-4, true, filter::iekf);
+    //   1e-3, 1e-6, true, filter::iekf);
     // UKF
-    // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
-    //   calibration.lighthouses,
-    //   calibration.environment,
-    //   1e-1, 1e-4, true, filter::ukf);
+    solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
+      calibration.lighthouses,
+      calibration.environment,
+      1e-3, 1e-6, true, filter::ukf);
     // // PGO
     // solver[tracker.first] = new PoseGraph(calibration.environment,
     //   calibration.trackers[tracker.first],
@@ -139,7 +139,7 @@ int main(int argc, char ** argv) {
       // if (counter < 3000) continue;
       // ROS_INFO("LIGHT");
       solver[vl->header.frame_id]->ProcessLight(vl);
-      // aux_solver[vl->header.frame_id]->ProcessLight(vl);
+      aux_solver[vl->header.frame_id]->ProcessLight(vl);
       geometry_msgs::TransformStamped msg;
       if (solver[vl->header.frame_id]->GetTransform(msg)) {
         std::cout << "Vive: " <<
@@ -152,25 +152,17 @@ int main(int argc, char ** argv) {
           msg.transform.rotation.z << std::endl;
         wbag.write("/tf", vl->header.stamp, msg);
       }
-      // if (aux_solver[vl->header.frame_id]->GetTransform(msg)) {
-      //   P = Eigen::Vector3d(msg.transform.translation.x,
-      //     msg.transform.translation.y,
-      //     msg.transform.translation.z);
-      //   vQt = Eigen::Quaterniond(msg.transform.rotation.w,
-      //     msg.transform.rotation.x,
-      //     msg.transform.rotation.y,
-      //     msg.transform.rotation.z);
-      //   vRt = vQt.toRotationMatrix();
-      //   std::cout << "ViveAux: " <<
-      //     msg.transform.translation.x << ", " <<
-      //     msg.transform.translation.y << ", " <<
-      //     msg.transform.translation.z << ", " <<
-      //     msg.transform.rotation.w << ", " <<
-      //     msg.transform.rotation.x << ", " <<
-      //     msg.transform.rotation.y << ", " <<
-      //     msg.transform.rotation.z << std::endl;
-      //   // wbag.write("/tf", vl->header.stamp, msg);
-      // }
+      if (aux_solver[vl->header.frame_id]->GetTransform(msg)) {
+        std::cout << "ViveAux: " <<
+          msg.transform.translation.x << ", " <<
+          msg.transform.translation.y << ", " <<
+          msg.transform.translation.z << ", " <<
+          msg.transform.rotation.w << ", " <<
+          msg.transform.rotation.x << ", " <<
+          msg.transform.rotation.y << ", " <<
+          msg.transform.rotation.z << std::endl;
+        // wbag.write("/tf", vl->header.stamp, msg);
+      }
       std::cout << std::endl;
     }
     const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();

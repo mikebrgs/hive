@@ -160,3 +160,9 @@ data9.1.bag - data9.10.bag - static
 data9.11.bag - data9.17.bag - dynamic
 
 Note: the new angle alpha seams to be wrong
+
+ENV10 - Old alpha angle
+
+data10.1.bag - data10.8.bag - static
+
+data10.9.bag - data10.13.bag - dynamic

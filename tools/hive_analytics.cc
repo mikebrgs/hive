@@ -383,7 +383,7 @@ int main(int argc, char ** argv) {
   std::cout << "Average Distance: " << (sP / pose_counter).norm() << std::endl;
   std::cout << "Average Rotation Offset: " << 
     dA[0] << ", " << dA[1] << ", " << dA[2] << std::endl;
-  std::cout << "Average Angle: " << sqrt(dA[0]*dA[0] +
+  std::cout << "Average Angle: " << (180.0 / M_PI) * sqrt(dA[0]*dA[0] +
     dA[1]*dA[1] +
     dA[2]*dA[2]) << std::endl;
 
@@ -392,8 +392,8 @@ int main(int argc, char ** argv) {
   std::cout << "\nTracking Quality:\n";
   std::cout << "Average Distance: " << sD / pose_counter << std::endl;
   std::cout << "Max Distance: " << mD << std::endl;
-  std::cout << "Average Angle: " << sA / pose_counter << std::endl;
-  std::cout << "Max Angle: " << mA << std::endl;
+  std::cout << "Average Angle: " << (180.0 / M_PI) * sA / pose_counter << std::endl;
+  std::cout << "Max Angle: " << (180.0 / M_PI) * mA << std::endl;
 
   data_bag.close();
 

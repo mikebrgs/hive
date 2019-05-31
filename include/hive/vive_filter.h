@@ -39,10 +39,14 @@
 #define STATE_SIZE 16         // Size of the state vector
 #define NOISE_SIZE 12          // Size of the noise vector
 #define LIGHT_DATA_BUFFER 4   // Size of the light data vector
-#define MAHALANOBIS_MAX_DIST 10
+#define MAHALANOBIS_MAX_DIST 3
 #define IEFK_THRESHOLD 1e-5
-#define UKF_FACTOR -17.0
+// #define UKF_FACTOR -17.0
+#define UKF_FACTOR -27.9999999
+// #define UKF_FACTOR -25
 #define HIVE_APE_ACC 1e-4
+#define FORGET_FACTOR 0.001
+#define MAX_OUTLIERS 20
 
 namespace filter {
   // filter type
@@ -332,6 +336,8 @@ private:
   filter::LightVector light_data_;
   // UKF stuff
   Eigen::MatrixXd ext_covariance_;
+  // Outlier counter
+  size_t outlier_counter;
 };
 
 #endif  // HIVE_VIVE_FILTER_H_
