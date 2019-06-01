@@ -41,9 +41,8 @@
 #define LIGHT_DATA_BUFFER 4   // Size of the light data vector
 #define MAHALANOBIS_MAX_DIST 3
 #define IEFK_THRESHOLD 1e-5
-// #define UKF_FACTOR -17.0
-#define UKF_FACTOR -27.9999999
-// #define UKF_FACTOR -25
+// #define UKF_FACTOR -27.999
+#define UKF_FACTOR 0.999
 #define HIVE_APE_ACC 1e-4
 #define FORGET_FACTOR 0.001
 #define MAX_OUTLIERS 20
