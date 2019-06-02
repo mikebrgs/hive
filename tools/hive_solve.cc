@@ -92,7 +92,7 @@ int main(int argc, char ** argv) {
     solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
       calibration.lighthouses,
       calibration.environment,
-      1e-3, 1e-6, true, filter::ukf);
+      1.0, 1e-6, true, filter::ukf);
     // // PGO
     // solver[tracker.first] = new PoseGraph(calibration.environment,
     //   calibration.trackers[tracker.first],

@@ -1235,7 +1235,7 @@ bool ViveFilter::Valid() {
   }
 
   // if (cost > pow(MAHALANOBIS_MAX_DIST,2) * light_counter) {
-  if (cost > 8e-4 * light_counter) {
+  if (cost > 1e-4 * light_counter) {
     // std::cout << "Not valid ";
     // TODO Change this
     return false;
@@ -1674,7 +1674,7 @@ Eigen::VectorXd GetExtendedDState(Eigen::Vector3d velocity,
 }
 
 bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
-  ROS_INFO("PredictUKF");
+  // ROS_INFO("PredictUKF");
 
   // Convert measurements
   Eigen::Vector3d linear_acceleration = filter::ConvertMessage(msg.linear_acceleration);
@@ -1711,12 +1711,17 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
   ExtendedCovariance.block<NOISE_SIZE, NOISE_SIZE>(STATE_SIZE, STATE_SIZE) = model_covariance_;
 
   // Internal factor
-  double UKF_FACTOR_PREDICT = 3 * (1 - UKF_FACTOR) - (STATE_SIZE + NOISE_SIZE);
+  double L = STATE_SIZE + NOISE_SIZE;
+  double lambda = ALPHA * ALPHA * (L + UKF_FACTOR) - L;
+  double UKF_FACTOR_MEAN_0 = lambda / (lambda + L);
+  double UKF_FACTOR_COV_0 = lambda / (lambda + L) + (1 - ALPHA*ALPHA + BETA);
+  double UKF_FACTOR_MEAN = 1 / (2 * (L + lambda));
+  double UKF_FACTOR_COV = UKF_FACTOR_MEAN;
+  // double UKF_FACTOR_PREDICT = 3 * (1 - UKF_FACTOR) - (STATE_SIZE + NOISE_SIZE);
 
   // Sigma points
   Eigen::MatrixXd Sigma = Eigen::LLT<Eigen::MatrixXd>(
-    ((double)UKF_FACTOR_PREDICT + (double)STATE_SIZE + (double)NOISE_SIZE) *
-    ExtendedCovariance).matrixL();
+    (L + lambda) * ExtendedCovariance).matrixL();
   std::vector<Eigen::VectorXd> SigmaPoints;
   SigmaPoints.push_back(ExtendedState);
   for (size_t i = 0; i < Sigma.cols(); i++) {
@@ -1748,37 +1753,26 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
       acc_noise, ang_noise, bias_noise, grav_noise);
     // Get next state and save it
     NextSigmaPoints.push_back(SigmaPoints[i] + dT * dState);
-    // std::cout << "dS: " << dState.segment<STATE_SIZE>(0).transpose() << std::endl;
-    // std::cout << "SigmaPoints: " << SigmaPoints[i].segment<STATE_SIZE>(0).transpose() << std::endl;
-    // std::cout << "NSP: " << NextSigmaPoints.back().segment<STATE_SIZE>(0).transpose() << std::endl;
   }
 
 
   // ux_k+1 - mean predicted state
   Eigen::VectorXd NextExtendedState;
-  NextExtendedState = (double)UKF_FACTOR_PREDICT * NextSigmaPoints[0];
+  NextExtendedState = UKF_FACTOR_MEAN_0 * NextSigmaPoints[0];
   for (size_t i = 1; i < NextSigmaPoints.size(); i++) {
-    NextExtendedState += 0.5 * NextSigmaPoints[i];
+    NextExtendedState += UKF_FACTOR_MEAN * NextSigmaPoints[i];
   }
-  NextExtendedState = 1.0 / ((double)UKF_FACTOR_PREDICT + (double)STATE_SIZE + (double)NOISE_SIZE) *
-    NextExtendedState;
-  // std::cout << "ES: " << ExtendedState.segment<STATE_SIZE>(0).transpose() << std::endl;
-  // std::cout << "NES: " << NextExtendedState.segment<STATE_SIZE>(0).transpose() << std::endl;
 
   // uP_k+1 - covariance of the predicted state
-  Eigen::MatrixXd NextExtendedCovariance = 
-    Eigen::MatrixXd::Zero(STATE_SIZE + NOISE_SIZE, STATE_SIZE + NOISE_SIZE);
-  if (UKF_FACTOR_PREDICT >= 0.0) {
-    NextExtendedCovariance = (double)UKF_FACTOR_PREDICT * (NextSigmaPoints[0] - NextExtendedState) *
-      (NextSigmaPoints[0] - NextExtendedState).transpose();
-  }
+  Eigen::MatrixXd NextExtendedCovariance = Eigen::MatrixXd::Zero(L, L);
+  // if (UKF_FACTOR_PREDICT >= 0.0) {
+  NextExtendedCovariance = UKF_FACTOR_COV_0 * (NextSigmaPoints[0] - NextExtendedState) *
+    (NextSigmaPoints[0] - NextExtendedState).transpose();
+  // }
   for (size_t i = 1; i < NextSigmaPoints.size(); i++) {
-    NextExtendedCovariance += 0.5 * (NextSigmaPoints[i] - NextExtendedState) *
+    NextExtendedCovariance += UKF_FACTOR_COV * (NextSigmaPoints[i] - NextExtendedState) *
     (NextSigmaPoints[i] - NextExtendedState).transpose();
   }
-  NextExtendedCovariance = 1.0 / ((double)UKF_FACTOR_PREDICT + (double)STATE_SIZE + (double)NOISE_SIZE) *
-    NextExtendedCovariance;
-
 
 
   // Save new state
@@ -1792,41 +1786,29 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
   gravity_ = NextExtendedState.segment<3>(13);
   covariance_ = NextExtendedCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
 
-  std::cout << "IMU" << std::endl;
-  std::cout << "Position: "
-    << position_(0) << ", "
-    << position_(1) << ", "
-    << position_(2) << std::endl;
-  std::cout << "Velocity: "
-    << velocity_(0) << ", "
-    << velocity_(1) << ", "
-    << velocity_(2) << std::endl;
-  std::cout << "Orientation: "
-    << rotation_.w() << ", "
-    << rotation_.x() << ", "
-    << rotation_.y() << ", "
-    << rotation_.z() << std::endl;
-  std::cout << "Bias: "
-    << bias_(0) << ", "
-    << bias_(1) << ", "
-    << bias_(2) << std::endl;
-  std::cout << "Gravity: "
-    << gravity_(0) << ", "
-    << gravity_(1) << ", "
-    << gravity_(2) << std::endl;
-
-  if (sqrt(gravity_(0)*gravity_(0) + 
-    gravity_(1)*gravity_(1) + 
-    gravity_(2)*gravity_(2)) > 12.0) {
-    ROS_FATAL("OUT");
-    exit(0);
-  }
-
-  if (sqrt(velocity_(0)*velocity_(0) + 
-    velocity_(1)*velocity_(1) + 
-    velocity_(2)*velocity_(2)) > 12.0) {
-    ROS_FATAL("OUT");
-    exit(0);
+  if (DEBUG) {
+    std::cout << "IMU" << std::endl;
+    std::cout << "Position: "
+      << position_(0) << ", "
+      << position_(1) << ", "
+      << position_(2) << std::endl;
+    std::cout << "Velocity: "
+      << velocity_(0) << ", "
+      << velocity_(1) << ", "
+      << velocity_(2) << std::endl;
+    std::cout << "Orientation: "
+      << rotation_.w() << ", "
+      << rotation_.x() << ", "
+      << rotation_.y() << ", "
+      << rotation_.z() << std::endl;
+    std::cout << "Bias: "
+      << bias_(0) << ", "
+      << bias_(1) << ", "
+      << bias_(2) << std::endl;
+    std::cout << "Gravity: "
+      << gravity_(0) << ", "
+      << gravity_(1) << ", "
+      << gravity_(2) << std::endl;
   }
 
   if (!Valid()) {
@@ -1846,154 +1828,8 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
   return true;
 }
 
-// bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
-//   // std::cout << "PredictUKF ";
-//   Eigen::VectorXd prev_extState(STATE_SIZE + NOISE_SIZE);
-//   Eigen::MatrixXd prev_extCovariance(STATE_SIZE + NOISE_SIZE,
-//     STATE_SIZE + NOISE_SIZE);
-
-//   // Convert measurements
-//   Eigen::Vector3d linear_acceleration = filter::ConvertMessage(msg.linear_acceleration);
-//   Eigen::Vector3d angular_velocity = filter::ConvertMessage(msg.angular_velocity);
-
-//   // Time difference
-//   double dT = (msg.header.stamp - time_).toSec();
-//   if (!lastmsgwasimu_) dT = 2*dT;
-
-//   // x^a - Previous extended state estimate
-//   prev_extState.segment<3>(0) = position_;
-//   prev_extState.segment<3>(3) = velocity_;
-//   prev_extState(6) = rotation_.w();
-//   prev_extState(7) = rotation_.x();
-//   prev_extState(8) = rotation_.y();
-//   prev_extState(9) = rotation_.z();
-//   prev_extState.segment<3>(10) = bias_;
-//   prev_extState.segment<3>(13) = gravity_;
-//   prev_extState.segment<NOISE_SIZE>(STATE_SIZE) =
-//     Eigen::VectorXd::Zero(NOISE_SIZE);
-
-//   // Pxx - covariance of the extended vector
-//   // prev_extCovariance = ext_covariance_;
-//   prev_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0) =
-//     covariance_;
-//   prev_extCovariance.block<NOISE_SIZE, NOISE_SIZE>(STATE_SIZE, STATE_SIZE) =
-//     model_covariance_;
-
-//   // uX_i - unscented transform's states
-//   Eigen::MatrixXd sigma = Eigen::LLT<Eigen::MatrixXd>(
-//     ((double)UKF_FACTOR_PREDICT + (double)STATE_SIZE + (double)NOISE_SIZE) *
-//     prev_extCovariance).matrixL();
-//   std::vector<Eigen::VectorXd> prev_unscentedStates;
-//   prev_unscentedStates.push_back(prev_extState);
-//   for (size_t i = 0; i < sigma.cols(); i++) {
-//     prev_unscentedStates.push_back(prev_extState + sigma.col(i));
-//     prev_unscentedStates.push_back(prev_extState - sigma.col(i));
-//   }
-
-//   // uX_k+1 - predicted state
-//   std::vector<Eigen::VectorXd> next_unscentedStates;
-//   for (size_t i = 0; i < prev_unscentedStates.size(); i++) {
-//     // Format change
-//     Eigen::Vector3d velocity = prev_unscentedStates[i].segment<3>(3);
-//     Eigen::Quaterniond rotation (prev_unscentedStates[i](6),
-//       prev_unscentedStates[i](7),
-//       prev_unscentedStates[i](8),
-//       prev_unscentedStates[i](9));
-//     Eigen::Vector3d bias = prev_unscentedStates[i].segment<3>(10);
-//     Eigen::Vector3d gravity = prev_unscentedStates[i].segment<3>(13);
-//     Eigen::Vector3d acc_bias(tracker_.acc_bias.x,
-//       tracker_.acc_bias.y,
-//       tracker_.acc_bias.z);
-//     Eigen::Vector3d acc_noise = prev_unscentedStates[i].segment<3>(16);
-//     Eigen::Vector3d ang_noise = prev_unscentedStates[i].segment<3>(19);
-//     Eigen::Vector3d bias_noise = prev_unscentedStates[i].segment<3>(22);
-//     Eigen::Vector3d grav_noise = prev_unscentedStates[i].segment<3>(25);
-//     // Get time derivative
-//     Eigen::VectorXd dState = GetExtendedDState(
-//       velocity, rotation, linear_acceleration, angular_velocity, gravity, acc_bias, bias,
-//       acc_noise, ang_noise, bias_noise, grav_noise);
-//     // Get next state and save it
-//     Eigen::VectorXd tmp_extState = prev_unscentedStates[i] + dT * dState;
-//     next_unscentedStates.push_back(tmp_extState);
-//   }
-
-//   // ux_k+1 - mean predicted state
-//   Eigen::VectorXd next_extState = Eigen::VectorXd::Zero(STATE_SIZE + NOISE_SIZE);
-//   next_extState = (double)UKF_FACTOR_PREDICT * next_unscentedStates[0];
-//   for (size_t i = 1; i < next_unscentedStates.size(); i++) {
-//     next_extState += 0.5 * next_unscentedStates[i];
-//   }
-//   next_extState = 1.0 / ((double)UKF_FACTOR_PREDICT + (double)STATE_SIZE + (double)NOISE_SIZE) *
-//     next_extState;
-
-//   // uP_k+1 - covariance of the predicted state
-//   Eigen::MatrixXd next_extCovariance = 
-//     Eigen::MatrixXd::Zero(STATE_SIZE + NOISE_SIZE, STATE_SIZE + NOISE_SIZE);
-//   if (UKF_FACTOR_PREDICT >= 0.0) {
-//     next_extCovariance = (double)UKF_FACTOR_PREDICT * (next_unscentedStates[0] - next_extState) *
-//       (next_unscentedStates[0] - next_extState).transpose();
-//   }
-//   for (size_t i = 1; i < next_unscentedStates.size(); i++) {
-//     next_extCovariance += 0.5 * (next_unscentedStates[i] - next_extState) *
-//     (next_unscentedStates[i] - next_extState).transpose();
-//   }
-//   next_extCovariance = 1.0 / ((double)UKF_FACTOR_PREDICT + (double)STATE_SIZE + (double)NOISE_SIZE) *
-//     next_extCovariance;
-
-//   std::cout << "IMU" << std::endl;
-//   std::cout << "Position: "
-//     << position_(0) << ", "
-//     << position_(1) << ", "
-//     << position_(2) << std::endl;
-//   std::cout << "Velocity: "
-//     << velocity_(0) << ", "
-//     << velocity_(1) << ", "
-//     << velocity_(2) << std::endl;
-//   std::cout << "Orientation: "
-//     << rotation_.w() << ", "
-//     << rotation_.x() << ", "
-//     << rotation_.y() << ", "
-//     << rotation_.z() << std::endl;
-//   std::cout << "Bias: "
-//     << bias_(0) << ", "
-//     << bias_(1) << ", "
-//     << bias_(2) << std::endl;
-//   std::cout << "Gravity: "
-//     << gravity_(0) << ", "
-//     << gravity_(1) << ", "
-//     << gravity_(2) << std::endl;
-
-
-//   // Save new state
-//   position_ = next_extState.segment<3>(0);
-//   velocity_ = next_extState.segment<3>(3);
-//   rotation_ = Eigen::Quaterniond(next_extState(6),
-//     next_extState(7),
-//     next_extState(8),
-//     next_extState(9)).normalized();
-//   bias_ = next_extState.segment<3>(10);
-//   gravity_ = next_extState.segment<3>(13);
-//   covariance_ = next_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
-
-//   if (!Valid()) {
-//     position_ = prev_extState.segment<3>(0);
-//     velocity_ = prev_extState.segment<3>(3);
-//     rotation_ = Eigen::Quaterniond(prev_extState(6),
-//       prev_extState(7),
-//       prev_extState(8),
-//       prev_extState(9)).normalized();
-//     bias_ = prev_extState.segment<3>(10);
-//     gravity_ = prev_extState.segment<3>(13);
-//     covariance_ = prev_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
-//     return false;
-//   }
-//   time_ = msg.header.stamp;
-
-//   return true;
-// }
-
 bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
-  ROS_INFO("UpdateUKF");
+  // ROS_INFO("UpdateUKF");
 
   // Clean meassage outliers
   hive::ViveLight clean_msg = msg;
@@ -2018,8 +1854,14 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
 
   // Internal Parameters
   size_t MEASURE_NOISE_SIZE = sensors.size();
-  double UKF_FACTOR_UPDATE = 3.0 * (1.0 - (double)UKF_FACTOR) -
-    ((double)MEASURE_NOISE_SIZE + (double)STATE_SIZE);
+  size_t L = STATE_SIZE + MEASURE_NOISE_SIZE;
+  double lambda = ALPHA * ALPHA * ((double)L + UKF_FACTOR) - (double)L;
+  double UKF_FACTOR_MEAN_0 = lambda / (lambda + (double)L);
+  double UKF_FACTOR_COV_0 = lambda / (lambda + (double)L) + (1 - ALPHA*ALPHA + BETA);
+  double UKF_FACTOR_MEAN = 1 / (2 * ((double)L + lambda));
+  double UKF_FACTOR_COV = UKF_FACTOR_MEAN;
+  // double UKF_FACTOR_UPDATE = 3.0 * (1.0 - (double)UKF_FACTOR) -
+  //   ((double)MEASURE_NOISE_SIZE + (double)STATE_SIZE);
 
   // Crop measurement noise matrix
   Eigen::MatrixXd MeasurementNoise;
@@ -2028,9 +1870,8 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
     total_sensors  * clean_msg.axis, total_sensors, total_sensors), sensors);
 
   // Extended State
-  Eigen::VectorXd ExtendedState(STATE_SIZE + MEASURE_NOISE_SIZE);
-  Eigen::MatrixXd ExtendedCovariance(STATE_SIZE + MEASURE_NOISE_SIZE,
-    STATE_SIZE + MEASURE_NOISE_SIZE);
+  Eigen::VectorXd ExtendedState(L);
+  Eigen::MatrixXd ExtendedCovariance(L, L);
 
   // Fill state mean
   ExtendedState.segment<3>(0) = position_;
@@ -2056,8 +1897,7 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
   // Sigma points
   std::vector<Eigen::VectorXd> SigmaPoints;
   Eigen::MatrixXd Sigma = Eigen::LLT<Eigen::MatrixXd>(
-    ((double)UKF_FACTOR_UPDATE + (double)STATE_SIZE + (double)MEASURE_NOISE_SIZE) *
-    ExtendedCovariance).matrixL();
+    (lambda + L) * ExtendedCovariance).matrixL();
   SigmaPoints.push_back(ExtendedState);
   for (size_t i = 0; i < Sigma.cols(); i++) {
     SigmaPoints.push_back(ExtendedState + Sigma.col(i));
@@ -2093,45 +1933,45 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
 
  // Expected measurement
   Eigen::VectorXd MeasurementMean;
-  MeasurementMean = (double)UKF_FACTOR_UPDATE * UnscentedMeasurements[0];
+  MeasurementMean = UKF_FACTOR_MEAN_0 * UnscentedMeasurements[0];
   for (size_t i = 1; i < UnscentedMeasurements.size(); i++) {
-    MeasurementMean += 0.5 * UnscentedMeasurements[i];
+    MeasurementMean += UKF_FACTOR_MEAN * UnscentedMeasurements[i];
   }
-  MeasurementMean = 1 / ((double)UKF_FACTOR_UPDATE + (double)STATE_SIZE + (double)MEASURE_NOISE_SIZE) *
-    MeasurementMean;
+  // MeasurementMean = 1 / ((double)UKF_FACTOR_UPDATE + (double)STATE_SIZE + (double)MEASURE_NOISE_SIZE) *
+    // MeasurementMean;
 
   // Measurement covariance
   Eigen::MatrixXd MeasurementVar;
-  MeasurementVar = Eigen::MatrixXd::Zero(sensors.size(),sensors.size());
-  if (UKF_FACTOR_UPDATE >= 0.0) {
-    MeasurementVar = (double)UKF_FACTOR_UPDATE *
-      (UnscentedMeasurements[0] - MeasurementMean) *
-      (UnscentedMeasurements[0] - MeasurementMean).transpose();
-  }
+  MeasurementVar = Eigen::MatrixXd::Zero(MEASURE_NOISE_SIZE,MEASURE_NOISE_SIZE);
+  // if (UKF_FACTOR_UPDATE >= 0.0) {
+  MeasurementVar = UKF_FACTOR_COV_0 *
+    (UnscentedMeasurements[0] - MeasurementMean) *
+    (UnscentedMeasurements[0] - MeasurementMean).transpose();
+  // }
   for (size_t i = 1; i < UnscentedMeasurements.size(); i++) {
-    MeasurementVar += 0.5 *
+    MeasurementVar += UKF_FACTOR_COV *
     (UnscentedMeasurements[i] - MeasurementMean) *
     (UnscentedMeasurements[i] - MeasurementMean).transpose();
   }
-  MeasurementVar = 1 / ((double)UKF_FACTOR_UPDATE + (double)STATE_SIZE + (double)MEASURE_NOISE_SIZE) *
-    MeasurementVar;
+  // MeasurementVar = 1 / ((double)UKF_FACTOR_UPDATE + (double)STATE_SIZE + (double)MEASURE_NOISE_SIZE) *
+  //   MeasurementVar;
   MeasurementVar += MeasurementNoise; // Inovation covariance
 
   // State-Measurement Covariance
   Eigen::MatrixXd MeasurementCov;
-  MeasurementCov = Eigen::MatrixXd::Zero(STATE_SIZE + MEASURE_NOISE_SIZE, sensors.size());
-  if (UKF_FACTOR_UPDATE >= 0.0) {
-    MeasurementCov = (double)UKF_FACTOR_UPDATE *
-      (SigmaPoints[0] - ExtendedState) *
-      (UnscentedMeasurements[0] - MeasurementMean).transpose();
-  }
+  MeasurementCov = Eigen::MatrixXd::Zero(L, MEASURE_NOISE_SIZE);
+  // if (UKF_FACTOR_UPDATE >= 0.0) {
+  MeasurementCov = UKF_FACTOR_COV_0 *
+    (SigmaPoints[0] - ExtendedState) *
+    (UnscentedMeasurements[0] - MeasurementMean).transpose();
+  // }
   for (size_t i = 1; i < SigmaPoints.size(); i++) {
-    MeasurementCov += 0.5 *
+    MeasurementCov += UKF_FACTOR_COV *
       (SigmaPoints[i] - ExtendedState) *
       (UnscentedMeasurements[i] - MeasurementMean).transpose();
   }
-  MeasurementCov = 1 / ((double)UKF_FACTOR_UPDATE + (double)STATE_SIZE + (double)MEASURE_NOISE_SIZE) *
-    MeasurementCov;
+  // MeasurementCov = 1 / ((double)UKF_FACTOR_UPDATE + (double)STATE_SIZE + (double)MEASURE_NOISE_SIZE) *
+  //   MeasurementCov;
 
   // std::cout << "MC: " << MeasurementCov << std::endl;
   // std::cout << "MV: " << MeasurementVar << std::endl;
@@ -2154,7 +1994,65 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
   gravity_ = NextExtendedState.segment<3>(13);
   covariance_ = NextExtendedCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
 
-  std::cout << "Light" << std::endl;
+  if (DEBUG) {
+    std::cout << "Light" << std::endl;
+    std::cout << "Position: "
+      << position_(0) << ", "
+      << position_(1) << ", "
+      << position_(2) << std::endl;
+    std::cout << "Velocity: "
+      << velocity_(0) << ", "
+      << velocity_(1) << ", "
+      << velocity_(2) << std::endl;
+    std::cout << "Orientation: "
+      << rotation_.w() << ", "
+      << rotation_.x() << ", "
+      << rotation_.y() << ", "
+      << rotation_.z() << std::endl;
+    std::cout << "Bias: "
+      << bias_(0) << ", "
+      << bias_(1) << ", "
+      << bias_(2) << std::endl;
+    std::cout << "Gravity: "
+      << gravity_(0) << ", "
+      << gravity_(1) << ", "
+      << gravity_(2) << std::endl;
+  }
+
+  // if (sqrt(velocity_(0)*velocity_(0) + 
+  //   velocity_(1)*velocity_(1) + 
+  //   velocity_(2)*velocity_(2)) > 15.0) {
+  //   ROS_FATAL("OUT");
+  //   exit(0);
+  // }
+
+  // if (sqrt(gravity_(0)*gravity_(0) + 
+  //   gravity_(1)*gravity_(1) + 
+  //   gravity_(2)*gravity_(2)) > 15.0) {
+  //   ROS_FATAL("OUT");
+  //   exit(0);
+  // }
+
+  if (!Valid()) {
+    position_ = ExtendedState.segment<3>(0);
+    velocity_ = ExtendedState.segment<3>(3);
+    rotation_ = Eigen::Quaterniond(ExtendedState(6),
+      ExtendedState(7),
+      ExtendedState(8),
+      ExtendedState(9)).normalized();
+    bias_ = ExtendedState.segment<3>(10);
+    gravity_ = ExtendedState.segment<3>(13);
+    covariance_ = ExtendedCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
+    return false;
+  }
+
+  time_ = msg.header.stamp;
+
+  return true;
+
+}
+
+void ViveFilter::PrintState() {
   std::cout << "Position: "
     << position_(0) << ", "
     << position_(1) << ", "
@@ -2176,287 +2074,21 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
     << gravity_(0) << ", "
     << gravity_(1) << ", "
     << gravity_(2) << std::endl;
-
-  if (sqrt(velocity_(0)*velocity_(0) + 
-    velocity_(1)*velocity_(1) + 
-    velocity_(2)*velocity_(2)) > 15.0) {
-    ROS_FATAL("OUT");
-    exit(0);
-  }
-
-  if (sqrt(gravity_(0)*gravity_(0) + 
-    gravity_(1)*gravity_(1) + 
-    gravity_(2)*gravity_(2)) > 15.0) {
-    ROS_FATAL("OUT");
-    exit(0);
-  }
-
-  if (!Valid()) {
-    position_ = ExtendedState.segment<3>(0);
-    velocity_ = ExtendedState.segment<3>(3);
-    rotation_ = Eigen::Quaterniond(ExtendedState(6),
-      ExtendedState(7),
-      ExtendedState(8),
-      ExtendedState(9)).normalized();
-    bias_ = ExtendedState.segment<3>(10);
-    gravity_ = ExtendedState.segment<3>(13);
-    covariance_ = ExtendedCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
-    return false;
-  }
-
-  time_ = msg.header.stamp;
-
-  return true;
-
-}
-
-// bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
-//   // Search for outliers
-//   hive::ViveLight clean_msg = msg;
-//   auto sample_it = clean_msg.samples.begin();
-//   while (sample_it != clean_msg.samples.end()) {
-//     if (sample_it->angle > M_PI / 3 || sample_it->angle < -M_PI / 3)
-//       clean_msg.samples.erase(sample_it);
-//     else
-//       sample_it++;
-//   }
-//   if (clean_msg.samples.size() == 0) return false;
-//   // Count measurements
-//   size_t row = 0;
-//   Eigen::VectorXd Z(clean_msg.samples.size());
-//   std::vector<int> sensors;
-//   for (auto sample : clean_msg.samples) {
-//     // Put angle in Vector
-//     Z(row) = sample.angle;
-//     row++;
-//     // Sensors detected
-//     sensors.push_back(sample.sensor);
-//   }
-//   // Noise Matrix
-//   Eigen::MatrixXd R;
-//   int total_sensors = tracker_.sensors.size();
-//   if (clean_msg.axis == HORIZONTAL) {
-//     // Sliced measurement covariance matrix
-//     R = filter::SliceR(measure_covariance_.block(total_sensors * HORIZONTAL,
-//       total_sensors  * HORIZONTAL, total_sensors, total_sensors), sensors);
-//   } else {
-//     // Sliced measurement covariance matrix
-//     R = filter::SliceR(measure_covariance_.block(total_sensors * VERTICAL,
-//       total_sensors  * VERTICAL, total_sensors, total_sensors), sensors);
-//   }
-
-//   // UKF internal parameters
-//   size_t MEASURE_NOISE_SIZE = sensors.size();
-//   double UKF_FACTOR_UPDATE = 3.0 * (1.0 - (double)UKF_FACTOR) -
-//     ((double)MEASURE_NOISE_SIZE + (double)STATE_SIZE);
-
-//   // x^a - previous extended state mean
-//   Eigen::VectorXd prev_extState(STATE_SIZE + MEASURE_NOISE_SIZE);
-//   prev_extState.segment<3>(0) = position_;
-//   prev_extState.segment<3>(3) = velocity_;
-//   prev_extState(6) = rotation_.w();
-//   prev_extState(7) = rotation_.x();
-//   prev_extState(8) = rotation_.y();
-//   prev_extState(9) = rotation_.z();
-//   prev_extState.segment<3>(10) = bias_;
-//   prev_extState.segment<3>(13) = gravity_;
-//   prev_extState.segment(STATE_SIZE, MEASURE_NOISE_SIZE) =
-//     Eigen::VectorXd::Zero(MEASURE_NOISE_SIZE);
-
-//   // Px^a - previous extended state covariance
-//   // prev_extCovariance = ext_covariance_;
-//   Eigen::MatrixXd prev_extCovariance(STATE_SIZE + MEASURE_NOISE_SIZE,
-//     STATE_SIZE + MEASURE_NOISE_SIZE);
-//   prev_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0) =
-//     covariance_;
-//   prev_extCovariance.block(STATE_SIZE, STATE_SIZE, MEASURE_NOISE_SIZE,
-//     MEASURE_NOISE_SIZE) = R;
-
-//   // uX^a - unscented transform state vectors
-//   Eigen::MatrixXd sigma = Eigen::LLT<Eigen::MatrixXd>(
-//     ((double)UKF_FACTOR_UPDATE + (double)STATE_SIZE + (double)MEASURE_NOISE_SIZE) *
-//     prev_extCovariance).matrixL();
-//   std::vector<Eigen::VectorXd> prev_unscentedStates;
-//   prev_unscentedStates.push_back(prev_extState);
-//   for (size_t i = 0; i < sigma.cols(); i++) {
-//     prev_unscentedStates.push_back(prev_extState + sigma.col(i));
-//     prev_unscentedStates.push_back(prev_extState - sigma.col(i));
-//   }
-
-//   // uZ - unsctended transform samples
-//   std::vector<Eigen::VectorXd> prev_unscentedSamples;
-//   for (size_t i = 0; i < prev_unscentedStates.size(); i++) {
-//     // Format change
-//     Eigen::Vector3d position = prev_unscentedStates[i].segment<3>(0);
-//     Eigen::Quaterniond rotation(prev_unscentedStates[i](6),
-//       prev_unscentedStates[i](7),
-//       prev_unscentedStates[i](8),
-//       prev_unscentedStates[i](9));
-//     rotation.normalize();
-//     if (clean_msg.axis == HORIZONTAL) {
-//       // Measurement model + Noise
-//       prev_unscentedSamples.push_back(GetHorizontalZ(
-//       position, rotation, sensors, tracker_,
-//       environment_.lighthouses[clean_msg.lighthouse],
-//       lighthouses_[clean_msg.lighthouse], correction_) +
-//       prev_unscentedStates[i].segment(STATE_SIZE, MEASURE_NOISE_SIZE));
-//     } else if (clean_msg.axis == VERTICAL) {
-//       // Measurement model + Noise
-//       prev_unscentedSamples.push_back(GetVerticalZ(
-//       position, rotation, sensors, tracker_,
-//       environment_.lighthouses[clean_msg.lighthouse],
-//       lighthouses_[clean_msg.lighthouse], correction_) +
-//       prev_unscentedStates[i].segment(STATE_SIZE, MEASURE_NOISE_SIZE));
-//     }
-//   }
-
-
-//   // E{z} - expected measurements
-//   Eigen::VectorXd prev_unscentedSample;
-//   prev_unscentedSample = (double)UKF_FACTOR_UPDATE * prev_unscentedSamples[0];
-//   for (size_t i = 1; i < prev_unscentedSamples.size(); i++) {
-//     prev_unscentedSample += 0.5 * prev_unscentedSamples[i];
-//   }
-//   prev_unscentedSample = 1 / ((double)UKF_FACTOR_UPDATE + (double)STATE_SIZE + (double)MEASURE_NOISE_SIZE) *
-//     prev_unscentedSample;
-
-//   // Pzz - covariance of the measurements
-//   Eigen::MatrixXd prev_unscentedSampleVar;
-//   prev_unscentedSampleVar = Eigen::MatrixXd::Zero(
-//     sensors.size(),sensors.size());
-//   if (UKF_FACTOR_UPDATE >= 0.0) {
-//     prev_unscentedSampleVar = (double)UKF_FACTOR_UPDATE *
-//       (prev_unscentedSamples[0] - prev_unscentedSample) *
-//       (prev_unscentedSamples[0] - prev_unscentedSample).transpose();
-//   }
-//   for (size_t i = 1; i < prev_unscentedSamples.size(); i++) {
-//     prev_unscentedSampleVar += 0.5 *
-//     (prev_unscentedSamples[i] - prev_unscentedSample) *
-//     (prev_unscentedSamples[i] - prev_unscentedSample).transpose();
-//   }
-//   prev_unscentedSampleVar = 1 / ((double)UKF_FACTOR_UPDATE + (double)STATE_SIZE + (double)MEASURE_NOISE_SIZE) *
-//     prev_unscentedSampleVar;
-//   // Pvv - innovation covariance
-//   prev_unscentedSampleVar += R;
-
-//   // Pxz - covariance state and measurements
-//   Eigen::MatrixXd prev_unscentedCov;
-//   prev_unscentedCov = Eigen::MatrixXd::Zero(
-//     STATE_SIZE, sensors.size());
-//   if (UKF_FACTOR_UPDATE >= 0.0) {
-//     prev_unscentedCov = (double)UKF_FACTOR_UPDATE *
-//       (prev_unscentedStates[0].segment<STATE_SIZE>(0) - prev_extState.segment<STATE_SIZE>(0)) *
-//       (prev_unscentedSamples[0] - prev_unscentedSample).transpose();
-//   }
-//   for (size_t i = 1; i < prev_unscentedStates.size(); i++) {
-//     prev_unscentedCov += 0.5 *
-//       (prev_unscentedStates[i].segment<STATE_SIZE>(0) - prev_extState.segment<STATE_SIZE>(0)) *
-//       (prev_unscentedSamples[i] - prev_unscentedSample).transpose();
-//   }
-//   prev_unscentedCov = 1 / ((double)UKF_FACTOR_UPDATE + (double)STATE_SIZE + (double)MEASURE_NOISE_SIZE) *
-//     prev_unscentedCov;
-
-//   // Kalman Gain
-//   Eigen::MatrixXd K = prev_unscentedCov * prev_unscentedSampleVar.inverse();
-
-//   // Updated State and Covariance
-//   Eigen::VectorXd next_extState = prev_extState.segment<STATE_SIZE>(0) + K * (Z - prev_unscentedSample);
-//   Eigen::MatrixXd next_extCovariance = covariance_ -
-//     K * prev_unscentedSampleVar * K.transpose();
-
-//   // Save new state
-//   position_ = next_extState.segment<3>(0);
-//   velocity_ = next_extState.segment<3>(3);
-//   rotation_ = Eigen::Quaterniond(next_extState(6),
-//     next_extState(7),
-//     next_extState(8),
-//     next_extState(9)).normalized();
-//   bias_ = next_extState.segment<3>(10);
-//   gravity_ = next_extState.segment<3>(13);
-//   covariance_ = next_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
-
-//   std::cout << "Light" << std::endl;
-//   std::cout << "Position: "
-//     << position_(0) << ", "
-//     << position_(1) << ", "
-//     << position_(2) << std::endl;
-//   std::cout << "Velocity: "
-//     << velocity_(0) << ", "
-//     << velocity_(1) << ", "
-//     << velocity_(2) << std::endl;
-//   std::cout << "Orientation: "
-//     << rotation_.w() << ", "
-//     << rotation_.x() << ", "
-//     << rotation_.y() << ", "
-//     << rotation_.z() << std::endl;
-//   std::cout << "Bias: "
-//     << bias_(0) << ", "
-//     << bias_(1) << ", "
-//     << bias_(2) << std::endl;
-//   std::cout << "Gravity: "
-//     << gravity_(0) << ", "
-//     << gravity_(1) << ", "
-//     << gravity_(2) << std::endl;
-
-//   if (sqrt(gravity_(0)*gravity_(0) + 
-//     gravity_(1)*gravity_(1) + 
-//     gravity_(2)*gravity_(2)) > 15.0) {
-//     ROS_FATAL("OUT");
-//     exit(0);
-//   }
-
-//   if (!Valid()) {
-//     position_ = prev_extState.segment<3>(0);
-//     velocity_ = prev_extState.segment<3>(3);
-//     rotation_ = Eigen::Quaterniond(prev_extState(6),
-//       prev_extState(7),
-//       prev_extState(8),
-//       prev_extState(9)).normalized();
-//     bias_ = prev_extState.segment<3>(10);
-//     gravity_ = prev_extState.segment<3>(13);
-//     covariance_ = prev_extCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
-//     return false;
-//   }
-
-
-//   time_ = msg.header.stamp;
-
-//   return true;
-// }
-
-void ViveFilter::PrintState() {
-  // std::cout << "Position: "
-  //   << position_(0) << ", "
-  //   << position_(1) << ", "
-  //   << position_(2) << std::endl;
-  // std::cout << "Velocity: "
-  //   << velocity_(0) << ", "
-  //   << velocity_(1) << ", "
-  //   << velocity_(2) << std::endl;
-  // std::cout << "Orientation: "
-  //   << rotation_.w() << ", "
-  //   << rotation_.x() << ", "
-  //   << rotation_.y() << ", "
-  //   << rotation_.z() << std::endl;
-  // std::cout << "Bias: "
-  //   << bias_(0) << ", "
-  //   << bias_(1) << ", "
-  //   << bias_(2) << std::endl;
   // std::cout << "Covariance: "
   //   << covariance_.block<3,3>(0,0).trace() << ", "
   //   << covariance_.block<3,3>(3,3).trace() << ", "
   //   << covariance_.block<4,4>(6,6).trace() << ", "
   //   << covariance_.block<3,3>(10,10).trace() << std::endl;
-  std::cout << position_(0) << ", "
-    << position_(1) << ", "
-    << position_(2) << ", ";
-  std::cout << velocity_(0) << ", "
-    << velocity_(1) << ", "
-    << velocity_(2) << ", ";
-  Eigen::AngleAxisd AA(rotation_);
-  std::cout << AA.axis()(0) * AA.angle() << ", "
-    << AA.axis()(1) * AA.angle() << ", "
-    << AA.axis()(2) * AA.angle() << std::endl;
+  // std::cout << position_(0) << ", "
+  //   << position_(1) << ", "
+  //   << position_(2) << ", ";
+  // std::cout << velocity_(0) << ", "
+  //   << velocity_(1) << ", "
+  //   << velocity_(2) << ", ";
+  // Eigen::AngleAxisd AA(rotation_);
+  // std::cout << AA.axis()(0) * AA.angle() << ", "
+  //   << AA.axis()(1) * AA.angle() << ", "
+  //   << AA.axis()(2) * AA.angle() << std::endl;
   return;
 }
 

@@ -42,10 +42,13 @@
 #define MAHALANOBIS_MAX_DIST 3
 #define IEFK_THRESHOLD 1e-5
 // #define UKF_FACTOR -27.999
-#define UKF_FACTOR 0.999
+#define UKF_FACTOR 0.0
+#define ALPHA 1e-3
+#define BETA 2
+#define VALID_THRESHOLD 1e-3
 #define HIVE_APE_ACC 1e-4
-#define FORGET_FACTOR 0.001
-#define MAX_OUTLIERS 20
+#define MAX_OUTLIERS 1000
+#define DEBUG false
 
 namespace filter {
   // filter type
