@@ -44,7 +44,7 @@ public:
   std::map<std::string, Lighthouse> lighthouses,
   size_t window,
   double trust,
-  bool force_first,
+  double first_factor,
   bool correction);
   // Destructor
   ~PoseGraph();
@@ -88,7 +88,7 @@ private:
   // Correction
   bool correction_;
   // Force the first the first pose to be close to its previous estimate.
-  bool force_first_;
+  // bool force_first_;
   // Optimization window
   size_t window_;
   /*Trust on the inertial measurements
@@ -97,7 +97,8 @@ private:
   */
   double trust_;
   //
-  double smoothing_ = SMOOTHING;
+  // double smoothing_ = SMOOTHING;
+  double first_factor_;
   // Validity
   bool valid_;
   // Internal

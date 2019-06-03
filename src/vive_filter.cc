@@ -520,11 +520,11 @@ void ViveFilter::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
       std::cout << "Method not available\n";
   }
 
-  if (!Valid()) {
+  if (!Valid(STATE_THRESHOLD)) {
     outlier_counter++;
     if (outlier_counter >= MAX_OUTLIERS) {
       valid_ = false;
-      exit(0);
+      // exit(0);
     }
     return;
   } else {
@@ -568,11 +568,11 @@ void ViveFilter::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
     }
   }
 
-  if (!Valid()) {
+  if (!Valid(STATE_THRESHOLD)) {
     outlier_counter++;
     if (outlier_counter >= MAX_OUTLIERS) {
       valid_ = false;
-      exit(0);
+      // exit(0);
     }
     return;
   } else {
@@ -1083,7 +1083,7 @@ Eigen::MatrixXd GetVerticalZ(Eigen::Vector3d position,
 }
 
 // Check_validity
-bool ViveFilter::Valid() {
+bool ViveFilter::Valid(double cost_factor) {
   if (std::isnan(position_(0)) ||
     std::isnan(position_(1)) ||
     std::isnan(position_(2)) ||
@@ -1235,7 +1235,7 @@ bool ViveFilter::Valid() {
   }
 
   // if (cost > pow(MAHALANOBIS_MAX_DIST,2) * light_counter) {
-  if (cost > 1e-4 * light_counter) {
+  if (cost > cost_factor * light_counter) {
     // std::cout << "Not valid ";
     // TODO Change this
     return false;
@@ -1324,7 +1324,7 @@ bool ViveFilter::PredictEKF(const sensor_msgs::Imu & msg) {
   gravity_ = newX.segment<3>(13);
   covariance_ = newP;
 
-  if (!Valid()) {
+  if (!Valid(MEASUREMENT_THRESHOLD)) {
     position_ = oldX.segment<3>(0);
     velocity_ = oldX.segment<3>(3);
     rotation_ = Eigen::Quaterniond(oldX(6), oldX(7), oldX(8),
@@ -1500,7 +1500,7 @@ bool ViveFilter::UpdateEKF(const hive::ViveLight & msg) {
   // exit(0);
   // Eigen::MatrixXd tmpModelCov = (newX - oldX)*(newX - oldX).transpose();
   // model_covariance_ = FORGET_FACTOR * tmpModelCov + (1.0 - FORGET_FACTOR) * model_covariance_;
-  if (!Valid()) {
+  if (!Valid(MEASUREMENT_THRESHOLD)) {
     position_ = oldX.segment<3>(0);
     velocity_ = oldX.segment<3>(3);
     rotation_ = Eigen::Quaterniond(oldX(6), oldX(7), oldX(8),
@@ -1629,7 +1629,7 @@ bool ViveFilter::UpdateIEKF(const hive::ViveLight & msg) {
   gravity_ = newX.segment<3>(13);
   covariance_ = newP;
 
-  if (!Valid()) {
+  if (!Valid(MEASUREMENT_THRESHOLD)) {
     position_ = oldX.segment<3>(0);
     velocity_ = oldX.segment<3>(3);
     rotation_ = Eigen::Quaterniond(oldX(6), oldX(7), oldX(8),
@@ -1811,7 +1811,7 @@ bool ViveFilter::PredictUKF(const sensor_msgs::Imu & msg) {
       << gravity_(2) << std::endl;
   }
 
-  if (!Valid()) {
+  if (!Valid(MEASUREMENT_THRESHOLD)) {
     position_ = ExtendedState.segment<3>(0);
     velocity_ = ExtendedState.segment<3>(3);
     rotation_ = Eigen::Quaterniond(ExtendedState(6),
@@ -2033,7 +2033,7 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
   //   exit(0);
   // }
 
-  if (!Valid()) {
+  if (!Valid(MEASUREMENT_THRESHOLD)) {
     position_ = ExtendedState.segment<3>(0);
     velocity_ = ExtendedState.segment<3>(3);
     rotation_ = Eigen::Quaterniond(ExtendedState(6),

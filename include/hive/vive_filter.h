@@ -39,15 +39,19 @@
 #define STATE_SIZE 16         // Size of the state vector
 #define NOISE_SIZE 12          // Size of the noise vector
 #define LIGHT_DATA_BUFFER 4   // Size of the light data vector
-#define MAHALANOBIS_MAX_DIST 3
+// #define MAHALANOBIS_MAX_DIST 3
+// Outlier thresholds
+#define MEASUREMENT_THRESHOLD 5e-3
+#define STATE_THRESHOLD 5e-3
+// IEKF tuning
 #define IEFK_THRESHOLD 1e-5
-// #define UKF_FACTOR -27.999
-#define UKF_FACTOR 0.0
+// UKF tuning
+#define UKF_FACTOR 0.0 // Kappa
 #define ALPHA 1e-3
 #define BETA 2
-#define VALID_THRESHOLD 1e-3
+// #define VALID_THRESHOLD 1e-3
 #define HIVE_APE_ACC 1e-4
-#define MAX_OUTLIERS 1000
+#define MAX_OUTLIERS 100
 #define DEBUG false
 
 namespace filter {
@@ -294,7 +298,7 @@ private: // temporary
   // UKF update
   bool UpdateUKF(const hive::ViveLight & msg);
   // Validity
-  bool Valid();
+  bool Valid(double cost_factor);
   // Initialize estimates
   bool Initialize();
 private:

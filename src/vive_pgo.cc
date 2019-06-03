@@ -56,13 +56,14 @@ namespace pgo {
   public:
     InertialCost(sensor_msgs::Imu imu,
       geometry_msgs::Vector3 gravity,
-      geometry_msgs::Vector3 gyr_bias,
       double time_step,
       double trust_weight,
       bool verbose = false);
     ~InertialCost();
     template <typename T> bool operator()(const T* const prev_vTi,
       const T* const next_vTi,
+      const T* const acc_bias,
+      const T* const ang_bias,
       T * residual) const;
   private:
     // Inertial data
@@ -70,7 +71,7 @@ namespace pgo {
     // Light data
     hive::ViveLight prev_, next_;
     // Gravity
-    geometry_msgs::Vector3 gravity_, gyr_bias_;
+    geometry_msgs::Vector3 gravity_;
     // Time step and weight
     double time_step_, trust_weight_;
     // Other
@@ -284,7 +285,7 @@ namespace pgo {
 
   InertialCost::InertialCost(sensor_msgs::Imu imu,
     geometry_msgs::Vector3 gravity,
-    geometry_msgs::Vector3 gyr_bias,
+    // geometry_msgs::Vector3 gyr_bias,
     double time_step,
     double trust_weight,
     bool verbose) {
@@ -292,7 +293,7 @@ namespace pgo {
     gravity_ = gravity;
     time_step_ = time_step;
     trust_weight_ = trust_weight;
-    gyr_bias_ = gyr_bias;
+    // gyr_bias_ = gyr_bias;
     verbose_ = verbose;
     return;
   }
@@ -305,7 +306,18 @@ namespace pgo {
   template <typename T>
   bool InertialCost::operator()(const T* const prev_vTi,
     const T* const next_vTi,
+    const T* const bias_acc,
+    const T* const bias_ang,
     T * residual) const {
+    // Biases
+    Eigen::Matrix<T,3,1> b_iA;
+    b_iA << T(bias_acc[0]),
+      T(bias_acc[1]),
+      T(bias_acc[2]);
+    Eigen::Matrix<T,3,1> b_iW;
+    b_iW << T(bias_ang[0]),
+      T(bias_ang[1]),
+      T(bias_ang[2]);
 
     // prev_vTt's state
     // Position
@@ -323,14 +335,18 @@ namespace pgo {
     prev_vAi << prev_vTi[6],
       prev_vTi[7],
       prev_vTi[8];
-    // Angle axis eigen structure
-    Eigen::AngleAxis<T> prev_vAAi(prev_vAi.norm(),
-      prev_vAi.normalized());
-    // Eigen Quaternion
-    Eigen::Quaternion<T> prev_vQi(prev_vAAi);
     // Rotation matrix
     Eigen::Matrix<T,3,3> prev_vRi;// = prev_vQi.toRotationMatrix();
     ceres::AngleAxisToRotationMatrix(&prev_vTi[6], prev_vRi.data());
+    // Angle axis eigen structure
+    // Eigen::AngleAxis<T> prev_vAAi(prev_vRi);
+
+    // Eigen Quaternion
+    Eigen::Quaternion<T> prev_vQi(prev_vRi);
+    // std::cout << prev_vAAi.axis()(0) << ", "
+    //   << prev_vAAi.axis()(1) << ", "
+    //   << prev_vAAi.axis()(2) << ", "
+    //   << prev_vAAi.angle() << std::endl;
 
     // next_vTt's state
     // Position
@@ -348,14 +364,14 @@ namespace pgo {
     next_vAi << next_vTi[6],
       next_vTi[7],
       next_vTi[8];
-    // Angle axis eigen structure
-    Eigen::AngleAxis<T> next_vAAi(next_vAi.norm(),
-      next_vAi.normalized());
-    // Eigen Quaternion
-    Eigen::Quaternion<T> next_vQi(next_vAAi);
     // Rotation matrix
     Eigen::Matrix<T,3,3> next_vRi;// = next_vQi.toRotationMatrix();
     ceres::AngleAxisToRotationMatrix(&next_vTi[6], next_vRi.data());
+    // Angle axis eigen structure
+    // Eigen::AngleAxis<T> next_vAAi(next_vAi.norm(),
+    //   next_vAi.normalized());
+    // Eigen Quaternion
+    Eigen::Quaternion<T> next_vQi(next_vRi);
 
     // Inertial measurements
     Eigen::Matrix<T,3,1> iW;
@@ -368,10 +384,10 @@ namespace pgo {
       T(imu_.linear_acceleration.z);
 
     // Inertial bias
-    Eigen::Matrix<T,3,1> iB;
-    iB << T(gyr_bias_.x),
-      T(gyr_bias_.y),
-      T(gyr_bias_.z);
+    // Eigen::Matrix<T,3,1> iB;
+    // iB << T(gyr_bias_.x),
+    //   T(gyr_bias_.y),
+    //   T(gyr_bias_.z);
 
     // Gravity
     Eigen::Matrix<T,3,1> vG;
@@ -382,20 +398,11 @@ namespace pgo {
     // Inertial predictions
     // Position prediction
     Eigen::Matrix<T,3,1> est_vPi;
-    est_vPi = prev_vPi + T(time_step_) * prev_vVi;// + T(0.5 * time_step_ * time_step_) * (vG - prev_vRi * iA);
+    est_vPi = prev_vPi + T(time_step_) * prev_vVi + T(0.5 * time_step_ * time_step_) * (vG - prev_vRi * iA);
     // Velocity prediction
     Eigen::Matrix<T,3,1> est_vVi;
-    est_vVi = prev_vVi + T(time_step_) * (vG - (prev_vRi * iA));
-    if (verbose_) {
-      std::cout << "vA" << " "
-        << (prev_vRi * iA)(0) << ", "
-        << (prev_vRi * iA)(1) << ", "
-        << (prev_vRi * iA)(2) << std::endl;
-      std::cout << "vG" << " "
-        << vG(0) << ", "
-        << vG(1) << ", "
-        << vG(2) << std::endl;
-    }
+    est_vVi = prev_vVi + T(time_step_) * (vG - (prev_vRi * (iA - b_iA)));
+
     // std::cout << (prev_vRi * iA)(0) << ", " << (prev_vRi * iA)(1) << ", " << (prev_vRi * iA)(2) << std::endl;
     // Quaternion derivative matrix
     Eigen::Matrix<T,4,3> Omega;
@@ -411,14 +418,24 @@ namespace pgo {
       prev_vQi.z();
     Eigen::Matrix<T,4,1> text_vQi; // temporary next
     // Temporary next orientation in vector
-    text_vQi = trev_vQi + T(time_step_) * T(0.5) * Omega * (iW - iB);
+    text_vQi = trev_vQi + T(time_step_) * T(0.5) * Omega * (iW - b_iW);
+    // std::cout << "trev_vQi " << trev_vQi(0) << ", "
+    //   << trev_vQi(1) << ", "
+    //   << trev_vQi(2) << ", "
+    //   << trev_vQi(3) << std::endl;
+    // std::cout << "iW " << iW(0) << ", "
+    //   << iW(1) << ", "
+    //   << iW(2) << std::endl;
+    // std::cout << "iB " << iB(0) << ", "
+    //   << iB(1) << ", "
+    //   << iB(2) << std::endl;
     // text_vQi.normalize(); // maybe remove
     // Fix small errors
     Eigen::Quaternion<T> est_vQi(text_vQi(0),
       text_vQi(1),
       text_vQi(2),
       text_vQi(3));
-    Eigen::Matrix<T,3,3> est_vRi = est_vQi.toRotationMatrix();
+    Eigen::Matrix<T,3,3> est_vRi = est_vQi.normalized().toRotationMatrix();
 
     // Estimated from inertia vs next
     Eigen::Matrix<T,3,1> dP;
@@ -427,24 +444,27 @@ namespace pgo {
     dP = next_vPi - est_vPi;
     dV = next_vVi - est_vVi;
     dR = next_vRi.transpose() * est_vRi;
+    // std::cout << est_vRi(0,0) << ", " << est_vRi(0,1) << ", " << est_vRi(0,2) << ", ";
+    // std::cout << est_vRi(1,0) << ", " << est_vRi(1,1) << ", " << est_vRi(1,2) << ", ";
+    // std::cout << est_vRi(2,0) << ", " << est_vRi(2,1) << ", " << est_vRi(2,2) << std::endl;
 
     // Position cost
-    residual[0] = T(trust_weight_) * dP(0);
-    residual[1] = T(trust_weight_) * dP(1);
-    residual[2] = T(trust_weight_) * dP(2);
+    residual[0] = T(sqrt(trust_weight_)) * dP(0);
+    residual[1] = T(sqrt(trust_weight_)) * dP(1);
+    residual[2] = T(sqrt(trust_weight_)) * dP(2);
     // Velocity cost
     // residual[3] = prev_vPi(0) - next_vPi(0);
     // residual[4] = prev_vPi(1) - next_vPi(1);
     // residual[5] = prev_vPi(2) - next_vPi(2);
-    residual[3] = T(trust_weight_) * dV(0);
-    residual[4] = T(trust_weight_) * dV(1);
-    residual[5] = T(trust_weight_) * dV(2);
+    residual[3] = T(sqrt(trust_weight_)) * dV(0);
+    residual[4] = T(sqrt(trust_weight_)) * dV(1);
+    residual[5] = T(sqrt(trust_weight_)) * dV(2);
     // Orientation cost
     T aa[3];
     ceres::RotationMatrixToAngleAxis(dR.data(), aa);
     // std::cout << aa[0] << ", " << aa[1] << ", " << aa[2] << std::endl;
-    residual[6] = T(trust_weight_) *
-      (aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]); // WATCH OUT FOR THIS
+    residual[6] = T(sqrt(trust_weight_)) *
+      sqrt(0.001 + aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]); // WATCH OUT FOR THIS
       // Watch out for bias
     return true;
   }
@@ -455,7 +475,7 @@ namespace pgo {
     // Constructor to pass data
     // A good smoothing factor is 0.1, but it may be changed
     explicit ClosenessCost(double smoothing,
-      double rotation_factor);
+      double vel_smooth);
 
     // Function for ceres solver with parameters (different frames)
     template <typename T> bool operator()(const T* const prev_vTt,
@@ -464,14 +484,14 @@ namespace pgo {
 
   private:
     double smoothing_;
-    double rotation_factor_;
+    double vel_smooth_;
   };
 
   // Constructor to pass data
   ClosenessCost::ClosenessCost(double smoothing,
-    double rotation_factor) {
+    double vel_smooth) {
     smoothing_ = smoothing;
-    rotation_factor_ = rotation_factor;
+    vel_smooth_ = vel_smooth;
   }
   // Function for ceres solver with parameters
   template <typename T> bool ClosenessCost::operator()(const T* const prev_vTt,
@@ -488,32 +508,32 @@ namespace pgo {
     next_vPt << next_vTt[0],
       next_vTt[1],
       next_vTt[2];
-    // Eigen::Matrix<T, 3, 1> prev_vVt;
-    // prev_vVt << prev_vTt[3],
-    //   prev_vTt[4],
-    //   prev_vTt[5];
-    // Eigen::Matrix<T, 3, 1> next_vVt;
-    // next_vVt << next_vTt[3],
-    //   next_vTt[4],
-    //   next_vTt[5];
+    Eigen::Matrix<T, 3, 1> prev_vVt;
+    prev_vVt << prev_vTt[3],
+      prev_vTt[4],
+      prev_vTt[5];
+    Eigen::Matrix<T, 3, 1> next_vVt;
+    next_vVt << next_vTt[3],
+      next_vTt[4],
+      next_vTt[5];
     Eigen::Matrix<T, 3, 3> prev_vRt;
     ceres::AngleAxisToRotationMatrix(&prev_vTt[6], prev_vRt.data());
     Eigen::Matrix<T, 3, 3> next_vRt;
     ceres::AngleAxisToRotationMatrix(&next_vTt[6], next_vRt.data());
 
     // // Translation cost with smoothing
-    residual[0] = T(smoothing_) * (prev_vPt(0) - next_vPt(0));
-    residual[1] = T(smoothing_) * (prev_vPt(1) - next_vPt(1));
-    residual[2] = T(smoothing_) * (prev_vPt(2) - next_vPt(2));
-    // residual[3] = T(1e-1 * smoothing_) * (prev_vVt(0) - next_vVt(0));
-    // residual[4] = T(1e-1 * smoothing_) * (prev_vVt(1) - next_vVt(1));
-    // residual[5] = T(1e-1 * smoothing_) * (prev_vVt(2) - next_vVt(2));
+    residual[0] = T(sqrt(smoothing_)) * (prev_vPt(0) - next_vPt(0));
+    residual[1] = T(sqrt(smoothing_)) * (prev_vPt(1) - next_vPt(1));
+    residual[2] = T(sqrt(smoothing_)) * (prev_vPt(2) - next_vPt(2));
+    residual[3] = T(sqrt(1.0e0 * vel_smooth_*smoothing_)) * (prev_vVt(0) - next_vVt(0));
+    residual[4] = T(sqrt(1.0e0 * vel_smooth_*smoothing_)) * (prev_vVt(1) - next_vVt(1));
+    residual[5] = T(sqrt(1.0e0 * vel_smooth_*smoothing_)) * (prev_vVt(2) - next_vVt(2));
     // // Rotation cost with smoothing
     T aa[3];
     Eigen::Matrix<T, 3, 3> R = next_vRt.transpose() * prev_vRt;
     ceres::RotationMatrixToAngleAxis(R.data(), aa);
-    residual[3] = T(rotation_factor_) * T(smoothing_)*
-      (aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
+    residual[6] = T(1.0e0 * ROTATION_FACTOR) * T(sqrt(smoothing_))*
+      sqrt(0.001 + aa[0] * aa[0] + aa[1] * aa[1] + aa[2] * aa[2]);
     return true;
   }
 
@@ -524,7 +544,7 @@ PoseGraph::PoseGraph(Environment environment,
   std::map<std::string, Lighthouse> lighthouses,
   size_t window,
   double trust,
-  bool force_first,
+  double first_factor,
   bool correction) {
   if (window < 2) {
     std::cout << "Bad window size. Using 2." << std::endl;
@@ -539,7 +559,8 @@ PoseGraph::PoseGraph(Environment environment,
   tracker_ = tracker;
   environment_ = environment;
   lighthouses_ = lighthouses;
-  force_first_ = force_first;
+  // force_first_ = force_first;
+  first_factor_ = first_factor;
   return;
 }
 
@@ -660,9 +681,9 @@ bool PoseGraph::Valid() {
     }
   }
 
-  std::cout << "COST: " << cost << std::endl;
+  // std::cout << "COST: " << cost << std::endl;
 
-  if (cost > 5e-5 * sample_counter)
+  if (cost > 1e-2 * sample_counter)
     return false;
 
   return true;
@@ -681,30 +702,27 @@ void PoseGraph::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
     }
   }
   if (clone_msg->samples.size() == 0) {
-    clone_msg++;
     return;
   }
   // Save the copy
   light_data_.push_back(*clone_msg);
 
-  if (!lastposewasimu_) {
-    AddPoseBack();
+  while (light_data_.size() > window_) {
+    light_data_.erase(light_data_.begin());
+    if (poses_.size() > 0) {
+      poses_.erase(poses_.begin());
+    }
+    size_t imu_counter = 0;
+    while (imu_data_.size() > 0 
+      && imu_data_.front().header.stamp < light_data_.front().header.stamp) {
+      imu_counter++;
+      imu_data_.erase(imu_data_.begin());
+      if (poses_.size() > 0 && imu_counter > 1) {
+        poses_.erase(poses_.begin());
+      }
+    }
   }
-  lastposewasimu_ = false;
-  if (light_data_.size() > window_) {
-    // Erase first element
-    RemoveLight();
-  }
-  // Add new pose for removal in  IMU cycle
-  if (imu_data_.size() != 0 &&
-    light_data_.front().header.stamp > imu_data_.front().header.stamp) {
-    AddPoseFront();
-  }
-  // Remove IMU data and poses
-  while (imu_data_.size() != 0 &&
-    light_data_.front().header.stamp > imu_data_.front().header.stamp) {
-    RemoveImu();
-  }
+
   // Solve the problem
   Solve();
 
@@ -713,44 +731,11 @@ void PoseGraph::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   return;
 }
 
-void PoseGraph::ApplyLimits() {
-  // Check if the last measure was imu.
-  // If it was then we are covered -- IMU relates two poses
-  if (!lastposewasimu_) {
-    AddPoseBack();
-  }
-  // Check the light window limit
-  if (light_data_.size() > window_) {
-    RemoveLight();
-  }
-  // Add extra pose to temove later
-  if (imu_data_.size() != 0 &&
-    light_data_.front().header.stamp > imu_data_.front().header.stamp) {
-    AddPoseFront();
-  }
-  // Remove IMU data and poses
-  while (imu_data_.size() != 0 &&
-    light_data_.front().header.stamp > imu_data_.front().header.stamp) {
-    // Erase out of window IMU msg
-    RemoveImu();
-  }
-  return;
-}
-
-void PoseGraph::RemoveLight() {
-  light_data_.erase(light_data_.begin());
-  poses_.erase(poses_.begin());
-  return;
-}
-
 void PoseGraph::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
   // Create copy to clean
   sensor_msgs::Imu * clone_msg = new sensor_msgs::Imu(*msg);
   // Save the copy
   imu_data_.push_back(*clone_msg);
-
-  lastposewasimu_ = true;
-  AddPoseBack();
 
   return;
 }
@@ -828,22 +813,14 @@ bool PoseGraph::Solve() {
   // Test if we have enough data
   if (light_data_.size() < window_) return true;
   // Lighthouse and pose
-  // std::vector<double*> poses;
-  // double * prev_pose = NULL;
   DataType prev_type;
   double prev_time = 0;
-  // double * next_pose = NULL;
+  size_t counter = 0;
   // std::string next_lighthouse;
 
   ceres::Problem problem;
   ceres::Solver::Options options;
   ceres::Solver::Summary summary;
-
-  double rigid_pose[9];
-  if (force_first_ && valid_) {
-    for(size_t i = 0; i < 9; i++)
-      rigid_pose[i] = poses_.front()[i];
-  }
 
   // Iterators
   auto li_it = light_data_.begin();
@@ -857,6 +834,14 @@ bool PoseGraph::Solve() {
   new_poses.push_back(new double[9]);
   lastposewasimu_ = true;
   size_t pose_index = 0;
+  double bias_acc[3];
+  bias_acc[0] = tracker_.acc_bias.x;
+  bias_acc[1] = tracker_.acc_bias.y;
+  bias_acc[2] = tracker_.acc_bias.z;
+  double bias_ang[3];
+  bias_ang[0] = tracker_.gyr_bias.x;
+  bias_ang[1] = tracker_.gyr_bias.y;
+  bias_ang[2] = tracker_.gyr_bias.z;
 
   while (li_it != light_data_.end()) {
 
@@ -881,27 +866,32 @@ bool PoseGraph::Solve() {
         dt = 2 * (imu_it->header.stamp.toSec() - prev_time);
       else
         dt = 0.0;
-      auto prev_pose = new_poses.back();
+      // auto prev_pose = new_poses.back();
       new_poses.push_back(new double[9]);
-      auto next_pose = new_poses.back();
+      size_t prev = new_poses.size() - 2;
+      size_t next = new_poses.size() - 1;
+      // auto next_pose = new_poses.back();
       ceres::CostFunction * cost =
-        new ceres::AutoDiffCostFunction<pgo::InertialCost, 7, 9, 9>
+        new ceres::AutoDiffCostFunction<pgo::InertialCost, 7, 9, 9, 3, 3  >
         (new pgo::InertialCost(*imu_it,
           environment_.gravity,
-          tracker_.gyr_bias,
           dt,
           trust_));
-      problem.AddResidualBlock(cost, NULL, prev_pose, next_pose);
+      // std::cout << "IMU " << imu_it->header.stamp << " - " << prev << " - " << next << " : " << dt << " - " << trust_ << std::endl;
+      problem.AddResidualBlock(cost, new ceres::CauchyLoss(0.05), new_poses[prev],
+        new_poses[next],
+        bias_acc,
+        bias_ang);
       lastposewasimu_ = true;
       prev_type = imu;
       prev_time = imu_it->header.stamp.toSec();
       imu_it++;
     }
     // Cost related to light measurements
-    if (!lastposewasimu_) {
-      new_poses.push_back(new double[9]);
-      lastposewasimu_ = false;
-    }
+    // if (!lastposewasimu_) {
+    //   new_poses.push_back(new double[9]);
+    //   lastposewasimu_ = false;
+    // }
     if (li_it->axis == HORIZONTAL) {
       ceres::DynamicAutoDiffCostFunction<pgo::ViveHorizontalCost, 4> * hcost =
         new ceres::DynamicAutoDiffCostFunction<pgo::ViveHorizontalCost, 4>
@@ -912,7 +902,9 @@ bool PoseGraph::Solve() {
           correction_));
       hcost->AddParameterBlock(9);
       hcost->SetNumResiduals(li_it->samples.size());
-      problem.AddResidualBlock(hcost, NULL, new_poses.back());
+      size_t light_pointer = new_poses.size() - 1;
+      // std::cout << "Light " << li_it->header.stamp << " - " << light_pointer << std::endl;
+      problem.AddResidualBlock(hcost, new ceres::CauchyLoss(0.05), new_poses[light_pointer]);
       // Delta time
       prev_type = light;
       prev_time = li_it->header.stamp.toSec();
@@ -926,7 +918,9 @@ bool PoseGraph::Solve() {
           correction_));
       vcost->AddParameterBlock(9);
       vcost->SetNumResiduals(li_it->samples.size());
-      problem.AddResidualBlock(vcost, NULL, new_poses.back());
+      size_t light_pointer = new_poses.size() - 1;
+      // std::cout << "Light " << li_it->header.stamp << " - " << light_pointer << std::endl;
+      problem.AddResidualBlock(vcost, new ceres::CauchyLoss(0.05), new_poses[light_pointer]);
       // Delta time
       prev_type = light;
       prev_time = li_it->header.stamp.toSec();
@@ -939,7 +933,7 @@ bool PoseGraph::Solve() {
     else if (li_it->axis == VERTICAL)
       pre_data[li_it->lighthouse].second = &(*li_it);
     // Solve preliminary data
-    if (pre_data[li_it->lighthouse].first != NULL
+    if (!valid_ && pre_data[li_it->lighthouse].first != NULL
       && pre_data[li_it->lighthouse].second != NULL) {
       double pre_pose[9];
       pre_pose[0] = 0.0;
@@ -982,67 +976,124 @@ bool PoseGraph::Solve() {
       pre_options.minimizer_progress_to_stdout = false;
       pre_options.max_num_iterations = 1000;
       pre_options.max_solver_time_in_seconds = 1.0;
-      std::cout << "PreSolve " << light_data_.size() << " "
-        << pre_data[li_it->lighthouse].first->samples.size() << " "
-        << pre_data[li_it->lighthouse].second->samples.size() << std::endl;
+      // std::cout << "PreSolve " << light_data_.size() << " "
+      //   << pre_data[li_it->lighthouse].first->samples.size() << " "
+      //   << pre_data[li_it->lighthouse].second->samples.size() << std::endl;
       ceres::Solve(pre_options, &pre_problem, &pre_summary);
       // Copy paste
 
-      while (pose_index != new_poses.size()) {
-        for (size_t i = 0; i < 9; i++)
-          new_poses[pose_index][i] = pre_pose[i];
-        pose_index++;
+      // counter = 0;
+      // std::cout << "PRE_POSE" << std::endl;
+      // std::cout << counter << " "
+      //   << pre_summary.final_cost <<  " - "
+      //   << pre_pose[0] << ", "
+      //   << pre_pose[1] << ", "
+      //   << pre_pose[2] << ", "
+      //   << pre_pose[3] << ", "
+      //   << pre_pose[4] << ", "
+      //   << pre_pose[5] << ", "
+      //   << pre_pose[6] << ", "
+      //   << pre_pose[7] << ", "
+      //   << pre_pose[8] << std::endl;
+      //   counter++;
+
+      // Check it is a good pose
+      if (pre_summary.final_cost < 1e-5 * 
+        (pre_data[li_it->lighthouse].second->samples.size() +
+        pre_data[li_it->lighthouse].first->samples.size())) {
+        // Fill poses
+        while (pose_index < new_poses.size()) {
+          for (size_t i = 0; i < 9; i++)
+            new_poses[pose_index][i] = pre_pose[i];
+          pose_index++;
+        }
+        // pose_index = new_poses.size()-1;
       }
-      pose_index = new_poses.size()-1;
     }
     li_it++;
   }
 
   // If we want to force the first pose to be close
   // to its previous estimate
-  if (force_first_ && valid_) {
-    for(size_t i = 0; i < 9; i++)
-      new_poses.front()[i] = rigid_pose[i];
-    ceres::CostFunction * cost =
-      new ceres::AutoDiffCostFunction<pgo::ClosenessCost, 4, 9, 9>
-      (new pgo::ClosenessCost(smoothing_, ROTATION_FACTOR));
-    problem.AddResidualBlock(cost, NULL, rigid_pose, new_poses.front());
-    std::cout << "RPose: "
-      << rigid_pose[0] << ", "
-      << rigid_pose[1] << ", "
-      << rigid_pose[2] << ", "
-      << rigid_pose[3] << ", "
-      << rigid_pose[4] << ", "
-      << rigid_pose[5] << ", "
-      << rigid_pose[6] << ", "
-      << rigid_pose[7] << ", "
-      << rigid_pose[8] << std::endl;
-    problem.SetParameterBlockConstant(rigid_pose);
+  if (valid_) {
+    for (size_t pose_idx = 0; pose_idx < poses_.size(); pose_idx++) {
+      for(size_t i = 0; i < 9; i++) {
+        new_poses[pose_idx][i] = poses_[pose_idx][i];
+      }
+    }
+    for (size_t pose_idx = poses_.size(); pose_idx < new_poses.size(); pose_idx++) {
+      for(size_t i = 0; i < 9; i++) {
+        new_poses[pose_idx][i] = poses_.back()[i];
+      }
+    }
+    if (first_factor_ != 0) {
+      ceres::CostFunction * cost =
+        new ceres::AutoDiffCostFunction<pgo::ClosenessCost, 7, 9, 9>
+        (new pgo::ClosenessCost(first_factor_, 1.0));
+      problem.AddResidualBlock(cost, new ceres::CauchyLoss(0.05), poses_.front(), new_poses.front());
+      problem.SetParameterBlockConstant(poses_.front());
+    }
+  } else if (pose_index != 0) {
+      while (pose_index < new_poses.size()) {
+        for (size_t i = 0; i < 9; i++)
+          new_poses[pose_index][i] = new_poses.front()[i];
+        pose_index++;
+      }
+  } else {
+    return false;
   }
-  // problem.SetParameterBlockConstant(poses_.front());
+
+
+  // counter = 0;
+  // std::cout << "PRE" << std::endl;
+  // for (auto pose : new_poses) {
+  //   std::cout << counter << " "
+  //     << summary.final_cost <<  " - "
+  //     << pose[0] << ", "
+  //     << pose[1] << ", "
+  //     << pose[2] << ", "
+  //     << pose[3] << ", "
+  //     << pose[4] << ", "
+  //     << pose[5] << ", "
+  //     << pose[6] << ", "
+  //     << pose[7] << ", "
+  //     << pose[8] << std::endl;
+  //     counter++;
+  // }
 
   options.minimizer_progress_to_stdout = false;
-  options.max_num_iterations = 1000;
-  // options.max_solver_time_in_seconds = 30.0;
-  std::cout << "Solve " << new_poses.size() << " " << light_data_.size() << std::endl;
-  ceres::Solve(options, &problem, &summary);
-
-
-  size_t counter = 0;
-  for (auto pose : new_poses) {
-    std::cout << counter << " "
-      << summary.final_cost <<  " - "
-      << pose[0] << ", "
-      << pose[1] << ", "
-      << pose[2] << ", "
-      << pose[3] << ", "
-      << pose[4] << ", "
-      << pose[5] << ", "
-      << pose[6] << ", "
-      << pose[7] << ", "
-      << pose[8] << std::endl;
-      counter++;
+  options.minimizer_type = ceres::LINE_SEARCH;
+  options.line_search_direction_type = ceres::LBFGS;
+  if (valid_) {
+    options.max_num_iterations = 500;
+    options.max_solver_time_in_seconds = 5.0;
+  } else {
+    options.max_num_iterations = 2000;
+    options.max_solver_time_in_seconds = 20.0;
   }
+  // std::cout << "Solve " << new_poses.size() << " " << light_data_.size() << std::endl;
+  problem.SetParameterBlockConstant(bias_acc);
+  problem.SetParameterBlockConstant(bias_ang);
+  ceres::Solve(options, &problem, &summary);
+  std::cout << summary.BriefReport() << std::endl;
+
+
+  // counter = 0;
+  // std::cout << "POS" << std::endl;
+  // for (auto pose : new_poses) {
+  //   std::cout << counter << " "
+  //     << summary.final_cost <<  " - "
+  //     << pose[0] << ", "
+  //     << pose[1] << ", "
+  //     << pose[2] << ", "
+  //     << pose[3] << ", "
+  //     << pose[4] << ", "
+  //     << pose[5] << ", "
+  //     << pose[6] << ", "
+  //     << pose[7] << ", "
+  //     << pose[8] << std::endl;
+  //     counter++;
+  // }
 
 
   last_cost_ = summary.final_cost;
@@ -1085,9 +1136,9 @@ bool PoseGraph::Solve() {
 
   if (!Valid()) return false;
 
-  for (size_t i = 0; i < poses_.size(); i++)
-    delete poses_[i];
-  poses_ = new_poses;
+  poses_.clear();
+  for (size_t i = 0; i < new_poses.size(); i++)
+    poses_.push_back(new_poses[i]);
 
   return true;
 }

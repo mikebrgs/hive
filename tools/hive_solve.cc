@@ -89,15 +89,15 @@ int main(int argc, char ** argv) {
     //   calibration.environment,
     //   1e-3, 1e-6, true, filter::iekf);
     // UKF
-    solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
-      calibration.lighthouses,
-      calibration.environment,
-      1.0, 1e-6, true, filter::ukf);
-    // // PGO
-    // solver[tracker.first] = new PoseGraph(calibration.environment,
-    //   calibration.trackers[tracker.first],
+    // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
     //   calibration.lighthouses,
-    //   4, 0.4, true, true);
+    //   calibration.environment,
+    //   1.0e0, 1e-6, true, filter::ukf);
+    // // PGO
+    solver[tracker.first] = new PoseGraph(calibration.environment,
+      calibration.trackers[tracker.first],
+      calibration.lighthouses,
+      4, 7e-4, 1e0, true);
   }
   ROS_INFO("Trackers' setup complete.");
 
@@ -130,13 +130,14 @@ int main(int argc, char ** argv) {
   topics.push_back("/loc/vive/light/");
   topics.push_back("/loc/vive/imu");
   topics.push_back("/loc/vive/imu/");
-  // size_t counter = 0;
+  size_t counter = 0;
   rosbag::View view_li(rbag, rosbag::TopicQuery(topics));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
     if (vl != NULL) {
       // counter++;
-      // if (counter < 3000) continue;
+      // if (counter < 1400) continue;
+      // if (counter == 1701) break;
       // ROS_INFO("LIGHT");
       solver[vl->header.frame_id]->ProcessLight(vl);
       aux_solver[vl->header.frame_id]->ProcessLight(vl);
@@ -167,7 +168,7 @@ int main(int argc, char ** argv) {
     }
     const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();
     if (vi != NULL) {
-      // if (counter < 3000) continue;
+      // if (counter < 1400) continue;
       // ROS_INFO("IMU");
       Eigen::Vector3d iG(vi->linear_acceleration.x,
         vi->linear_acceleration.y,
@@ -178,30 +179,6 @@ int main(int argc, char ** argv) {
         calibration.trackers[vi->header.frame_id].imu_transform.rotation.y,
         calibration.trackers[vi->header.frame_id].imu_transform.rotation.z);
       Eigen::Matrix3d tRi = tQi.toRotationMatrix();
-      // Eigen::Vector3d vG = vRt * tRi * iG;
-      // std::cout << "vQt: " << vQt.w() << ", "
-      //   << vQt.x() << ", "
-      //   << vQt.y() <<  ", "
-      //   << vQt.z() << std::endl;
-      // std::cout << "tQi: " << tQi.w() << ", "
-      //   << tQi.x() << ", "
-      //   << tQi.y() << ", "
-      // << tQi.z() << std::endl;
-      // std::cout << "iG: " << (iG).transpose() << std::endl;
-      // std::cout << "vRt * tRi * iG: " << (vRt * tRi * iG).transpose() << std::endl;
-      // std::cout << "vRt:\n" << vRt << std::endl; 
-      // std::cout << "tRi:\n" << tRi << std::endl; 
-      // std::cout << "iG:\n" << iG << std::endl; 
-      // std::cout << "vRt * iG: " << (vRt * iG).transpose() << std::endl;
-      // std::cout << "tRi * iG: " << (tRi * iG).transpose() << std::endl;
-      // std::cout << "cal vG: " << calibration.environment.gravity.x << " "
-      //   << calibration.environment.gravity.y << " "
-      //   << calibration.environment.gravity.z << std::endl;
-      // std::cout << "tQi" << " - "
-      //   << calibration.trackers[vi->header.frame_id].imu_transform.rotation.w << ", "
-      //   << calibration.trackers[vi->header.frame_id].imu_transform.rotation.x << ", "
-      //   << calibration.trackers[vi->header.frame_id].imu_transform.rotation.y << ", "
-      //   << calibration.trackers[vi->header.frame_id].imu_transform.rotation.z << std::endl;
       solver[vi->header.frame_id]->ProcessImu(vi);
     }
   }
