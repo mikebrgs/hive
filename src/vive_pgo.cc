@@ -683,7 +683,7 @@ bool PoseGraph::Valid() {
 
   // std::cout << "COST: " << cost << std::endl;
 
-  if (cost > 1e-2 * sample_counter)
+  if (cost > 1e-4 * sample_counter)
     return false;
 
   return true;
@@ -724,7 +724,9 @@ void PoseGraph::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   }
 
   // Solve the problem
-  Solve();
+  if (!Solve()) {
+    light_data_.pop_back();
+  }
 
   valid_ = Valid();
 
@@ -740,65 +742,65 @@ void PoseGraph::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
   return;
 }
 
-void PoseGraph::RemoveImu() {
-  imu_data_.erase(imu_data_.begin());
-  poses_.erase(poses_.begin());
-  return;
-}
+// void PoseGraph::RemoveImu() {
+//   imu_data_.erase(imu_data_.begin());
+//   poses_.erase(poses_.begin());
+//   return;
+// }
 
-void PoseGraph::AddPoseBack() {
-  double * new_pose = new double[9];
-  if (poses_.size() <= 0) {
-    new_pose[0] = 0.0;
-    new_pose[1] = 0.0;
-    new_pose[2] = 1.0;
-    new_pose[3] = 0.0;
-    new_pose[4] = 0.0;
-    new_pose[5] = 0.0;
-    new_pose[6] = 0.0;
-    new_pose[7] = 0.0;
-    new_pose[8] = 0.0;
-  } else {
-    new_pose[0] = poses_.back()[0];
-    new_pose[1] = poses_.back()[1];
-    new_pose[2] = poses_.back()[2];
-    new_pose[3] = poses_.back()[3];
-    new_pose[4] = poses_.back()[4];
-    new_pose[5] = poses_.back()[5];
-    new_pose[6] = poses_.back()[6];
-    new_pose[7] = poses_.back()[7];
-    new_pose[8] = poses_.back()[8];
-  }
-  poses_.push_back(new_pose);
-  return;
-}
+// void PoseGraph::AddPoseBack() {
+//   double * new_pose = new double[9];
+//   if (poses_.size() <= 0) {
+//     new_pose[0] = 0.0;
+//     new_pose[1] = 0.0;
+//     new_pose[2] = 1.0;
+//     new_pose[3] = 0.0;
+//     new_pose[4] = 0.0;
+//     new_pose[5] = 0.0;
+//     new_pose[6] = 0.0;
+//     new_pose[7] = 0.0;
+//     new_pose[8] = 0.0;
+//   } else {
+//     new_pose[0] = poses_.back()[0];
+//     new_pose[1] = poses_.back()[1];
+//     new_pose[2] = poses_.back()[2];
+//     new_pose[3] = poses_.back()[3];
+//     new_pose[4] = poses_.back()[4];
+//     new_pose[5] = poses_.back()[5];
+//     new_pose[6] = poses_.back()[6];
+//     new_pose[7] = poses_.back()[7];
+//     new_pose[8] = poses_.back()[8];
+//   }
+//   poses_.push_back(new_pose);
+//   return;
+// }
 
-void PoseGraph::AddPoseFront() {
-  double * new_pose = new double[9];
-  if (poses_.size() <= 0) {
-    new_pose[0] = 0.0;
-    new_pose[1] = 0.0;
-    new_pose[2] = 1.0;
-    new_pose[3] = 0.0;
-    new_pose[4] = 0.0;
-    new_pose[5] = 0.0;
-    new_pose[6] = 0.0;
-    new_pose[7] = 0.0;
-    new_pose[8] = 0.0;
-  } else {
-    new_pose[0] = poses_.front()[0];
-    new_pose[1] = poses_.front()[1];
-    new_pose[2] = poses_.front()[2];
-    new_pose[3] = poses_.front()[3];
-    new_pose[4] = poses_.front()[4];
-    new_pose[5] = poses_.front()[5];
-    new_pose[6] = poses_.front()[6];
-    new_pose[7] = poses_.front()[7];
-    new_pose[8] = poses_.front()[8];
-  }
-  poses_.insert(poses_.begin(),new_pose);
-  return;
-}
+// void PoseGraph::AddPoseFront() {
+//   double * new_pose = new double[9];
+//   if (poses_.size() <= 0) {
+//     new_pose[0] = 0.0;
+//     new_pose[1] = 0.0;
+//     new_pose[2] = 1.0;
+//     new_pose[3] = 0.0;
+//     new_pose[4] = 0.0;
+//     new_pose[5] = 0.0;
+//     new_pose[6] = 0.0;
+//     new_pose[7] = 0.0;
+//     new_pose[8] = 0.0;
+//   } else {
+//     new_pose[0] = poses_.front()[0];
+//     new_pose[1] = poses_.front()[1];
+//     new_pose[2] = poses_.front()[2];
+//     new_pose[3] = poses_.front()[3];
+//     new_pose[4] = poses_.front()[4];
+//     new_pose[5] = poses_.front()[5];
+//     new_pose[6] = poses_.front()[6];
+//     new_pose[7] = poses_.front()[7];
+//     new_pose[8] = poses_.front()[8];
+//   }
+//   poses_.insert(poses_.begin(),new_pose);
+//   return;
+// }
 
 bool PoseGraph::GetTransform(geometry_msgs::TransformStamped& msg) {
   if (!valid_) return false;
@@ -1075,7 +1077,7 @@ bool PoseGraph::Solve() {
   problem.SetParameterBlockConstant(bias_acc);
   problem.SetParameterBlockConstant(bias_ang);
   ceres::Solve(options, &problem, &summary);
-  std::cout << summary.BriefReport() << std::endl;
+  // std::cout << summary.BriefReport() << std::endl;
 
 
   // counter = 0;
