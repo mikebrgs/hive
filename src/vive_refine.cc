@@ -59,6 +59,14 @@ namespace refine {
       parameters[0][2];
     Eigen::Matrix<T, 3, 3> vRi;
     ceres::AngleAxisToRotationMatrix(&parameters[0][6], vRi.data());
+    // std::cout << "vPi"
+      // << vPi(0) << ", "
+      // << vPi(1) << ", "
+      // << vPi(2) << std::endl;
+    // std::cout << "vRi"
+      // << vRi(0,0) << ", "
+      // << vRi(0,1) << ", "
+      // << vRi(0,2) << std::endl;
 
     // Lighthouse pose
     Eigen::Matrix<T, 3, 1> vPl;
@@ -72,6 +80,14 @@ namespace refine {
       T(vTl_.rotation.z));
     Eigen::Matrix<T, 3, 3> vRl;
     vRl = vQl.toRotationMatrix();
+    // std::cout << "vPl"
+      // << vPl(0) << ", "
+      // << vPl(1) << ", "
+      // << vPl(2) << std::endl;
+    // std::cout << "vRl"
+      // << vRl(0,0) << ", "
+      // << vRl(0,1) << ", "
+      // << vRl(0,2) << std::endl;
 
     // Inertial transform
     Eigen::Matrix<T,3,1> tPi;
@@ -85,6 +101,14 @@ namespace refine {
       T(tracker_.imu_transform.rotation.z));
     Eigen::Matrix<T, 3, 3> tRi;
     tRi = tQi.toRotationMatrix();
+    // std::cout << "vPi"
+      // << vPi(0) << ", "
+      // << vPi(1) << ", "
+      // << vPi(2) << std::endl;
+    // std::cout << "vRi"
+      // << vRi(0,0) << ", "
+      // << vRi(0,1) << ", "
+      // << vRi(0,2) << std::endl;
 
     // Invert inertial transform
     Eigen::Matrix<T,3,1> iPt = - tRi.transpose() * tPi;
@@ -393,20 +417,11 @@ namespace refine {
     // T dt = T(0.0);
     T dt = T(time_step_);
     Eigen::Matrix<T,3,1> est_vPi;
-    est_vPi = prev_vPi + T(dt) * prev_vVi;// + T(0.5 * dt * dt) * (vG - prev_vRi * iA);
+    est_vPi = prev_vPi + T(dt) * prev_vVi + T(0.5 * dt * dt) * (vG - prev_vRi * (iA-iBa));
     // Velocity prediction
     Eigen::Matrix<T,3,1> est_vVi;
-    est_vVi = prev_vVi + T(dt) * (vG - (prev_vRi * (iA-iBa)));
-    if (verbose_) {
-      std::cout << "vA" << " "
-        << (prev_vRi * iA)(0) << ", "
-        << (prev_vRi * iA)(1) << ", "
-        << (prev_vRi * iA)(2) << std::endl;
-      std::cout << "vG" << " "
-        << vG(0) << ", "
-        << vG(1) << ", "
-        << vG(2) << std::endl;
-    }
+    est_vVi = prev_vVi + T(dt) * (vG - (prev_vRi * (iA - iBa)));
+
     // std::cout << (prev_vRi * iA)(0) << ", " << (prev_vRi * iA)(1) << ", " << (prev_vRi * iA)(2) << std::endl;
     // Quaternion derivative matrix
     Eigen::Matrix<T,4,3> Omega;
@@ -1232,8 +1247,9 @@ bool Refinery::SolveInertial() {
     lighthouses[lighthouse.first][5] = vAAl.angle() * vAAl.axis()(2);
   }
 
+  std::cout << "Reading...\n" << std::flush;
   for (auto tracker_data : data_) {
-    std::cout << "Tracker " << tracker_data.first << std::endl;
+    // std::cout << "Tracker " << tracker_data.first << std::endl;
     // More readable structures
     SweepVec light_data = tracker_data.second.first;
     ImuVec imu_data = tracker_data.second.second;
@@ -1244,7 +1260,8 @@ bool Refinery::SolveInertial() {
     ros::Time prev_time;
 
     // Auxiliary structures
-    LightPointerMapPair pre_data;
+    // LightPointerMapPair pre_data;
+    std::vector<hive::ViveLight> pre_data;
 
     // Pose pointers
     double * next_pose = nullptr;
@@ -1257,48 +1274,184 @@ bool Refinery::SolveInertial() {
     // TODO change pose iterator
     size_t pose_it = 0;
     // Iterate light data
+    poses[tracker.serial].push_back(new double[9]);
     while (li_it != light_data.end()) {
-      std::cout << "Light " << li_it->lighthouse << std::endl;
+      // std::cout << "Light " << li_it->lighthouse << std::endl;
 
       // Iterate imu data
-      while (imu_it != imu_data.end()
-        && imu_it->header.stamp < li_it->header.stamp) {
-        std::cout << "IMU " << li_it->lighthouse << std::endl;
-        // New pose for imu data
-        poses[tracker.serial].push_back(new double[9]);
-        prev_pose = next_pose;
-        next_pose = poses[tracker.serial].back();
-        lastposewasimu = true;
-        // Time delta
-        double dt = (imu_it->header.stamp - prev_time).toSec();
-        if (!lastposewasimu)
-          dt = 2*dt;
-        // Cost related to inertial measurements
-        // std::cout << "InertialCost " << prev_counter << " " << next_counter << std::endl;
-        ceres::CostFunction * cost =
-          new ceres::AutoDiffCostFunction<refine::InertialCost, 7, 9, 9>
-          (new refine::InertialCost(*imu_it,
-            calibration_.environment.gravity,
-            tracker.acc_bias,
-            tracker.gyr_bias,
-            dt,
-            smoothing_));
-        problem.AddResidualBlock(cost, new ceres::CauchyLoss(0.5), prev_pose, next_pose);
+      if (pre_data.size() >= 4) {
+        while (imu_it != imu_data.end()
+          && imu_it->header.stamp < li_it->header.stamp) {
+          // std::cout << "IMU " << li_it->lighthouse << std::endl;
+          // New pose for imu data
+          poses[tracker.serial].push_back(new double[9]);
+          prev_pose = next_pose;
+          next_pose = poses[tracker.serial].back();
+          lastposewasimu = true;
+          // Time delta
+          double dt = (imu_it->header.stamp - prev_time).toSec();
+          if (!lastposewasimu)
+            dt = 2*dt;
+          // Cost related to inertial measurements
+          // std::cout << "InertialCost " << prev_counter << " " << next_counter << std::endl;
+          ceres::CostFunction * cost =
+            new ceres::AutoDiffCostFunction<refine::InertialCost, 7, 9, 9>
+            (new refine::InertialCost(*imu_it,
+              calibration_.environment.gravity,
+              tracker.acc_bias,
+              tracker.gyr_bias,
+              dt,
+              smoothing_));
+          problem.AddResidualBlock(cost, new ceres::CauchyLoss(0.5),
+              poses[tracker.serial][poses[tracker.serial].size()-2],
+              poses[tracker.serial][poses[tracker.serial].size()-1]);
+          std::cout << "." << std::flush;
 
-        prev_time = imu_it->header.stamp;
+          prev_time = imu_it->header.stamp;
 
-        // Next imu msg
-        imu_it++;
+          // Next imu msg
+          imu_it++;
+        }
       }
 
-      // New Light pose
-      if (!lastposewasimu) {
-        // Will be initialized later on
-        poses[tracker.serial].push_back(new double[9]);
-        prev_pose = next_pose;
-        next_pose = poses[tracker.serial].back();
-        lastposewasimu = false;
+      // Save data
+      pre_data.push_back(*li_it);
+      while (pre_data.size() > 4)
+        pre_data.erase(pre_data.begin());
+      // if (li_it->axis == HORIZONTAL)
+      //   pre_data[li_it->lighthouse].first = &(*li_it);
+      // else if (li_it->axis == VERTICAL)
+      //   pre_data[li_it->lighthouse].second = &(*li_it);
+      // Initialize poses for solver
+      // if (pre_data[li_it->lighthouse].first != NULL
+      //   && pre_data[li_it->lighthouse].second != NULL) {
+      if (pre_data.size() == 4) {
+        ceres::Problem pre_problem;
+        ceres::Solver::Options pre_options;
+        ceres::Solver::Summary pre_summary;
+
+        if (pose_it == 0) {
+          poses[tracker.serial].back()[0] = 0.0;
+          poses[tracker.serial].back()[1] = 0.0;
+          poses[tracker.serial].back()[2] = 1.0;
+          poses[tracker.serial].back()[3] = 0.0;
+          poses[tracker.serial].back()[4] = 0.0;
+          poses[tracker.serial].back()[5] = 0.0;
+          poses[tracker.serial].back()[6] = 0.0;
+          poses[tracker.serial].back()[7] = 0.0;
+          poses[tracker.serial].back()[8] = 0.0;
+        } else {
+          poses[tracker.serial].back()[0] = 
+            poses[tracker.serial][pose_it-1][0];
+          poses[tracker.serial].back()[1] = 
+            poses[tracker.serial][pose_it-1][1];
+          poses[tracker.serial].back()[2] = 
+            poses[tracker.serial][pose_it-1][2];
+          poses[tracker.serial].back()[3] = 
+            poses[tracker.serial][pose_it-1][3];
+          poses[tracker.serial].back()[4] = 
+            poses[tracker.serial][pose_it-1][4];
+          poses[tracker.serial].back()[5] = 
+            poses[tracker.serial][pose_it-1][5];
+          poses[tracker.serial].back()[6] = 
+            poses[tracker.serial][pose_it-1][6];
+          poses[tracker.serial].back()[7] = 
+            poses[tracker.serial][pose_it-1][7];
+          poses[tracker.serial].back()[8] = 
+            poses[tracker.serial][pose_it-1][8];
+        }
+        // Lighthouse
+        // std::cout << pre_summary.final_cost << " - "
+        //   << poses[tracker.serial].back()[0] << ", "
+        //   << poses[tracker.serial].back()[1] << ", "
+        //   << poses[tracker.serial].back()[2] << ", "
+        //   << poses[tracker.serial].back()[3] << ", "
+        //   << poses[tracker.serial].back()[4] << ", "
+        //   << poses[tracker.serial].back()[5] << ", "
+        //   << poses[tracker.serial].back()[6] << ", "
+        //   << poses[tracker.serial].back()[7] << ", "
+        //   << poses[tracker.serial].back()[8] << std::endl;
+
+        // Horizontal data
+        double sample_counter = 0.0;
+        for (auto light : pre_data) {
+          geometry_msgs::Transform lighthouse;
+          lighthouse.translation =
+            calibration_.environment.lighthouses[light.lighthouse].translation;
+          lighthouse.rotation =
+            calibration_.environment.lighthouses[light.lighthouse].rotation;
+          if (light.axis == HORIZONTAL) {
+            ceres::DynamicAutoDiffCostFunction<refine::ViveHorizontalCost, 4> * hcost =
+              new ceres::DynamicAutoDiffCostFunction<refine::ViveHorizontalCost, 4>
+              (new refine::ViveHorizontalCost(light,
+                lighthouse,
+                tracker,
+                calibration_.lighthouses[light.lighthouse].horizontal_motor,
+                correction_));
+            hcost->AddParameterBlock(9);
+            hcost->SetNumResiduals(light.samples.size());
+            pre_problem.AddResidualBlock(hcost, NULL, poses[tracker.serial].back());
+            sample_counter += light.samples.size();
+          } else if (light.axis == VERTICAL) {
+            // Vertical data
+            ceres::DynamicAutoDiffCostFunction<refine::ViveVerticalCost, 4> * vcost =
+              new ceres::DynamicAutoDiffCostFunction<refine::ViveVerticalCost, 4>
+              (new refine::ViveVerticalCost(light,
+                lighthouse,
+                tracker,
+                calibration_.lighthouses[light.lighthouse].vertical_motor,
+                correction_));
+            vcost->AddParameterBlock(9);
+            vcost->SetNumResiduals(light.samples.size());
+            pre_problem.AddResidualBlock(vcost, NULL, poses[tracker.serial].back());
+            sample_counter += light.samples.size();
+          }
+        }
+
+        // Solve
+        pre_options.minimizer_progress_to_stdout = false;
+        pre_options.max_solver_time_in_seconds = 1.0;
+        pre_options.max_num_iterations = 1000;
+        ceres::Solve(pre_options, &pre_problem, &pre_summary);
+
+        // std::cout << li_it->lighthouse << " - "
+        //   << lighthouse.translation.x << ", "
+        //   << lighthouse.translation.y << ", "
+        //   << lighthouse.translation.z << ", "
+        //   << lighthouse.rotation.w << ", "
+        //   << lighthouse.rotation.x << ", "
+        //   << lighthouse.rotation.y << ", "
+        //   << lighthouse.rotation.z << std::endl;
+
+        // std::cout << pre_summary.final_cost << " - "
+        //   << poses[tracker.serial].back()[0] << ", "
+        //   << poses[tracker.serial].back()[1] << ", "
+        //   << poses[tracker.serial].back()[2] << ", "
+        //   << poses[tracker.serial].back()[3] << ", "
+        //   << poses[tracker.serial].back()[4] << ", "
+        //   << poses[tracker.serial].back()[5] << ", "
+        //   << poses[tracker.serial].back()[6] << ", "
+        //   << poses[tracker.serial].back()[7] << ", "
+        //   << poses[tracker.serial].back()[8] << std::endl;
+
+        // Copy paste
+        if (pre_summary.final_cost < 1e-5 * sample_counter) {
+          while (pose_it < poses[tracker.serial].size()) {
+            for (size_t i = 0; i < 9; i++) {
+              poses[tracker.serial][pose_it][i] = poses[tracker.serial].back()[i];
+            }
+            pose_it++;
+          }
+        } else {
+          li_it++;
+          pre_data.pop_back();
+          continue;
+        }
+      } else {
+        li_it++;
+        continue;
       }
+
       // Cost related to light measurements
       if (li_it->axis == HORIZONTAL) {
         // std::cout << "ViveCalibrationHorizontalCost " << next_counter << std::endl;
@@ -1312,7 +1465,8 @@ bool Refinery::SolveInertial() {
         hcost->AddParameterBlock(6);
         hcost->SetNumResiduals(li_it->samples.size());
         problem.AddResidualBlock(hcost, new ceres::CauchyLoss(0.5),
-          next_pose, lighthouses[li_it->lighthouse]); // replace with next_pose
+          poses[tracker.serial][poses[tracker.serial].size()-1],
+          lighthouses[li_it->lighthouse]);
       } else if (li_it->axis == VERTICAL) {
         // std::cout << "ViveCalibrationVerticalCost " << next_counter << std::endl;
         ceres::DynamicAutoDiffCostFunction<refine::ViveCalibrationVerticalCost, 4> * vcost =
@@ -1325,116 +1479,45 @@ bool Refinery::SolveInertial() {
         vcost->AddParameterBlock(6);
         vcost->SetNumResiduals(li_it->samples.size());
         problem.AddResidualBlock(vcost, new ceres::CauchyLoss(0.5),
-          next_pose, lighthouses[li_it->lighthouse]); // replace with next_pose
+          poses[tracker.serial][poses[tracker.serial].size()-1],
+          lighthouses[li_it->lighthouse]);
       }
+      std::cout << "*" << std::flush;
       prev_time = li_it->header.stamp;
-
-      // Save data
-      if (li_it->axis == HORIZONTAL)
-        pre_data[li_it->lighthouse].first = &(*li_it);
-      else if (li_it->axis == VERTICAL)
-        pre_data[li_it->lighthouse].second = &(*li_it);
-
-      // Initialize poses for solver
-      if (pre_data[li_it->lighthouse].first != NULL
-        && pre_data[li_it->lighthouse].second != NULL) {
-
-        double pre_pose[9];
-        pre_pose[0] = 0.0;
-        pre_pose[1] = 0.0;
-        pre_pose[2] = 1.0;
-        pre_pose[3] = 0.0;
-        pre_pose[4] = 0.0;
-        pre_pose[5] = 0.0;
-        pre_pose[6] = 0.0;
-        pre_pose[7] = 0.0;
-        pre_pose[8] = 0.0;
-
-        // Lighthouse
-        geometry_msgs::Transform lighthouse;
-        lighthouse.translation =
-          calibration_.environment.lighthouses[li_it->lighthouse].translation;
-        lighthouse.rotation =
-          calibration_.environment.lighthouses[li_it->lighthouse].rotation;
-
-        ceres::Problem pre_problem;
-        ceres::Solver::Options pre_options;
-        ceres::Solver::Summary pre_summary;
-        // Horizontal data
-        ceres::DynamicAutoDiffCostFunction<refine::ViveHorizontalCost, 4> * hcost =
-          new ceres::DynamicAutoDiffCostFunction<refine::ViveHorizontalCost, 4>
-          (new refine::ViveHorizontalCost(*pre_data[li_it->lighthouse].first,
-            lighthouse,
-            tracker,
-            calibration_.lighthouses[li_it->lighthouse].horizontal_motor,
-            correction_));
-        hcost->AddParameterBlock(9);
-        hcost->SetNumResiduals(pre_data[li_it->lighthouse].first->samples.size());
-        pre_problem.AddResidualBlock(hcost, NULL, pre_pose);
-        // Vertical data
-        ceres::DynamicAutoDiffCostFunction<refine::ViveVerticalCost, 4> * vcost =
-          new ceres::DynamicAutoDiffCostFunction<refine::ViveVerticalCost, 4>
-          (new refine::ViveVerticalCost(*pre_data[li_it->lighthouse].second,
-            lighthouse,
-            tracker,
-            calibration_.lighthouses[li_it->lighthouse].vertical_motor,
-            correction_));
-        vcost->AddParameterBlock(9);
-        vcost->SetNumResiduals(pre_data[li_it->lighthouse].second->samples.size());
-        pre_problem.AddResidualBlock(vcost, NULL, pre_pose);
-
-        // Solve
-        pre_options.minimizer_progress_to_stdout = false;
-        pre_options.max_num_iterations = 1000;
-        ceres::Solve(pre_options, &pre_problem, &pre_summary);
-
-        std::cout << "PP "<< pre_summary.final_cost <<" : "
-          << pre_pose[0] << ", "
-          << pre_pose[1] << ", "
-          << pre_pose[2] << ", "
-          << pre_pose[3] << ", "
-          << pre_pose[4] << ", "
-          << pre_pose[5] << ", "
-          << pre_pose[6] << ", "
-          << pre_pose[7] << ", "
-          << pre_pose[8] << std::endl;
-
-        // Copy paste
-        if (pre_summary.final_cost < 1e-4 * (
-          pre_data[li_it->lighthouse].second->samples.size() +
-          pre_data[li_it->lighthouse].first->samples.size())) {
-          while (pose_it != poses[tracker.serial].size()) {
-            for (size_t i = 0; i < 9; i++) {
-              poses[tracker.serial][pose_it][i] = pre_pose[i];
-            }
-            pose_it++;
-          }
-        }
-        // std::cout << "HERE" << std::endl;
-        // End of Copy Past
-      }
-      // End of Initializer
       // Next light msg
       li_it++;
     }
     // End of light_it
   }
+  std::cout << std::endl;
   // End of tracker_data
 
   // Fix one of the lighthouses to the vive frame
   problem.SetParameterBlockConstant(lighthouses.begin()->second);
 
-  for (auto poses_tracker : poses) {
-    std::cout << poses_tracker.first << std::endl;
-    for (auto pose : poses_tracker.second) {
-      for (size_t i = 0; i < 9; i++) {
-        std::cout << pose[i] << " ";
-      }
-      std::cout << std::endl;
-    }
-  }
+  PoseVectorMap clone_poses(poses);
+  PoseMap clone_lighthouses(lighthouses);
 
-  for (auto lh_it = lighthouses.begin(); lh_it != lighthouses.end(); lh_it++) {
+  // Solver's options
+  options.minimizer_progress_to_stdout = true;
+  // options.minimizer_type = ceres::LINE_SEARCH;
+  // options.line_search_direction_type = ceres::LBFGS;
+  options.max_num_iterations = 500; // TODO change this
+
+  // std::cout << "PREV Tr:" << std::endl;
+  // for (auto tr_it = clone_poses.begin(); tr_it != clone_poses.end(); tr_it++) {
+  //   for (auto po_it = tr_it->second.begin(); po_it != tr_it->second.end(); po_it++) {
+  //     std::cout <<  (*po_it)[0] << ", "
+  //       << (*po_it)[1] << ", "
+  //       << (*po_it)[2] << ", "
+  //       << (*po_it)[6] << ", "
+  //       << (*po_it)[7] << ", "
+  //       << (*po_it)[8] << std::endl;
+  //   }
+  // }
+
+  std::cout << "PREV Lh:" << std::endl;
+  for (auto lh_it = clone_lighthouses.begin(); lh_it != clone_lighthouses.end(); lh_it++) {
     std::cout << lh_it->first << " - "
       << lh_it->second[0] << ", "
       << lh_it->second[1] << ", "
@@ -1443,25 +1526,22 @@ bool Refinery::SolveInertial() {
       << lh_it->second[4] << ", "
       << lh_it->second[5] << std::endl;
   }
-  std::cout << std::endl;
-  // Solver's options
-  options.minimizer_progress_to_stdout = true;
-  options.max_num_iterations = 500; // TODO change this
 
   ceres::Solve(options, &problem, &summary);
 
-  std::cout << "Estimated Poses - Begin\n";
-  for (auto poses_tracker : poses) {
-    std::cout << poses_tracker.first << std::endl;
-    for (auto pose : poses_tracker.second) {
-      for (size_t i = 0; i < 9; i++) {
-        std::cout << pose[i] << " ";
-      }
-      std::cout << std::endl;
-    }
-  }
-  std::cout << "Estimated Poses - End\n";
 
+  // std::cout << "NEW Tr:" << std::endl;
+  // for (auto tr_it = poses.begin(); tr_it != poses.end(); tr_it++) {
+  //   for (auto po_it = tr_it->second.begin(); po_it != tr_it->second.end(); po_it++) {
+  //     std::cout <<  (*po_it)[0] << ", "
+  //       << (*po_it)[1] << ", "
+  //       << (*po_it)[2] << ", "
+  //       << (*po_it)[6] << ", "
+  //       << (*po_it)[7] << ", "
+  //       << (*po_it)[8] << std::endl;
+  //   }
+  // }
+  std::cout << "NEW Lh:" << std::endl;
   for (auto lh_it = lighthouses.begin(); lh_it != lighthouses.end(); lh_it++) {
     std::cout << lh_it->first << " - "
       << lh_it->second[0] << ", "
@@ -1471,7 +1551,6 @@ bool Refinery::SolveInertial() {
       << lh_it->second[4] << ", "
       << lh_it->second[5] << std::endl;
   }
-  std::cout << std::endl;
 
   std::cout << summary.BriefReport() << std::endl;
 
@@ -1523,7 +1602,7 @@ bool Refinery::SolveStatic() {
   std::map<std::string, double[6]> vTl;
   for (auto lh_it = calibration_.environment.lighthouses.begin();
     lh_it != calibration_.environment.lighthouses.end(); lh_it++) {
-    std::cout << "LH: " << lh_it->first << std::endl;
+    // std::cout << "LH: " << lh_it->first << std::endl;
     // Conversion from quaternion to angle axis
     Eigen::AngleAxisd vAl(Eigen::Quaterniond(
       lh_it->second.rotation.w,
@@ -1540,12 +1619,13 @@ bool Refinery::SolveStatic() {
   }
   // first -- horizontal observations
   // second -- vertical observations
-  LightMap observations;
   // Vector to save the poses
   std::vector<double*> poses;
+  size_t pose_pointer = 0;
 
   // Iterate tracker data
   for (auto tr_it = data_.begin(); tr_it != data_.end(); tr_it++) {
+    LightMap observations;
     // Iterate light data
     for (auto li_it = tr_it->second.first.begin();
       li_it != tr_it->second.first.end(); li_it++) {
@@ -1554,50 +1634,6 @@ bool Refinery::SolveStatic() {
         continue;
       }
 
-      double * pose = new double[6];
-      poses.push_back(pose);
-
-      size_t pose_pointer = 0;
-      // Horizontal cost
-      if (li_it->axis == HORIZONTAL) {
-        std::cout << "Light H " << li_it->lighthouse << std::endl;
-        ceres::DynamicAutoDiffCostFunction<refine::PoseHorizontalCost, 4> * hcost =
-          new ceres::DynamicAutoDiffCostFunction<refine::PoseHorizontalCost, 4>
-          (new refine::PoseHorizontalCost(*li_it,
-            calibration_.trackers[tr_it->first],
-            calibration_.lighthouses[li_it->lighthouse].horizontal_motor,
-            correction_));
-        hcost->AddParameterBlock(6);
-        hcost->AddParameterBlock(6);
-        hcost->SetNumResiduals(li_it->samples.size());
-        problem.AddResidualBlock(hcost, new ceres::CauchyLoss(0.05), poses.back(),
-          vTl[li_it->lighthouse]);
-      // Vertical cost
-      } else if (li_it->axis == VERTICAL) {
-        std::cout << "Light V " << li_it->lighthouse << std::endl;
-        ceres::DynamicAutoDiffCostFunction<refine::PoseVerticalCost, 4> * vcost =
-          new ceres::DynamicAutoDiffCostFunction<refine::PoseVerticalCost, 4>
-          (new refine::PoseVerticalCost(*li_it,
-            calibration_.trackers[tr_it->first],
-            calibration_.lighthouses[li_it->lighthouse].vertical_motor,
-            correction_));
-        vcost->AddParameterBlock(6);
-        vcost->AddParameterBlock(6);
-        vcost->SetNumResiduals(li_it->samples.size());
-        problem.AddResidualBlock(vcost, new ceres::CauchyLoss(0.05), poses.back(),
-          vTl[li_it->lighthouse]);
-      }
-
-      // Smoothing cost
-      if (poses.size() >= 2) {
-        std::cout << "Inertial" << std::endl;
-        ceres::CostFunction * cost =
-          new ceres::AutoDiffCostFunction<refine::SmoothingCost, 4, 6, 6>
-          (new refine::SmoothingCost(smoothing_, ROTATION_COST_FACTOR));
-        problem.AddResidualBlock(cost, new ceres::CauchyLoss(0.01),
-          poses[poses.size()-2], poses[poses.size()-1]);
-      // If the poses are in different frames
-      }
 
       // Save observations
       if (li_it->axis == HORIZONTAL) {
@@ -1611,6 +1647,8 @@ bool Refinery::SolveStatic() {
       TF tf;
       if (observations[li_it->lighthouse].first != NULL &&
         observations[li_it->lighthouse].second != NULL) {
+        double * pose = new double[6];
+        poses.push_back(pose);
         poses.back()[0] = 0;
         poses.back()[1] = 0;
         poses.back()[2] = 1;
@@ -1646,35 +1684,92 @@ bool Refinery::SolveStatic() {
         pre_problem.SetParameterBlockConstant(vTl[li_it->lighthouse]);
         // Solve
         ceres::Solve(options, &pre_problem, &summary);
-        std::cout << summary.final_cost << " - "
-          << poses.back()[0] << ", "
-          << poses.back()[1] << ", "
-          << poses.back()[2] << ", "
-          << poses.back()[3] << ", "
-          << poses.back()[4] << ", "
-          << poses.back()[5] << std::endl;
+        // std::cout << summary.final_cost << " - "
+        //   << poses.back()[0] << ", "
+        //   << poses.back()[1] << ", "
+        //   << poses.back()[2] << ", "
+        //   << poses.back()[3] << ", "
+        //   << poses.back()[4] << ", "
+        //   << poses.back()[5] << std::endl;
         // Check
         if (summary.final_cost > 1e-5 * (
           observations[li_it->lighthouse].second->samples.size() +
           observations[li_it->lighthouse].first->samples.size())) {
+          poses.pop_back();
           continue;
+        } else {
         }
         // Fill
-        while(pose_pointer < poses.size()-1) {
+        while(pose_pointer < poses.size()) {
           for (size_t i = 0; i < 6; i++) {
             poses[pose_pointer][i] = poses.back()[i];
           }
           pose_pointer++;
         }
-        pose_pointer = poses.size();
+        // pose_pointer = poses.size();
+      } else {
+        continue;
+      }
+
+
+
+      // Horizontal cost
+      if (li_it->axis == HORIZONTAL) {
+        // std::cout << "Light H " << li_it->lighthouse << std::endl;
+        ceres::DynamicAutoDiffCostFunction<refine::PoseHorizontalCost, 4> * hcost =
+          new ceres::DynamicAutoDiffCostFunction<refine::PoseHorizontalCost, 4>
+          (new refine::PoseHorizontalCost(*li_it,
+            calibration_.trackers[tr_it->first],
+            calibration_.lighthouses[li_it->lighthouse].horizontal_motor,
+            correction_));
+        hcost->AddParameterBlock(6);
+        hcost->AddParameterBlock(6);
+        hcost->SetNumResiduals(li_it->samples.size());
+        problem.AddResidualBlock(hcost, new ceres::CauchyLoss(0.05), poses.back(),
+          vTl[li_it->lighthouse]);
+      // Vertical cost
+      } else if (li_it->axis == VERTICAL) {
+        // std::cout << "Light V " << li_it->lighthouse << std::endl;
+        ceres::DynamicAutoDiffCostFunction<refine::PoseVerticalCost, 4> * vcost =
+          new ceres::DynamicAutoDiffCostFunction<refine::PoseVerticalCost, 4>
+          (new refine::PoseVerticalCost(*li_it,
+            calibration_.trackers[tr_it->first],
+            calibration_.lighthouses[li_it->lighthouse].vertical_motor,
+            correction_));
+        vcost->AddParameterBlock(6);
+        vcost->AddParameterBlock(6);
+        vcost->SetNumResiduals(li_it->samples.size());
+        problem.AddResidualBlock(vcost, new ceres::CauchyLoss(0.05), poses.back(),
+          vTl[li_it->lighthouse]);
+      }
+      // Smoothing cost
+      if (poses.size() >= 2) {
+        // std::cout << "Inertial" << std::endl;
+        ceres::CostFunction * cost =
+          new ceres::AutoDiffCostFunction<refine::SmoothingCost, 4, 6, 6>
+          (new refine::SmoothingCost(smoothing_, ROTATION_COST_FACTOR));
+        problem.AddResidualBlock(cost, new ceres::CauchyLoss(0.5),
+          poses[poses.size()-2], poses[poses.size()-1]);
+      // If the poses are in different frames
       }
     }
   }
 
+
   // Fix one of the lighthouses to the vive frame
   problem.SetParameterBlockConstant(vTl.begin()->second);
 
-  for (auto lh_it = vTl.begin(); lh_it != vTl.end(); lh_it++) {
+
+  std::map<std::string, double[6]> clone_lhs(vTl);
+
+  // Solver's options
+  options.minimizer_progress_to_stdout = true;
+  options.max_num_iterations = 500; // TODO change this
+
+  ceres::Solve(options, &problem, &summary);
+
+  std::cout << "PREV:" << std::endl;
+  for (auto lh_it = clone_lhs.begin(); lh_it != clone_lhs.end(); lh_it++) {
     std::cout << lh_it->first << " - "
       << lh_it->second[0] << ", "
       << lh_it->second[1] << ", "
@@ -1683,13 +1778,7 @@ bool Refinery::SolveStatic() {
       << lh_it->second[4] << ", "
       << lh_it->second[5] << std::endl;
   }
-  std::cout << std::endl;
-  // Solver's options
-  options.minimizer_progress_to_stdout = true;
-  options.max_num_iterations = 5000; // TODO change this
-
-  ceres::Solve(options, &problem, &summary);
-
+  std::cout << "NEW:" << std::endl;
   for (auto lh_it = vTl.begin(); lh_it != vTl.end(); lh_it++) {
     std::cout << lh_it->first << " - "
       << lh_it->second[0] << ", "

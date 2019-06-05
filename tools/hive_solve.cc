@@ -74,26 +74,26 @@ int main(int argc, char ** argv) {
       calibration.environment,
       true);
     // APE
-    // solver[tracker.first] = new HiveSolver(calibration.trackers[tracker.first],
-    //   calibration.lighthouses,
-    //   calibration.environment,
-    //   true);
+    solver[tracker.first] = new HiveSolver(calibration.trackers[tracker.first],
+      calibration.lighthouses,
+      calibration.environment,
+      true);
     // EKF
     // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
     //   calibration.lighthouses,
     //   calibration.environment,
     //   1e-1, 1e-6, true, filter::ekf);
     // IEKF
-    solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
-      calibration.lighthouses,
-      calibration.environment,
-      1e-1, 1e-6, true, filter::iekf);
+    // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
+    //   calibration.lighthouses,
+    //   calibration.environment,
+    //   1e-1, 1e-6, true, filter::iekf);
     // UKF
     // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
     //   calibration.lighthouses,
     //   calibration.environment,
     //   1.0e0, 1e-6, true, filter::ukf);
-    // // PGO
+    // PGO
     // solver[tracker.first] = new PoseGraph(calibration.environment,
     //   calibration.trackers[tracker.first],
     //   calibration.lighthouses,
@@ -140,7 +140,7 @@ int main(int argc, char ** argv) {
       // if (counter == 1701) break;
       // ROS_INFO("LIGHT");
       solver[vl->header.frame_id]->ProcessLight(vl);
-      aux_solver[vl->header.frame_id]->ProcessLight(vl);
+      // aux_solver[vl->header.frame_id]->ProcessLight(vl);
       geometry_msgs::TransformStamped msg;
       if (solver[vl->header.frame_id]->GetTransform(msg)) {
         std::cout << "Vive: " <<

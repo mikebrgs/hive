@@ -17,8 +17,7 @@ int main(int argc, char ** argv)
 
   // Read the bag name
   if (argc < 2) {
-    std::cout << "Usage: ... hive_offset name_of_read_bag.bag "
-      << "name_of_write_bag.bag" << std::endl;
+    std::cout << "Usage: ... hive_offset name_of_read_bag.bag" << std::endl;
     return -1;
   }
 
@@ -50,7 +49,8 @@ int main(int argc, char ** argv)
   ROS_INFO("Trackers' setup complete.");
 
   size_t counter = 0;
-  Refinery ref = Refinery(cal, true, 1e-1, false);
+  // Refinery ref = Refinery(cal, true, 1.0e-2, false); // Best static
+  Refinery ref = Refinery(cal, true, 1.0e1, true);
   // Light data
   std::vector<std::string> topics;
   topics.push_back("/loc/vive/imu");
@@ -61,12 +61,16 @@ int main(int argc, char ** argv)
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
     if (vl != NULL) {
-      ref.AddLight(vl);
       counter++;
-      if (counter >= 20) break;
+      // if (counter < 800) continue;
+      // if (counter >= 1200) break;
+      ref.AddLight(vl);
+
     }
     const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();
     if (vi != NULL) {
+      // if (counter < 800) continue;
+      // if (counter >= 20) break;
       ref.AddImu(vi);
     }
   }
