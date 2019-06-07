@@ -147,6 +147,7 @@ add_executable(hive_analytics tools/hive_analytics.cc src/vive.cc src/hive_solve
 
 add_executable(hive_calibrate tools/hive_calibrate.cc src/vive.cc src/vive_solve.cc src/hive_calibrator.cc)
 add_executable(hive_solve tools/hive_solve.cc src/vive.cc src/vive_filter.cc src/hive_solver.cc src/vive_pgo.cc)
+add_executable(hive_simulate tools/hive_simulate.cc src/vive.cc src/vive_filter.cc src/hive_solver.cc src/vive_pgo.cc)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
@@ -168,6 +169,7 @@ add_dependencies(hive_analytics hive_generate_messages_cpp)
 
 add_dependencies(hive_calibrate hive_generate_messages_cpp)
 add_dependencies(hive_solve hive_generate_messages_cpp)
+add_dependencies(hive_simulate hive_generate_messages_cpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(hive_server
@@ -252,6 +254,12 @@ target_link_libraries(hive_calibrate
 )
 
 target_link_libraries(hive_solve
+  ${catkin_LIBRARIES}
+  ${CERES_LIBRARIES}
+  ${EIGEN_LIBRARIES}
+)
+
+target_link_libraries(hive_simulate
   ${catkin_LIBRARIES}
   ${CERES_LIBRARIES}
   ${EIGEN_LIBRARIES}
