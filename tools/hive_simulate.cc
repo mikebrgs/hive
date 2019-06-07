@@ -105,12 +105,12 @@ Trajectory::Trajectory(TrajectoryFunction tfun,
   lh_specs_ = lh_specs;
   lh_pointer_ = lh_poses_.begin();
   precision_ = 1e-6;
-  acc_distribution_ = std::normal_distribution<double>(0,1e-10);
-  gyr_distribution_ = std::normal_distribution<double>(0,1e-10);
-  lig_distribution_ = std::normal_distribution<double>(0,1e-10);
-  // acc_distribution_ = std::normal_distribution<double>(0,0.02);
-  // gyr_distribution_ = std::normal_distribution<double>(0,7e-4);
-  // lig_distribution_ = std::normal_distribution<double>(0,2e-5);
+  // acc_distribution_ = std::normal_distribution<double>(0,1e-10);
+  // gyr_distribution_ = std::normal_distribution<double>(0,1e-10);
+  // lig_distribution_ = std::normal_distribution<double>(0,1e-10);
+  acc_distribution_ = std::normal_distribution<double>(0,0.02);
+  gyr_distribution_ = std::normal_distribution<double>(0,7e-4);
+  lig_distribution_ = std::normal_distribution<double>(0,2e-5);
   light_used_ = false;
   return;
 }
@@ -443,8 +443,8 @@ geometry_msgs::Transform trajectory2(double t) {
 geometry_msgs::Transform trajectory3(double t) {
   geometry_msgs::Transform msg;
   double v, w;
-  v = 0.1;
-  w = 0.0;
+  v = 0.05;
+  w = 0.01;
   msg.translation.x = cos(2*M_PI * v * t);
   msg.translation.y = sin(2*M_PI * v * t);
   msg.translation.z = 3.0;
@@ -534,6 +534,8 @@ int main(int argc, char ** argv) {
   }
   ROS_INFO("Trackers' setup complete.");
 
+  double Tl = 1.0e0/120.0;
+
   Tracker tracker = calibration.trackers.begin()->second;
 
   Trajectory tr(&trajectory3,
@@ -545,10 +547,10 @@ int main(int argc, char ** argv) {
   for (size_t i = 0; i <= 1000; i++) {
     hive::ViveLight::ConstPtr vl = tr.GetLight();
     solver[tracker.serial]->ProcessLight(vl);
-    std::cout << vl->header.frame_id << " - "
-      << vl->lighthouse << " - "
-      << (int)vl->axis << " - "
-      << vl->header.stamp.toSec() << std::endl;
+    // std::cout << vl->header.frame_id << " - "
+    //   << vl->lighthouse << " - "
+    //   << (int)vl->axis << " - "
+    //   << vl->header.stamp.toSec() << std::endl;
     geometry_msgs::TransformStamped msg;
     solver[tracker.serial]->GetTransform(msg);
     std::cout << msg.header.frame_id << " - "
@@ -561,10 +563,6 @@ int main(int argc, char ** argv) {
       << msg.transform.rotation.y << ", "
       << msg.transform.rotation.z << std::endl;
 
-    // sensor_msgs::Imu::ConstPtr vi = tr.GetImu();
-    // solver[tracker.serial]->ProcessImu(vi);
-
-    tr.Update(1.0e-1/120.0);
     msg = tr.GetTransform();
     std::cout << msg.header.frame_id << " - "
       << msg.child_frame_id << " : "
@@ -575,6 +573,16 @@ int main(int argc, char ** argv) {
       << msg.transform.rotation.x << ", "
       << msg.transform.rotation.y << ", "
       << msg.transform.rotation.z << std::endl;
+
+    sensor_msgs::Imu::ConstPtr vi;
+    tr.Update(Tl / 2);
+    vi = tr.GetImu();
+    solver[tracker.serial]->ProcessImu(vi);
+    tr.Update(Tl);
+    vi = tr.GetImu();
+    solver[tracker.serial]->ProcessImu(vi);
+    tr.Update(Tl / 2);
+
 
     std::cout << std::endl;
   }
