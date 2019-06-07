@@ -52,6 +52,7 @@ private:
   Tracker tracker_;
   std::map<std::string, Transform> lh_poses_;
   std::map<std::string, Lighthouse> lh_specs_;
+  geometry_msgs::Vector3 gravity_;
   size_t axis_;
   TransformIterator lh_pointer_;
   State this_state_;
@@ -68,11 +69,12 @@ public:
   Trajectory(TrajectoryFunction tfun,
     Tracker tracker,
     std::map<std::string, Transform> lh_poses,
-    std::map<std::string, Lighthouse> lh_specs);
+    std::map<std::string, Lighthouse> lh_specs,
+    geometry_msgs::Vector3 gravity);
   ~Trajectory();
   void Update(double dt);
-  sensor_msgs::Imu GetImu();
-  hive::ViveLight GetLight();
+  sensor_msgs::Imu::ConstPtr GetImu();
+  hive::ViveLight::ConstPtr GetLight();
   geometry_msgs::TransformStamped GetTransform();
   void PrintState();
 };
@@ -80,10 +82,12 @@ public:
 Trajectory::Trajectory(TrajectoryFunction tfun,
     Tracker tracker,
     std::map<std::string, Transform> lh_poses,
-    std::map<std::string, Lighthouse> lh_specs) {
+    std::map<std::string, Lighthouse> lh_specs,
+    geometry_msgs::Vector3 gravity) {
   time_ = ros::Time(0);
   axis_ = HORIZONTAL;
   tfun_ = tfun;
+  gravity_ = gravity;
   this_state_.position = Eigen::Vector3d(
     tfun(0).translation.x,
     tfun(0).translation.y,
@@ -101,9 +105,12 @@ Trajectory::Trajectory(TrajectoryFunction tfun,
   lh_specs_ = lh_specs;
   lh_pointer_ = lh_poses_.begin();
   precision_ = 1e-6;
-  acc_distribution_ = std::normal_distribution<double>(0,1e-2);
-  gyr_distribution_ = std::normal_distribution<double>(0,1e-2);
-  lig_distribution_ = std::normal_distribution<double>(0,1e-5);
+  acc_distribution_ = std::normal_distribution<double>(0,1e-10);
+  gyr_distribution_ = std::normal_distribution<double>(0,1e-10);
+  lig_distribution_ = std::normal_distribution<double>(0,1e-10);
+  // acc_distribution_ = std::normal_distribution<double>(0,0.02);
+  // gyr_distribution_ = std::normal_distribution<double>(0,7e-4);
+  // lig_distribution_ = std::normal_distribution<double>(0,2e-5);
   light_used_ = false;
   return;
 }
@@ -117,8 +124,8 @@ bool comparator(Triplet a, Triplet b) {
   return std::get<2>(a) < std::get<2>(b);
 }
 
-hive::ViveLight Trajectory::GetLight() {
-  hive::ViveLight msg;
+hive::ViveLight::ConstPtr Trajectory::GetLight() {
+  hive::ViveLight * msg = new hive::ViveLight();
   // Pose of the tracker in the vive frame
   Eigen::Vector3d vPi = this_state_.position;
   Eigen::Quaterniond vQi = this_state_.rotation;
@@ -194,6 +201,9 @@ hive::ViveLight Trajectory::GetLight() {
       angle = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
     }
 
+    if (angle > M_PI/3 || angle < -M_PI/3)
+      continue;
+
     data.push_back(std::make_tuple(
       sensor.first,
       angle + lig_distribution_(generator_),
@@ -202,49 +212,60 @@ hive::ViveLight Trajectory::GetLight() {
 
   std::sort(data.begin(), data.end(), comparator);
 
-  for (size_t i = 0; i < 9; i++) {
+  for (size_t i = 0; i < 24; i++) {
     if (std::get<2>(data[i]) > 0) break;
-    hive::ViveLightSample sample_msg;
-    sample_msg.sensor = std::get<0>(data[i]);
-    sample_msg.angle = std::get<1>(data[i]);
-    msg.samples.push_back(sample_msg);
+    hive::ViveLightSample * sample_msg = new hive::ViveLightSample();
+    sample_msg->sensor = std::get<0>(data[i]);
+    sample_msg->angle = std::get<1>(data[i]);
+    msg->samples.push_back(*sample_msg);
   }
 
-  msg.lighthouse = lh_pointer_->first;
-  msg.header.frame_id = tracker_.serial;
-  msg.header.stamp = time_;
-  msg.axis = static_cast<uint8_t>(axis_);
+  msg->lighthouse = lh_pointer_->first;
+  msg->header.frame_id = tracker_.serial;
+  msg->header.stamp = time_;
+  msg->axis = static_cast<uint8_t>(axis_);
 
   light_used_ = true;
 
-  return msg;
+  return hive::ViveLight::ConstPtr(msg);
 }
 
-sensor_msgs::Imu Trajectory::GetImu() {
-  sensor_msgs::Imu msg;
+sensor_msgs::Imu::ConstPtr Trajectory::GetImu() {
+  sensor_msgs::Imu * msg = new sensor_msgs::Imu();
 
-  msg.linear_acceleration.x = this_state_.acceleration(0)
+  msg->linear_acceleration.x = this_state_.acceleration(0)
     + acc_distribution_(generator_);
-  msg.linear_acceleration.y = this_state_.acceleration(1)
+  msg->linear_acceleration.y = this_state_.acceleration(1)
     + acc_distribution_(generator_);
-  msg.linear_acceleration.z = this_state_.acceleration(2)
+  msg->linear_acceleration.z = this_state_.acceleration(2)
     + acc_distribution_(generator_);
 
-  msg.angular_velocity.x = this_state_.angular(0)
+  msg->angular_velocity.x = this_state_.angular(0)
     + gyr_distribution_(generator_);
-  msg.angular_velocity.y = this_state_.angular(1)
+  msg->angular_velocity.y = this_state_.angular(1)
     + gyr_distribution_(generator_);
-  msg.angular_velocity.z = this_state_.angular(2)
+  msg->angular_velocity.z = this_state_.angular(2)
     + gyr_distribution_(generator_);
 
-  msg.header.frame_id = tracker_.serial;
-  msg.header.stamp = time_;
+  msg->header.frame_id = tracker_.serial;
+  msg->header.stamp = time_;
 
-  return msg;
+  return sensor_msgs::Imu::ConstPtr(msg);
 }
 
 void Trajectory::Update(double dt) {
   time_ = time_ + ros::Duration(dt);
+
+  // Tracker params
+  Eigen::Vector3d Ba(tracker_.acc_bias.x,
+    tracker_.acc_bias.y,
+    tracker_.acc_bias.z);
+  Eigen::Vector3d Bw(tracker_.gyr_bias.x,
+    tracker_.gyr_bias.y,
+    tracker_.gyr_bias.z);
+  Eigen::Vector3d vG(gravity_.x,
+    gravity_.y,
+    gravity_.z);
 
   // Poses
   geometry_msgs::Transform msg3 = tfun_(time_.toSec() - 2.0 * precision_);
@@ -266,9 +287,6 @@ void Trajectory::Update(double dt) {
   Eigen::Vector3d vVi_1 = (vPi_1 - vPi_2) / precision_;
   Eigen::Vector3d vVi_2 = (vPi_2 - vPi_3) / precision_;
 
-  // Accelerations
-  Eigen::Vector3d vAi = (vVi_1 - vVi_2) / precision_;
-
   // Orientations
   Eigen::Vector4d vQi_1(msg1.rotation.w,
     msg1.rotation.x,
@@ -279,6 +297,10 @@ void Trajectory::Update(double dt) {
     msg2.rotation.y,
     msg2.rotation.z);
   Eigen::Vector4d vDQi = (vQi_1 - vQi_2) / precision_;
+  Eigen::Matrix3d vRi = Eigen::Quaterniond(vQi_1(0),
+    vQi_1(1),
+    vQi_1(2),
+    vQi_1(3)).toRotationMatrix();
 
   //0.5 * Omega matrix
   Eigen::Matrix<double, 4, 3> A;
@@ -297,7 +319,11 @@ void Trajectory::Update(double dt) {
   A = 0.5 * A;
 
   // Angular velocity
-  Eigen::Vector3d vWi = (A.transpose() * A).inverse() * A.transpose() * vDQi;
+  Eigen::Vector3d Wi = (A.transpose() * A).inverse() * A.transpose() * vDQi + Bw;
+
+  // Accelerations
+  Eigen::Vector3d Ai = vRi.transpose() * (vG - (vVi_1 - vVi_2) / precision_) + Ba;
+
 
   // Update lighthouses
   if (light_used_ = true) {
@@ -315,13 +341,13 @@ void Trajectory::Update(double dt) {
   // Final
   this_state_.position = vPi_1;
   this_state_.velocity = vVi_1;
-  this_state_.acceleration = vAi;
+  this_state_.acceleration = Ai;
   this_state_.rotation = Eigen::Quaterniond(
     vQi_1(0),
     vQi_1(1),
     vQi_1(2),
     vQi_1(3));
-  this_state_.angular = vWi;
+  this_state_.angular = Wi;
   light_used_ = false;
 
   return;
@@ -373,7 +399,7 @@ void Trajectory::PrintState() {
   std::cout << "V: " << this_state_. velocity(0) << ", "
     << this_state_.velocity(1) << ", "
     << this_state_.velocity(2) << std::endl;
-  std::cout << "P: " << this_state_.acceleration(0) << ", "
+  std::cout << "A: " << this_state_.acceleration(0) << ", "
     << this_state_.acceleration(1) << ", "
     << this_state_.acceleration(2) << std::endl;
   std::cout << "Q: " << this_state_.rotation.w() << ", "
@@ -396,6 +422,41 @@ geometry_msgs::Transform trajectory1(double t) {
   msg.rotation.x = 0.0;
   msg.rotation.y = 0.0;
   msg.rotation.z = 0.0;
+
+  return msg;
+}
+
+geometry_msgs::Transform trajectory2(double t) {
+  geometry_msgs::Transform msg;
+  msg.translation.x = 0.0;
+  msg.translation.y = 0.0;
+  msg.translation.z = 2.0 + 0.1 * t;
+
+  msg.rotation.w = 1.0;
+  msg.rotation.x = 0.0;
+  msg.rotation.y = 0.0;
+  msg.rotation.z = 0.0;
+
+  return msg;
+}
+
+geometry_msgs::Transform trajectory3(double t) {
+  geometry_msgs::Transform msg;
+  double v, w;
+  v = 0.1;
+  w = 0.0;
+  msg.translation.x = cos(2*M_PI * v * t);
+  msg.translation.y = sin(2*M_PI * v * t);
+  msg.translation.z = 3.0;
+
+  Eigen::Vector3d vAi(0,0,1);
+  Eigen::AngleAxisd vAAi(2*M_PI * w * t, vAi);
+  Eigen::Quaterniond vQi(vAAi);
+
+  msg.rotation.w = vQi.w();
+  msg.rotation.x = vQi.x();
+  msg.rotation.y = vQi.y();
+  msg.rotation.z = vQi.z();
 
   return msg;
 }
@@ -473,13 +534,50 @@ int main(int argc, char ** argv) {
   }
   ROS_INFO("Trackers' setup complete.");
 
-  Trajectory tr(&trajectory1,
-    calibration.trackers.begin()->second,
-    calibration.environment.lighthouses,
-    calibration.lighthouses);
+  Tracker tracker = calibration.trackers.begin()->second;
 
-  tr.PrintState();
-  tr.Update(0.005);
+  Trajectory tr(&trajectory3,
+    tracker,
+    calibration.environment.lighthouses,
+    calibration.lighthouses,
+    calibration.environment.gravity);
+
+  for (size_t i = 0; i <= 1000; i++) {
+    hive::ViveLight::ConstPtr vl = tr.GetLight();
+    solver[tracker.serial]->ProcessLight(vl);
+    std::cout << vl->header.frame_id << " - "
+      << vl->lighthouse << " - "
+      << (int)vl->axis << " - "
+      << vl->header.stamp.toSec() << std::endl;
+    geometry_msgs::TransformStamped msg;
+    solver[tracker.serial]->GetTransform(msg);
+    std::cout << msg.header.frame_id << " - "
+      << msg.child_frame_id << " : "
+      << msg.transform.translation.x << ", "
+      << msg.transform.translation.y << ", "
+      << msg.transform.translation.z << ", "
+      << msg.transform.rotation.w << ", "
+      << msg.transform.rotation.x << ", "
+      << msg.transform.rotation.y << ", "
+      << msg.transform.rotation.z << std::endl;
+
+    // sensor_msgs::Imu::ConstPtr vi = tr.GetImu();
+    // solver[tracker.serial]->ProcessImu(vi);
+
+    tr.Update(1.0e-1/120.0);
+    msg = tr.GetTransform();
+    std::cout << msg.header.frame_id << " - "
+      << msg.child_frame_id << " : "
+      << msg.transform.translation.x << ", "
+      << msg.transform.translation.y << ", "
+      << msg.transform.translation.z << ", "
+      << msg.transform.rotation.w << ", "
+      << msg.transform.rotation.x << ", "
+      << msg.transform.rotation.y << ", "
+      << msg.transform.rotation.z << std::endl;
+
+    std::cout << std::endl;
+  }
 
   // std::cout << trajectory1(0).translation.x << ", "
   //   << trajectory1(0).translation.y << ", "
