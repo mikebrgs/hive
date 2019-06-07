@@ -88,15 +88,6 @@ Trajectory::Trajectory(TrajectoryFunction tfun,
   axis_ = HORIZONTAL;
   tfun_ = tfun;
   gravity_ = gravity;
-  this_state_.position = Eigen::Vector3d(
-    tfun(0).translation.x,
-    tfun(0).translation.y,
-    tfun(0).translation.z);
-  this_state_.rotation = Eigen::Quaterniond(
-    tfun(0).rotation.w,
-    tfun(0).rotation.x,
-    tfun(0).rotation.y,
-    tfun(0).rotation.z);
   this_state_.velocity = Eigen::Vector3d::Zero();
   this_state_.acceleration = Eigen::Vector3d::Zero();
   this_state_.angular = Eigen::Vector3d::Zero();
@@ -112,6 +103,27 @@ Trajectory::Trajectory(TrajectoryFunction tfun,
   gyr_distribution_ = std::normal_distribution<double>(0,7e-4);
   lig_distribution_ = std::normal_distribution<double>(0,2e-5);
   light_used_ = false;
+
+  Eigen::Vector3d tPi(tracker_.imu_transform.translation.x,
+    tracker_.imu_transform.translation.y,
+    tracker_.imu_transform.translation.z);
+  Eigen::Quaterniond tQi(tracker_.imu_transform.rotation.w,
+    tracker_.imu_transform.rotation.x,
+    tracker_.imu_transform.rotation.y,
+    tracker_.imu_transform.rotation.z);
+  Eigen::Matrix3d tRi = tQi.toRotationMatrix();
+
+  Eigen::Vector3d vPt(tfun(0).translation.x,
+    tfun(0).translation.y,
+    tfun(0).translation.z);
+  Eigen::Quaterniond vQt(tfun(0).rotation.w,
+    tfun(0).rotation.x,
+    tfun(0).rotation.y,
+    tfun(0).rotation.z);
+  Eigen::Matrix3d vRt = vQt.toRotationMatrix();
+
+  this_state_.position = vRt * tPi + vPt;
+  this_state_.rotation = vRt * tRi;
   return;
 }
 
@@ -267,55 +279,89 @@ void Trajectory::Update(double dt) {
     gravity_.y,
     gravity_.z);
 
+  // Pose of the tracker in the inertial frame
+  Eigen::Vector3d tPi(tracker_.imu_transform.translation.x,
+    tracker_.imu_transform.translation.y,
+    tracker_.imu_transform.translation.z);
+  Eigen::Quaterniond tQi(tracker_.imu_transform.rotation.w,
+    tracker_.imu_transform.rotation.x,
+    tracker_.imu_transform.rotation.y,
+    tracker_.imu_transform.rotation.z);
+  Eigen::Matrix3d tRi = tQi.toRotationMatrix();
+
   // Poses
   geometry_msgs::Transform msg3 = tfun_(time_.toSec() - 2.0 * precision_);
   geometry_msgs::Transform msg2 = tfun_(time_.toSec() - 1.0 * precision_);
   geometry_msgs::Transform msg1 = tfun_(time_.toSec() - 0.0 * precision_);
 
+  // Orientations
+  Eigen::Quaterniond vQt_1(msg1.rotation.w,
+    msg1.rotation.x,
+    msg1.rotation.y,
+    msg1.rotation.z);
+  Eigen::Matrix3d vRt_1 = vQt_1.toRotationMatrix();
+  Eigen::Matrix3d vRi_1 = vRt_1 * tRi;
+  Eigen::Quaterniond vQi_1(vRi_1);
+  Eigen::Vector4d vQVi_1(vQi_1.w(),
+    vQi_1.x(),
+    vQi_1.y(),
+    vQi_1.z());
+  Eigen::Quaterniond vQt_2(msg2.rotation.w,
+    msg2.rotation.x,
+    msg2.rotation.y,
+    msg2.rotation.z);
+  Eigen::Matrix3d vRt_2 = vQt_2.toRotationMatrix();
+  Eigen::Matrix3d vRi_2 = vRt_2 * tRi;
+  Eigen::Quaterniond vQi_2(vRi_2);
+  Eigen::Vector4d vQVi_2(vQi_2.w(),
+    vQi_2.x(),
+    vQi_2.y(),
+    vQi_2.z());
+  Eigen::Quaterniond vQt_3(msg3.rotation.w,
+    msg3.rotation.x,
+    msg3.rotation.y,
+    msg3.rotation.z);
+  Eigen::Matrix3d vRt_3 = vQt_3.toRotationMatrix();
+
   // Positions
-  Eigen::Vector3d vPi_1(msg1.translation.x,
+  Eigen::Vector3d vPt_1(msg1.translation.x,
     msg1.translation.y,
     msg1.translation.z);
-  Eigen::Vector3d vPi_2(msg2.translation.x,
+  Eigen::Vector3d vPi_1 = vRt_1 * tPi + vPt_1;
+  Eigen::Vector3d vPt_2(msg2.translation.x,
     msg2.translation.y,
     msg2.translation.z);
-  Eigen::Vector3d vPi_3(msg3.translation.x,
+  Eigen::Vector3d vPi_2 = vRt_2 * tPi + vPt_2;
+  Eigen::Vector3d vPt_3(msg3.translation.x,
     msg3.translation.y,
     msg3.translation.z);
+  Eigen::Vector3d vPi_3 = vRt_3 * tPi + vPt_3;
 
   // Linear velocities
   Eigen::Vector3d vVi_1 = (vPi_1 - vPi_2) / precision_;
   Eigen::Vector3d vVi_2 = (vPi_2 - vPi_3) / precision_;
 
-  // Orientations
-  Eigen::Vector4d vQi_1(msg1.rotation.w,
-    msg1.rotation.x,
-    msg1.rotation.y,
-    msg1.rotation.z);
-  Eigen::Vector4d vQi_2(msg2.rotation.w,
-    msg2.rotation.x,
-    msg2.rotation.y,
-    msg2.rotation.z);
-  Eigen::Vector4d vDQi = (vQi_1 - vQi_2) / precision_;
-  Eigen::Matrix3d vRi = Eigen::Quaterniond(vQi_1(0),
-    vQi_1(1),
-    vQi_1(2),
-    vQi_1(3)).toRotationMatrix();
+  // Diff
+  Eigen::Vector4d vDQi = (vQVi_1 - vQVi_2) / precision_;
+  Eigen::Matrix3d vRi = Eigen::Quaterniond(vQi_1.w(),
+    vQi_1.x(),
+    vQi_1.y(),
+    vQi_1.z()).toRotationMatrix();
 
   //0.5 * Omega matrix
   Eigen::Matrix<double, 4, 3> A;
-  A(0,0) = -vQi_1(1);
-  A(0,1) = -vQi_1(2);
-  A(0,2) = -vQi_1(3);
-  A(1,0) = vQi_1(0);
-  A(1,1) = -vQi_1(3);
-  A(1,2) = vQi_1(2);
-  A(2,0) = vQi_1(3);
-  A(2,1) = vQi_1(0);
-  A(2,2) = -vQi_1(1);
-  A(3,0) = -vQi_1(2);
-  A(3,1) = vQi_1(1);
-  A(3,2) = vQi_1(0);
+  A(0,0) = -vQi_1.x();
+  A(0,1) = -vQi_1.y();
+  A(0,2) = -vQi_1.z();
+  A(1,0) = vQi_1.w();
+  A(1,1) = -vQi_1.z();
+  A(1,2) = vQi_1.y();
+  A(2,0) = vQi_1.z();
+  A(2,1) = vQi_1.w();
+  A(2,2) = -vQi_1.x();
+  A(3,0) = -vQi_1.y();
+  A(3,1) = vQi_1.x();
+  A(3,2) = vQi_1.w();
   A = 0.5 * A;
 
   // Angular velocity
@@ -343,10 +389,10 @@ void Trajectory::Update(double dt) {
   this_state_.velocity = vVi_1;
   this_state_.acceleration = Ai;
   this_state_.rotation = Eigen::Quaterniond(
-    vQi_1(0),
-    vQi_1(1),
-    vQi_1(2),
-    vQi_1(3));
+    vQi_1.w(),
+    vQi_1.x(),
+    vQi_1.y(),
+    vQi_1.z());
   this_state_.angular = Wi;
   light_used_ = false;
 
@@ -355,6 +401,7 @@ void Trajectory::Update(double dt) {
 
 geometry_msgs::TransformStamped Trajectory::GetTransform() {
   geometry_msgs::TransformStamped msg;
+
 
   // Pose of the tracker in the vive frame
   Eigen::Vector3d vPi = this_state_.position;
@@ -534,7 +581,7 @@ int main(int argc, char ** argv) {
   }
   ROS_INFO("Trackers' setup complete.");
 
-  double Tl = 1.0e0/120.0;
+  double Tl = 1.0e0/100.0;
 
   Tracker tracker = calibration.trackers.begin()->second;
 
@@ -547,10 +594,6 @@ int main(int argc, char ** argv) {
   for (size_t i = 0; i <= 1000; i++) {
     hive::ViveLight::ConstPtr vl = tr.GetLight();
     solver[tracker.serial]->ProcessLight(vl);
-    // std::cout << vl->header.frame_id << " - "
-    //   << vl->lighthouse << " - "
-    //   << (int)vl->axis << " - "
-    //   << vl->header.stamp.toSec() << std::endl;
     geometry_msgs::TransformStamped msg;
     solver[tracker.serial]->GetTransform(msg);
     std::cout << msg.header.frame_id << " - "
