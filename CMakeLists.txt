@@ -147,7 +147,7 @@ add_executable(hive_analytics tools/hive_analytics.cc src/vive.cc src/hive_solve
 
 add_executable(hive_calibrate tools/hive_calibrate.cc src/vive.cc src/vive_solve.cc src/hive_calibrator.cc)
 add_executable(hive_solve tools/hive_solve.cc src/vive.cc src/vive_filter.cc src/hive_solver.cc src/vive_pgo.cc)
-add_executable(hive_simulate tools/hive_simulate.cc src/vive.cc src/vive_filter.cc src/hive_solver.cc src/vive_pgo.cc)
+add_executable(hive_simulate tools/hive_simulate.cc src/vive.cc src/vive_filter.cc src/hive_solver.cc src/vive_pgo.cc src/hive_calibrator.cc src/vive_solve.cc src/vive_refine.cc)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
