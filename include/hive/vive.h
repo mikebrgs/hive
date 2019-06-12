@@ -64,6 +64,10 @@
 
 #define TRACKER_SENSORS_NUMBER 40
 #define CORRECTION false
+#define SCALE_PHASE 1.0
+#define SCALE_TILT 1.0 / 10.0
+#define SCALE_CURVE 1.0 / 10.0
+#define SCALE_GIB - 1.0 / 10.0
 
 enum AXIS {HORIZONTAL = 0, VERTICAL = 1};
 enum LIGHTHOUSE {PHASE = 0,

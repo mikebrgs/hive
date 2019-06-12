@@ -139,11 +139,11 @@ namespace refine {
       T ang; // The final angle
       T x = (lPs(0)/lPs(2)); // Horizontal angle
       T y = (lPs(1)/lPs(2)); // Vertical angle
-      T phase = T(lighthouse_.phase);
-      T tilt = T(lighthouse_.tilt);
+      T phase = T(SCALE_PHASE * lighthouse_.phase);
+      T tilt = T(SCALE_TILT * lighthouse_.tilt);
+      T curve = T(SCALE_CURVE * lighthouse_.curve);
+      T gib_mag = T(SCALE_GIB * lighthouse_.gib_magnitude);
       T gib_phase = T(lighthouse_.gib_phase);
-      T gib_mag = T(lighthouse_.gib_magnitude);
-      T curve = T(lighthouse_.curve);
 
       if (correction_) {
         ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
@@ -264,11 +264,11 @@ namespace refine {
       T ang; // The final angle
       T x = (lPs(0)/lPs(2)); // Horizontal angle
       T y = (lPs(1)/lPs(2)); // Vertical angle
-      T phase = T(lighthouse_.phase);
-      T tilt = T(lighthouse_.tilt);
+      T phase = T(SCALE_PHASE * lighthouse_.phase);
+      T tilt = T(SCALE_TILT * lighthouse_.tilt);
+      T curve = T(SCALE_CURVE * lighthouse_.curve);
+      T gib_mag = T(SCALE_GIB * lighthouse_.gib_magnitude);
       T gib_phase = T(lighthouse_.gib_phase);
-      T gib_mag = T(lighthouse_.gib_magnitude);
-      T curve = T(lighthouse_.curve);
 
       if (correction_) {
         ang = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
@@ -574,11 +574,11 @@ namespace refine {
       T ang; // The final angle
       T x = (lPs(0)/lPs(2)); // Horizontal angle
       T y = (lPs(1)/lPs(2)); // Vertical angle
-      T phase = T(lighthouse_.phase);
-      T tilt = T(lighthouse_.tilt);
+      T phase = T(SCALE_PHASE * lighthouse_.phase);
+      T tilt = T(SCALE_TILT * lighthouse_.tilt);
+      T curve = T(SCALE_CURVE * lighthouse_.curve);
+      T gib_mag = T(SCALE_GIB * lighthouse_.gib_magnitude);
       T gib_phase = T(lighthouse_.gib_phase);
-      T gib_mag = T(lighthouse_.gib_magnitude);
-      T curve = T(lighthouse_.curve);
 
       if (correction_) {
         ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
@@ -690,11 +690,11 @@ namespace refine {
       T ang; // The final angle
       T x = (lPs(0)/lPs(2)); // Horizontal angle
       T y = (lPs(1)/lPs(2)); // Vertical angle
-      T phase = T(lighthouse_.phase);
-      T tilt = T(lighthouse_.tilt);
+      T phase = T(SCALE_PHASE * lighthouse_.phase);
+      T tilt = T(SCALE_TILT * lighthouse_.tilt);
+      T curve = T(SCALE_CURVE * lighthouse_.curve);
+      T gib_mag = T(SCALE_GIB * lighthouse_.gib_magnitude);
       T gib_phase = T(lighthouse_.gib_phase);
-      T gib_mag = T(lighthouse_.gib_magnitude);
-      T curve = T(lighthouse_.curve);
 
       if (correction_) {
         ang = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;
@@ -956,11 +956,11 @@ namespace refine {
       T ang; // The final angle
       T x = (lPs(0)/lPs(2)); // Horizontal angle
       T y = (lPs(1)/lPs(2)); // Vertical angle
-      T phase = T(lighthouse_.phase);
-      T tilt = T(lighthouse_.tilt);
+      T phase = T(SCALE_PHASE * lighthouse_.phase);
+      T tilt = T(SCALE_TILT * lighthouse_.tilt);
+      T curve = T(SCALE_CURVE * lighthouse_.curve);
+      T gib_mag = T(SCALE_GIB * lighthouse_.gib_magnitude);
       T gib_phase = T(lighthouse_.gib_phase);
-      T gib_mag = T(lighthouse_.gib_magnitude);
-      T curve = T(lighthouse_.curve);
 
       if (correction_) {
         ang = atan(x) - phase - tan(tilt) * y - curve * y * y - sin(gib_phase + atan(x)) * gib_mag;
@@ -1063,11 +1063,11 @@ namespace refine {
       T ang; // The final angle
       T x = (lPs(0)/lPs(2)); // Horizontal angle
       T y = (lPs(1)/lPs(2)); // Vertical angle
-      T phase = T(lighthouse_.phase);
-      T tilt = T(lighthouse_.tilt);
+      T phase = T(SCALE_PHASE * lighthouse_.phase);
+      T tilt = T(SCALE_TILT * lighthouse_.tilt);
+      T curve = T(SCALE_CURVE * lighthouse_.curve);
+      T gib_mag = T(SCALE_GIB * lighthouse_.gib_magnitude);
       T gib_phase = T(lighthouse_.gib_phase);
-      T gib_mag = T(lighthouse_.gib_magnitude);
-      T curve = T(lighthouse_.curve);
 
       if (correction_) {
         ang = atan(y) - phase - tan(tilt) * x - curve * x * x - sin(gib_phase + atan(y)) * gib_mag;

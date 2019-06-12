@@ -10,7 +10,9 @@ from mpl_toolkits.mplot3d import Axes3D
 offset_bag = rosbag.Bag(sys.argv[1])
 bag = rosbag.Bag(sys.argv[2])
 vive_poses = (list(), list(), list())
+vive_time = list()
 optitrack_poses = (list(), list(), list())
+optitrack_time = list()
 
 vRt = None
 vPt = None
@@ -53,6 +55,7 @@ for topic, msg, t in bag.read_messages(topics=['/tf', 'tf']):
     vive_poses[0].append(float(vPt[0]))
     vive_poses[1].append(float(vPt[1]))
     vive_poses[2].append(float(vPt[2]))
+    vive_time.append(msg.header.stamp.to_sec())
     # print(vRt)
     # pose = np.array([[msg.transform.translation.x,
     #   msg.transform.translation.y,
@@ -75,6 +78,7 @@ for topic, msg, t in bag.read_messages(topics=['/tf', 'tf']):
     optitrack_poses[0].append(float(opti_vPt[0]))
     optitrack_poses[1].append(float(opti_vPt[1]))
     optitrack_poses[2].append(float(opti_vPt[2]))
+    optitrack_time.append(msg.header.stamp.to_sec())
     # print(oRa)
     # pose = np.array([[msg.transform.translation.x,
     #   msg.transform.translation.y,
@@ -92,23 +96,27 @@ for topic, msg, t in bag.read_messages(topics=['/tf', 'tf']):
   #   print(" ")
 
 
-# print(vive_poses[0])
-# print("***")
-# print(vive_poses[1])
-# print("***")
-# print(vive_poses[2])
-# print("***")
+print(vive_poses[0])
+print("***")
+print(vive_poses[1])
+print("***")
+print(vive_poses[2])
+print("***")
+print(vive_time)
+print("---")
 
-# print(optitrack_poses[0][10:-10])
-# print("***")
-# print(optitrack_poses[1][10:-10])
-# print("***")
-# print(optitrack_poses[2][10:-10])
-# print("***")
+print(optitrack_poses[0][:])
+print("***")
+print(optitrack_poses[1][:])
+print("***")
+print(optitrack_poses[2][:])
+print("***")
+print(optitrack_time)
+print("---")
 
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.plot(xs = vive_poses[0], ys = vive_poses[1], zs = vive_poses[2])
-ax.plot(xs = optitrack_poses[0][10:-10], ys = optitrack_poses[1][10:-10], zs = optitrack_poses[2][10:-10])
+# fig = plt.figure()
+# ax = fig.add_subplot(111, projection='3d')
+# ax.plot(xs = vive_poses[0], ys = vive_poses[1], zs = vive_poses[2])
+# ax.plot(xs = optitrack_poses[0][10:-10], ys = optitrack_poses[1][10:-10], zs = optitrack_poses[2][10:-10])
 
-plt.show()
+# plt.show()

@@ -195,11 +195,11 @@ struct CalibHorizontalAngle{
       T ang; // The final angle
       T x = (lPs(0)/lPs(2)); // Horizontal angle
       T y = (lPs(1)/lPs(2)); // Vertical angle
-      T phase = parameters[LH_EXTRINSICS-1][PHASE];
-      T tilt = parameters[LH_EXTRINSICS-1][TILT];
+      T phase = T(SCALE_PHASE) * parameters[LH_EXTRINSICS-1][PHASE];
+      T tilt = T(SCALE_TILT) * parameters[LH_EXTRINSICS-1][TILT];
+      T curve = T(SCALE_CURVE) * parameters[LH_EXTRINSICS-1][CURVE];
+      T gib_mag = T(SCALE_GIB) * parameters[LH_EXTRINSICS-1][GIB_MAG];
       T gib_phase = parameters[LH_EXTRINSICS-1][GIB_PHASE];
-      T gib_mag = parameters[LH_EXTRINSICS-1][GIB_MAG];
-      T curve = parameters[LH_EXTRINSICS-1][CURVE];
       // std::cout << "HExt "
       //   << parameters[LH_EXTRINSICS-1][PHASE] << ", "
       //   << parameters[LH_EXTRINSICS-1][TILT] << ", "
@@ -291,11 +291,11 @@ struct CalibVerticalAngle{
       T ang; // The final angle
       T x = (lPs(0)/lPs(2)); // Horizontal angle
       T y = (lPs(1)/lPs(2)); // Vertical angle
-      T phase = parameters[LH_EXTRINSICS-1][PHASE];
-      T tilt = parameters[LH_EXTRINSICS-1][TILT];
+      T phase = T(SCALE_PHASE) * parameters[LH_EXTRINSICS-1][PHASE];
+      T tilt = T(SCALE_TILT) * parameters[LH_EXTRINSICS-1][TILT];
+      T curve = T(SCALE_CURVE) * parameters[LH_EXTRINSICS-1][CURVE];
+      T gib_mag = T(SCALE_GIB) * parameters[LH_EXTRINSICS-1][GIB_MAG];
       T gib_phase = parameters[LH_EXTRINSICS-1][GIB_PHASE];
-      T gib_mag = parameters[LH_EXTRINSICS-1][GIB_MAG];
-      T curve = parameters[LH_EXTRINSICS-1][CURVE];
       // std::cout << "VExt "
       //   << parameters[LH_EXTRINSICS-1][PHASE] << ", "
       //   << parameters[LH_EXTRINSICS-1][TILT] << ", "
