@@ -162,6 +162,7 @@ int main(int argc, char ** argv) {
 
   std::vector<double> dist_v;
   std::vector<double> ang_v;
+  std::vector<double> time_v;
 
   // Light data
   std::vector<std::string> topics;
@@ -239,6 +240,17 @@ int main(int argc, char ** argv) {
           vt->transform.rotation.z).toRotationMatrix();
         opti_time = vt->header.stamp;
         opti_init = true;
+
+        opti_px.push_back(oPa(0));
+        opti_py.push_back(oPa(1));
+        opti_pz.push_back(oPa(2));
+        Eigen::Quaterniond oQa(oRa);
+        opti_qw.push_back(oQa.w());
+        opti_qx.push_back(oQa.x());
+        opti_qy.push_back(oQa.y());
+        opti_qz.push_back(oQa.z());
+        opti_t.push_back(opti_time.toSec() - time0);
+
         // vive_init = false;
         // Interpolation
         prev_opti_time = next_opti_time;
@@ -257,7 +269,7 @@ int main(int argc, char ** argv) {
         prev_opti = next_opti;
         next_opti = true;
 
-        if (false) {
+        if (true) {
           // // Data10.9
           if (data_filename.find("data10.9") != std::string::npos) {
             if ((prev_opti_time.toSec() - time0 > 8.803)
@@ -666,23 +678,23 @@ int main(int argc, char ** argv) {
         // std::cout << auxQ.w() << " ";
 
         // Save pose
-        if (vive_init) {
-          // Eigen::Vector3d tmp_vPt = oRv.transpose() * (oRa * aPt + oPa) -
-          //   oRv.transpose() * oPv;
-          // Eigen::Matrix3d tmp_vRt = oRv.transpose() * oRa * aRt;
-          opti_px.push_back(oPa(0));
-          opti_py.push_back(oPa(1));
-          opti_pz.push_back(oPa(2));
-          Eigen::Quaterniond oQa(oRa);
-          opti_qw.push_back(oQa.w());
-          opti_qx.push_back(oQa.x());
-          opti_qy.push_back(oQa.y());
-          opti_qz.push_back(oQa.z());
-          // std::cout << vive_time.toSec() << std::endl;
-          // std::cout << time0 << std::endl;
-          // std::cout << vive_time.toSec() - time0 << std::endl;
-          opti_t.push_back(vive_time.toSec() - time0);
-        }
+        // if (vive_init) {
+        //   // Eigen::Vector3d tmp_vPt = oRv.transpose() * (oRa * aPt + oPa) -
+        //   //   oRv.transpose() * oPv;
+        //   // Eigen::Matrix3d tmp_vRt = oRv.transpose() * oRa * aRt;
+        //   opti_px.push_back(oPa(0));
+        //   opti_py.push_back(oPa(1));
+        //   opti_pz.push_back(oPa(2));
+        //   Eigen::Quaterniond oQa(oRa);
+        //   opti_qw.push_back(oQa.w());
+        //   opti_qx.push_back(oQa.x());
+        //   opti_qy.push_back(oQa.y());
+        //   opti_qz.push_back(oQa.z());
+        //   // std::cout << vive_time.toSec() << std::endl;
+        //   // std::cout << time0 << std::endl;
+        //   // std::cout << vive_time.toSec() - time0 << std::endl;
+        //   opti_t.push_back(vive_time.toSec() - time0);
+        // }
       }
     }
     if (!vive_init || !opti_init || !next_opti || !prev_opti) continue;
@@ -734,6 +746,8 @@ int main(int argc, char ** argv) {
       // Maximum Error
       if (d_vAt.angle() > mA) mA = d_vAt.angle();
 
+      time_v.push_back(vive_time.toSec() - time0);
+
 
       pose_counter++;
      }
@@ -743,104 +757,106 @@ int main(int argc, char ** argv) {
 
   data_bag.close();
 
-  std::cout << "vive_px = [";
-  for (auto pos : vive_px) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "vive_px = [";
+  // for (auto pos : vive_px) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "vive_py = [";
-  for (auto pos : vive_py) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "vive_py = [";
+  // for (auto pos : vive_py) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "vive_pz = [";
-  for (auto pos : vive_pz) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "vive_pz = [";
+  // for (auto pos : vive_pz) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "vive_qw = [";
-  for (auto pos : vive_qw) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "vive_qw = [";
+  // for (auto pos : vive_qw) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "vive_qx = [";
-  for (auto pos : vive_qx) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "vive_qx = [";
+  // for (auto pos : vive_qx) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "vive_qy = [";
-  for (auto pos : vive_qy) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "vive_qy = [";
+  // for (auto pos : vive_qy) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "vive_qz = [";
-  for (auto pos : vive_qz) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "vive_qz = [";
+  // for (auto pos : vive_qz) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "vive_t = [";
-  for (auto pos : vive_t) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
-
-
+  // std::cout << "vive_t = [";
+  // for (auto pos : vive_t) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
 
-  std::cout << "opti_px = [";
-  for (auto pos : opti_px) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
 
-  std::cout << "opti_py = [";
-  for (auto pos : opti_py) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
 
-  std::cout << "opti_pz = [";
-  for (auto pos : opti_pz) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "opti_px = [";
+  // for (auto pos : opti_px) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "opti_qw = [";
-  for (auto pos : opti_qw) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "opti_py = [";
+  // for (auto pos : opti_py) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "opti_qx = [";
-  for (auto pos : opti_qx) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "opti_pz = [";
+  // for (auto pos : opti_pz) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "opti_qy = [";
-  for (auto pos : opti_qy) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "opti_qw = [";
+  // for (auto pos : opti_qw) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "opti_qz = [";
-  for (auto pos : opti_qz) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "opti_qx = [";
+  // for (auto pos : opti_qx) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "opti_t = [";
-  for (auto pos : opti_t) {
-    std::cout << pos << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "opti_qy = [";
+  // for (auto pos : opti_qy) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
+
+  // std::cout << "opti_qz = [";
+  // for (auto pos : opti_qz) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
+
+  // std::cout << "opti_t = [";
+  // for (auto pos : opti_t) {
+  //   std::cout << pos << " ";
+  // }
+  // std::cout << "]" << std::endl;
+
+  std::cout << std::endl;
 
   std::cout << "dist_v = [";
   for (auto pos : dist_v) {
@@ -851,6 +867,12 @@ int main(int argc, char ** argv) {
   std::cout << "ang_v = [";
   for (auto pos : ang_v) {
     std::cout << 180 / M_PI * pos << " ";
+  }
+  std::cout << "]" << std::endl;
+
+  std::cout << "time_v = [";
+  for (auto pos : time_v) {
+    std::cout << pos << " ";
   }
   std::cout << "]" << std::endl;
 

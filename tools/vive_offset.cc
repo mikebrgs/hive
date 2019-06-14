@@ -9,8 +9,8 @@
 #include <hive/hive_solver.h>
 
 int main(int argc, char ** argv) {
-  ros::init(argc, argv, "hive_offset");
-  ros::NodeHandle nh;
+  // ros::init(argc, argv, "hive_offset");
+  // ros::NodeHandle nh;
 
   HiveOffset * hiver;
 
@@ -94,7 +94,7 @@ int main(int argc, char ** argv) {
 
     for (auto of_it = offsets.begin();
       of_it != offsets.end(); of_it++) {
-      wbag.write("/offset", ros::Time::now(),*of_it);
+      wbag.write("/offset", ros::TIME_MIN,*of_it);
     }
 
   // Multiple bags - with step
@@ -197,7 +197,7 @@ int main(int argc, char ** argv) {
 
     for (auto of_it = offsets.begin();
       of_it != offsets.end(); of_it++) {
-      wbag.write("/offset", ros::Time::now(),*of_it);
+      wbag.write("/offset", ros::TIME_MIN,*of_it);
     }
 
   } else {
