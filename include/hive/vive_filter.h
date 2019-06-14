@@ -41,8 +41,8 @@
 #define LIGHT_DATA_BUFFER 4   // Size of the light data vector
 // #define MAHALANOBIS_MAX_DIST 3
 // Outlier thresholds
-#define MEASUREMENT_THRESHOLD 5e-3
-#define STATE_THRESHOLD 5e-3
+#define MEASUREMENT_THRESHOLD 1e-4
+#define STATE_THRESHOLD 4e-5
 // IEKF tuning
 #define IEFK_THRESHOLD 1e-5
 // UKF tuning
@@ -334,6 +334,7 @@ private:
   filter::type filter_type_;
   // Validity of current state
   bool valid_;
+  bool initialized_;
   // If the pose was already used
   bool used_;
   // Aux
@@ -343,7 +344,7 @@ private:
   // UKF stuff
   Eigen::MatrixXd ext_covariance_;
   // Outlier counter
-  size_t outlier_counter;
+  size_t outlier_counter_;
 };
 
 #endif  // HIVE_VIVE_FILTER_H_

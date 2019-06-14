@@ -479,7 +479,7 @@ geometry_msgs::Transform trajectory2(double t) {
   geometry_msgs::Transform msg;
   msg.translation.x = 0.0;
   msg.translation.y = 0.0;
-  msg.translation.z = 1.0 + 0.1 * t;
+  msg.translation.z = 1.0 + 0.2 * t;
 
   msg.rotation.w = 1.0;
   msg.rotation.x = 0.0;
@@ -537,6 +537,7 @@ geometry_msgs::Transform trajectory4(double t) {
 int main(int argc, char ** argv) {
   // Data
   Calibration calibration, new_calibration;
+  ViveCalibrate calibrator(calibration, true);
   // std::map<std::string, Solver*> solver;
   // std::map<std::string, Solver*> aux_solver;
 
@@ -552,111 +553,107 @@ int main(int argc, char ** argv) {
   rbag.open(read_bag, rosbag::bagmode::Read);
   wbag.open(write_bag, rosbag::bagmode::Write);
 
-  ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE,
-    &calibration);
+  // // Get current calibration
+  // ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE,
+  //   &calibration);
+  // ROS_INFO("Reading JSON file.");
+  // JsonParser jp = JsonParser(HIVE_CONFIG_FILE);
+  // jp.GetBody(&calibration);
+  // // Lighthouses
+  // rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
+  // for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
+  //   const hive::ViveCalibrationLighthouseArray::ConstPtr vl =
+  //     bag_it->instantiate<hive::ViveCalibrationLighthouseArray>();
+  //   calibration.SetLighthouses(*vl);
+  //   calibrator.Update(vl);
+  // }
 
-  // Get current calibration
-  ROS_INFO("Reading JSON file.");
-  JsonParser jp = JsonParser(HIVE_CONFIG_FILE);
-  jp.GetBody(&calibration);
-
-  ViveCalibrate calibrator(calibration, true);
-
-  // Lighthouses
-  rosbag::View view_lh(rbag, rosbag::TopicQuery("/loc/vive/lighthouses"));
-  for (auto bag_it = view_lh.begin(); bag_it != view_lh.end(); bag_it++) {
-    const hive::ViveCalibrationLighthouseArray::ConstPtr vl =
-      bag_it->instantiate<hive::ViveCalibrationLighthouseArray>();
-    calibration.SetLighthouses(*vl);
-    calibrator.Update(vl);
-  }
-  // geometry_msgs::Vector3 gravity;
-  // gravity.x = 0.0;
-  // gravity.y = 9.8;
-  // gravity.z = 0.0;
-  // calibration.environment.gravity = gravity;
-  // Transform lh_pose_1;
-  // lh_pose_1.parent_frame = "vive";
-  // lh_pose_1.child_frame = "lh1";
-  // lh_pose_1.translation.x = 0.0;
-  // lh_pose_1.translation.y = 0.0;
-  // lh_pose_1.translation.z = 0.0;
-  // lh_pose_1.rotation.w = 1.0;
-  // lh_pose_1.rotation.x = 0.0;
-  // lh_pose_1.rotation.y = 0.0;
-  // lh_pose_1.rotation.z = 0.0;
-  // calibration.environment.lighthouses[lh_pose_1.child_frame] = lh_pose_1;
-  // Transform lh_pose_2;
-  // lh_pose_2.parent_frame = "vive";
-  // lh_pose_2.child_frame = "lh2";
-  // lh_pose_2.translation.x = 1.414213562373095;
-  // lh_pose_2.translation.y = 1.414213562373095;
-  // lh_pose_2.translation.z = 2.0;
-  // lh_pose_2.rotation.w = 0.653281482438188;
-  // lh_pose_2.rotation.x = 0.270598050073098;
-  // lh_pose_2.rotation.y = -0.653281482438188;
-  // lh_pose_2.rotation.z = 0.270598050073098;
-  // calibration.environment.lighthouses[lh_pose_2.child_frame] = lh_pose_2;
-  // Transform body;
-  // body.parent_frame = "LHR-FD35B946";
-  // body.child_frame = "marker";
-  // body.translation.x = 0.0;
-  // body.translation.y = 0.0;
-  // body.translation.z = 0.0;
-  // body.rotation.w = 1.0;
-  // body.rotation.x = 0.0;
-  // body.rotation.y = 0.0;
-  // body.rotation.z = 0.0;
-  // calibration.environment.bodies[lh_pose_1.child_frame] = body;
-  // Transform offset;
-  // offset.parent_frame = "";
-  // offset.child_frame = "";
-  // offset.translation.x = 0.0;
-  // offset.translation.y = 0.0;
-  // offset.translation.z = 0.0;
-  // offset.rotation.w = 1.0;
-  // offset.rotation.x = 0.0;
-  // offset.rotation.y = 0.0;
-  // offset.rotation.z = 0.0;
-  // calibration.environment.offset = offset;
-  // Transform vive;
-  // vive.parent_frame = "world";
-  // vive.child_frame = "vive";
-  // vive.translation.x = 0.0;
-  // vive.translation.y = 0.0;
-  // vive.translation.z = 0.0;
-  // vive.rotation.w = 1.0;
-  // vive.rotation.x = 0.0;
-  // vive.rotation.y = 0.0;
-  // vive.rotation.z = 0.0;
-  // calibration.environment.vive = vive;
-  // Lighthouse lh_specs_1;
-  // lh_specs_1.serial = lh_pose_1.child_frame;
-  // lh_specs_1.horizontal_motor.phase = 0.0;
-  // lh_specs_1.horizontal_motor.tilt = 0.0;
-  // lh_specs_1.horizontal_motor.gib_phase = 0.0;
-  // lh_specs_1.horizontal_motor.gib_magnitude = 0.0;
-  // lh_specs_1.horizontal_motor.curve = 0.0;
-  // lh_specs_1.vertical_motor.phase = 0.0;
-  // lh_specs_1.vertical_motor.tilt = 0.0;
-  // lh_specs_1.vertical_motor.gib_phase = 0.0;
-  // lh_specs_1.vertical_motor.gib_magnitude = 0.0;
-  // lh_specs_1.vertical_motor.curve = 0.0;
-  // calibration.lighthouses[lh_specs_1.serial] = lh_specs_1;
-  // Lighthouse lh_specs_2;
-  // lh_specs_2.serial = lh_pose_1.child_frame;
-  // lh_specs_2.horizontal_motor.phase = 0.0;
-  // lh_specs_2.horizontal_motor.tilt = 0.0;
-  // lh_specs_2.horizontal_motor.gib_phase = 0.0;
-  // lh_specs_2.horizontal_motor.gib_magnitude = 0.0;
-  // lh_specs_2.horizontal_motor.curve = 0.0;
-  // lh_specs_2.vertical_motor.phase = 0.0;
-  // lh_specs_2.vertical_motor.tilt = 0.0;
-  // lh_specs_2.vertical_motor.gib_phase = 0.0;
-  // lh_specs_2.vertical_motor.gib_magnitude = 0.0;
-  // lh_specs_2.vertical_motor.curve = 0.0;
-  // calibration.lighthouses[lh_specs_2.serial] = lh_specs_2;
-  // calibration.environment.gravity
+  geometry_msgs::Vector3 gravity;
+  gravity.x = 0.0;
+  gravity.y = 9.8;
+  gravity.z = 0.0;
+  calibration.environment.gravity = gravity;
+  Transform lh_pose_1;
+  lh_pose_1.parent_frame = "vive";
+  lh_pose_1.child_frame = "lh1";
+  lh_pose_1.translation.x = 0.0;
+  lh_pose_1.translation.y = 0.0;
+  lh_pose_1.translation.z = 0.0;
+  lh_pose_1.rotation.w = 1.0;
+  lh_pose_1.rotation.x = 0.0;
+  lh_pose_1.rotation.y = 0.0;
+  lh_pose_1.rotation.z = 0.0;
+  calibration.environment.lighthouses[lh_pose_1.child_frame] = lh_pose_1;
+  Transform lh_pose_2;
+  lh_pose_2.parent_frame = "vive";
+  lh_pose_2.child_frame = "lh2";
+  lh_pose_2.translation.x = 1.414213562373095;
+  lh_pose_2.translation.y = 1.414213562373095;
+  lh_pose_2.translation.z = 2.0;
+  lh_pose_2.rotation.w = 0.653281482438188;
+  lh_pose_2.rotation.x = 0.270598050073098;
+  lh_pose_2.rotation.y = -0.653281482438188;
+  lh_pose_2.rotation.z = 0.270598050073098;
+  calibration.environment.lighthouses[lh_pose_2.child_frame] = lh_pose_2;
+  Transform body;
+  body.parent_frame = "LHR-FD35B946";
+  body.child_frame = "marker";
+  body.translation.x = 0.0;
+  body.translation.y = 0.0;
+  body.translation.z = 0.0;
+  body.rotation.w = 1.0;
+  body.rotation.x = 0.0;
+  body.rotation.y = 0.0;
+  body.rotation.z = 0.0;
+  calibration.environment.bodies[lh_pose_1.child_frame] = body;
+  Transform offset;
+  offset.parent_frame = "";
+  offset.child_frame = "";
+  offset.translation.x = 0.0;
+  offset.translation.y = 0.0;
+  offset.translation.z = 0.0;
+  offset.rotation.w = 1.0;
+  offset.rotation.x = 0.0;
+  offset.rotation.y = 0.0;
+  offset.rotation.z = 0.0;
+  calibration.environment.offset = offset;
+  Transform vive;
+  vive.parent_frame = "world";
+  vive.child_frame = "vive";
+  vive.translation.x = 0.0;
+  vive.translation.y = 0.0;
+  vive.translation.z = 0.0;
+  vive.rotation.w = 1.0;
+  vive.rotation.x = 0.0;
+  vive.rotation.y = 0.0;
+  vive.rotation.z = 0.0;
+  calibration.environment.vive = vive;
+  Lighthouse lh_specs_1;
+  lh_specs_1.serial = lh_pose_1.child_frame;
+  lh_specs_1.horizontal_motor.phase = 0.0;
+  lh_specs_1.horizontal_motor.tilt = 0.0;
+  lh_specs_1.horizontal_motor.gib_phase = 0.0;
+  lh_specs_1.horizontal_motor.gib_magnitude = 0.0;
+  lh_specs_1.horizontal_motor.curve = 0.0;
+  lh_specs_1.vertical_motor.phase = 0.0;
+  lh_specs_1.vertical_motor.tilt = 0.0;
+  lh_specs_1.vertical_motor.gib_phase = 0.0;
+  lh_specs_1.vertical_motor.gib_magnitude = 0.0;
+  lh_specs_1.vertical_motor.curve = 0.0;
+  calibration.lighthouses[lh_specs_1.serial] = lh_specs_1;
+  Lighthouse lh_specs_2;
+  lh_specs_2.serial = lh_pose_1.child_frame;
+  lh_specs_2.horizontal_motor.phase = 0.0;
+  lh_specs_2.horizontal_motor.tilt = 0.0;
+  lh_specs_2.horizontal_motor.gib_phase = 0.0;
+  lh_specs_2.horizontal_motor.gib_magnitude = 0.0;
+  lh_specs_2.horizontal_motor.curve = 0.0;
+  lh_specs_2.vertical_motor.phase = 0.0;
+  lh_specs_2.vertical_motor.tilt = 0.0;
+  lh_specs_2.vertical_motor.gib_phase = 0.0;
+  lh_specs_2.vertical_motor.gib_magnitude = 0.0;
+  lh_specs_2.vertical_motor.curve = 0.0;
+  calibration.lighthouses[lh_specs_2.serial] = lh_specs_2;
   ROS_INFO("Lighthouses' setup complete.");
 
   // Trackers
@@ -676,130 +673,131 @@ int main(int argc, char ** argv) {
 
   // Calibration
 
-  Trajectory tr_cal(&trajectory1,
-    tracker,
-    calibration.environment.lighthouses,
-    calibration.lighthouses,
-    calibration.environment.gravity);
-  for (size_t i = 0; i <= 200; i++) {
-    hive::ViveLight::ConstPtr vl = tr_cal.GetLight();
 
-    calibrator.AddLight(vl);
+  // Trajectory tr_cal(&trajectory1,
+  //   tracker,
+  //   calibration.environment.lighthouses,
+  //   calibration.lighthouses,
+  //   calibration.environment.gravity);
+  // for (size_t i = 0; i <= 200; i++) {
+  //   hive::ViveLight::ConstPtr vl = tr_cal.GetLight();
 
-    sensor_msgs::Imu::ConstPtr vi;
-    tr_cal.Update(Tl / 4.0);
-    vi = tr_cal.GetImu();
-    calibrator.AddImu(vi);
-    tr_cal.Update(Tl / 2.0);
-    vi = tr_cal.GetImu();
-    calibrator.AddImu(vi);
-    tr_cal.Update(Tl / 4.0);
+  //   calibrator.AddLight(vl);
 
-  }
+  //   sensor_msgs::Imu::ConstPtr vi;
+  //   tr_cal.Update(Tl / 4.0);
+  //   vi = tr_cal.GetImu();
+  //   calibrator.AddImu(vi);
+  //   tr_cal.Update(Tl / 2.0);
+  //   vi = tr_cal.GetImu();
+  //   calibrator.AddImu(vi);
+  //   tr_cal.Update(Tl / 4.0);
 
-  std::map<std::string, std::pair<Eigen::Vector3d, Eigen::Quaterniond>> gt_lighthouses;
-  for (auto lighthouse : calibration.environment.lighthouses) {
-    gt_lighthouses[lighthouse.first].first = Eigen::Vector3d(
-      lighthouse.second.translation.x,
-      lighthouse.second.translation.y,
-      lighthouse.second.translation.z);
-    gt_lighthouses[lighthouse.first].second = Eigen::Quaterniond(
-      lighthouse.second.rotation.w,
-      lighthouse.second.rotation.x,
-      lighthouse.second.rotation.y,
-      lighthouse.second.rotation.z);
-  }
-  Eigen::Vector3d gt_g(calibration.environment.gravity.x,
-    calibration.environment.gravity.y,
-    calibration.environment.gravity.z);
+  // }
 
-  calibrator.Solve();
+  // std::map<std::string, std::pair<Eigen::Vector3d, Eigen::Quaterniond>> gt_lighthouses;
+  // for (auto lighthouse : calibration.environment.lighthouses) {
+  //   gt_lighthouses[lighthouse.first].first = Eigen::Vector3d(
+  //     lighthouse.second.translation.x,
+  //     lighthouse.second.translation.y,
+  //     lighthouse.second.translation.z);
+  //   gt_lighthouses[lighthouse.first].second = Eigen::Quaterniond(
+  //     lighthouse.second.rotation.w,
+  //     lighthouse.second.rotation.x,
+  //     lighthouse.second.rotation.y,
+  //     lighthouse.second.rotation.z);
+  // }
+  // Eigen::Vector3d gt_g(calibration.environment.gravity.x,
+  //   calibration.environment.gravity.y,
+  //   calibration.environment.gravity.z);
 
-  new_calibration = calibrator.GetCalibration();
+  // calibrator.Solve();
 
-  std::map<std::string, std::pair<Eigen::Vector3d, Eigen::Quaterniond>> est_lighthouses_cal;
-  for (auto lighthouse : new_calibration.environment.lighthouses) {
-    est_lighthouses_cal[lighthouse.first].first = Eigen::Vector3d(
-      lighthouse.second.translation.x,
-      lighthouse.second.translation.y,
-      lighthouse.second.translation.z);
-    est_lighthouses_cal[lighthouse.first].second = Eigen::Quaterniond(
-      lighthouse.second.rotation.w,
-      lighthouse.second.rotation.x,
-      lighthouse.second.rotation.y,
-      lighthouse.second.rotation.z);
-    std::cout << "dP: "
-      << (est_lighthouses_cal[lighthouse.first].first -
-      gt_lighthouses[lighthouse.first].first).norm() << std::endl;
-    std::cout << "dA: "
-      << 180.0 / M_PI * Eigen::AngleAxisd(
-        est_lighthouses_cal[lighthouse.first].second.toRotationMatrix().transpose() *
-        gt_lighthouses[lighthouse.first].second.toRotationMatrix()).angle() << std::endl;
-  }
-  Eigen::Vector3d est_g_cal(new_calibration.environment.gravity.x,
-    new_calibration.environment.gravity.y,
-    new_calibration.environment.gravity.z);
-    std::cout << "dG: " << (est_g_cal - gt_g).norm() << std::endl;
+  // new_calibration = calibrator.GetCalibration();
 
-  Refinery refinery(new_calibration, true, 1e1, true);
-  Trajectory tr_ref(&trajectory4,
-    tracker,
-    calibration.environment.lighthouses,
-    calibration.lighthouses,
-    calibration.environment.gravity);
+  // std::map<std::string, std::pair<Eigen::Vector3d, Eigen::Quaterniond>> est_lighthouses_cal;
+  // for (auto lighthouse : new_calibration.environment.lighthouses) {
+  //   est_lighthouses_cal[lighthouse.first].first = Eigen::Vector3d(
+  //     lighthouse.second.translation.x,
+  //     lighthouse.second.translation.y,
+  //     lighthouse.second.translation.z);
+  //   est_lighthouses_cal[lighthouse.first].second = Eigen::Quaterniond(
+  //     lighthouse.second.rotation.w,
+  //     lighthouse.second.rotation.x,
+  //     lighthouse.second.rotation.y,
+  //     lighthouse.second.rotation.z);
+  //   std::cout << "dP: "
+  //     << (est_lighthouses_cal[lighthouse.first].first -
+  //     gt_lighthouses[lighthouse.first].first).norm() << std::endl;
+  //   std::cout << "dA: "
+  //     << 180.0 / M_PI * Eigen::AngleAxisd(
+  //       est_lighthouses_cal[lighthouse.first].second.toRotationMatrix().transpose() *
+  //       gt_lighthouses[lighthouse.first].second.toRotationMatrix()).angle() << std::endl;
+  // }
+  // Eigen::Vector3d est_g_cal(new_calibration.environment.gravity.x,
+  //   new_calibration.environment.gravity.y,
+  //   new_calibration.environment.gravity.z);
+  //   std::cout << "dG: " << (est_g_cal - gt_g).norm() << std::endl;
 
-  for (size_t i = 0; i <= 1200; i++) {
-    hive::ViveLight::ConstPtr vl = tr_ref.GetLight();
+  // Refinery refinery(new_calibration, true, 1e1, true);
+  // Trajectory tr_ref(&trajectory4,
+  //   tracker,
+  //   calibration.environment.lighthouses,
+  //   calibration.lighthouses,
+  //   calibration.environment.gravity);
 
-    refinery.AddLight(vl);
+  // for (size_t i = 0; i <= 1200; i++) {
+  //   hive::ViveLight::ConstPtr vl = tr_ref.GetLight();
 
-    sensor_msgs::Imu::ConstPtr vi;
-    tr_ref.Update(Tl / 4.0);
-    vi = tr_ref.GetImu();
-    refinery.AddImu(vi);
-    tr_ref.Update(Tl / 2.0);
-    vi = tr_ref.GetImu();
-    refinery.AddImu(vi);
-    tr_ref.Update(Tl / 4.0);
+  //   refinery.AddLight(vl);
 
-  }
+  //   sensor_msgs::Imu::ConstPtr vi;
+  //   tr_ref.Update(Tl / 4.0);
+  //   vi = tr_ref.GetImu();
+  //   refinery.AddImu(vi);
+  //   tr_ref.Update(Tl / 2.0);
+  //   vi = tr_ref.GetImu();
+  //   refinery.AddImu(vi);
+  //   tr_ref.Update(Tl / 4.0);
 
-  refinery.Solve();
+  // }
 
-  new_calibration = refinery.GetCalibration();
+  // refinery.Solve();
 
-  std::map<std::string, std::pair<Eigen::Vector3d, Eigen::Quaterniond>> est_lighthouses_ref;
-  for (auto lighthouse : new_calibration.environment.lighthouses) {
-    est_lighthouses_ref[lighthouse.first].first = Eigen::Vector3d(
-      lighthouse.second.translation.x,
-      lighthouse.second.translation.y,
-      lighthouse.second.translation.z);
-    est_lighthouses_ref[lighthouse.first].second = Eigen::Quaterniond(
-      lighthouse.second.rotation.w,
-      lighthouse.second.rotation.x,
-      lighthouse.second.rotation.y,
-      lighthouse.second.rotation.z);
-    std::cout << "dP: "
-      << (est_lighthouses_ref[lighthouse.first].first -
-      gt_lighthouses[lighthouse.first].first).norm() << std::endl;
-    std::cout << "dA: "
-      << 180.0 / M_PI * Eigen::AngleAxisd(
-        est_lighthouses_ref[lighthouse.first].second.toRotationMatrix().transpose() *
-        gt_lighthouses[lighthouse.first].second.toRotationMatrix()).angle() << std::endl;
-  }
-  Eigen::Vector3d est_g_ref(new_calibration.environment.gravity.x,
-    new_calibration.environment.gravity.y,
-    new_calibration.environment.gravity.z);
-    std::cout << "dG: " << (est_g_ref - gt_g).norm() << std::endl;
+  // new_calibration = refinery.GetCalibration();
+
+  // std::map<std::string, std::pair<Eigen::Vector3d, Eigen::Quaterniond>> est_lighthouses_ref;
+  // for (auto lighthouse : new_calibration.environment.lighthouses) {
+  //   est_lighthouses_ref[lighthouse.first].first = Eigen::Vector3d(
+  //     lighthouse.second.translation.x,
+  //     lighthouse.second.translation.y,
+  //     lighthouse.second.translation.z);
+  //   est_lighthouses_ref[lighthouse.first].second = Eigen::Quaterniond(
+  //     lighthouse.second.rotation.w,
+  //     lighthouse.second.rotation.x,
+  //     lighthouse.second.rotation.y,
+  //     lighthouse.second.rotation.z);
+  //   std::cout << "dP: "
+  //     << (est_lighthouses_ref[lighthouse.first].first -
+  //     gt_lighthouses[lighthouse.first].first).norm() << std::endl;
+  //   std::cout << "dA: "
+  //     << 180.0 / M_PI * Eigen::AngleAxisd(
+  //       est_lighthouses_ref[lighthouse.first].second.toRotationMatrix().transpose() *
+  //       gt_lighthouses[lighthouse.first].second.toRotationMatrix()).angle() << std::endl;
+  // }
+  // Eigen::Vector3d est_g_ref(new_calibration.environment.gravity.x,
+  //   new_calibration.environment.gravity.y,
+  //   new_calibration.environment.gravity.z);
+  //   std::cout << "dG: " << (est_g_ref - gt_g).norm() << std::endl;
 
 
 
-  return 0;
+  // return 0;
 
   // Tracking
   // double Tl = 1.0e0/120.0;
 
-  Trajectory tr(&trajectory1,
+  Trajectory tr(&trajectory2,
     tracker,
     calibration.environment.lighthouses,
     calibration.lighthouses,
@@ -827,7 +825,7 @@ int main(int argc, char ** argv) {
   Solver * solver_ekf = new ViveFilter(tracker,
     calibration.lighthouses,
     calibration.environment,
-    1e-1, 1e-6, true, filter::ekf);
+    1e0, 1e-6, true, filter::ekf);
   std::vector<Eigen::Vector3d> ekf_positions;
   std::vector<Eigen::Vector3d> ekf_attitudes;
   std::vector<double> ekf_distances;
@@ -835,7 +833,7 @@ int main(int argc, char ** argv) {
   Solver * solver_iekf = new ViveFilter(tracker,
     calibration.lighthouses,
     calibration.environment,
-    1e-1, 1e-6, true, filter::iekf);
+    1e0, 1e-6, true, filter::iekf);
   std::vector<Eigen::Vector3d> iekf_positions;
   std::vector<Eigen::Vector3d> iekf_attitudes;
   std::vector<double> iekf_distances;
@@ -859,6 +857,7 @@ int main(int argc, char ** argv) {
 
 
   // 2400 for trajectory3
+  // 800
   geometry_msgs::TransformStamped msg, gt_msg;
   for (size_t i = 0; i <= 2400; i++) {
     hive::ViveLight::ConstPtr vl = tr.GetLight();
