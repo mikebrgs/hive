@@ -757,104 +757,104 @@ int main(int argc, char ** argv) {
 
   data_bag.close();
 
-  // std::cout << "vive_px = [";
-  // for (auto pos : vive_px) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "vive_px = [";
+  for (auto pos : vive_px) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "vive_py = [";
-  // for (auto pos : vive_py) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "vive_py = [";
+  for (auto pos : vive_py) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "vive_pz = [";
-  // for (auto pos : vive_pz) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "vive_pz = [";
+  for (auto pos : vive_pz) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "vive_qw = [";
-  // for (auto pos : vive_qw) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "vive_qw = [";
+  for (auto pos : vive_qw) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "vive_qx = [";
-  // for (auto pos : vive_qx) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "vive_qx = [";
+  for (auto pos : vive_qx) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "vive_qy = [";
-  // for (auto pos : vive_qy) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "vive_qy = [";
+  for (auto pos : vive_qy) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "vive_qz = [";
-  // for (auto pos : vive_qz) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "vive_qz = [";
+  for (auto pos : vive_qz) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "vive_t = [";
-  // for (auto pos : vive_t) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-
+  std::cout << "vive_t = [";
+  for (auto pos : vive_t) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
 
-  // std::cout << "opti_px = [";
-  // for (auto pos : opti_px) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
 
-  // std::cout << "opti_py = [";
-  // for (auto pos : opti_py) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
 
-  // std::cout << "opti_pz = [";
-  // for (auto pos : opti_pz) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "opti_px = [";
+  for (auto pos : opti_px) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "opti_qw = [";
-  // for (auto pos : opti_qw) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "opti_py = [";
+  for (auto pos : opti_py) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "opti_qx = [";
-  // for (auto pos : opti_qx) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "opti_pz = [";
+  for (auto pos : opti_pz) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "opti_qy = [";
-  // for (auto pos : opti_qy) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "opti_qw = [";
+  for (auto pos : opti_qw) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "opti_qz = [";
-  // for (auto pos : opti_qz) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "opti_qx = [";
+  for (auto pos : opti_qx) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "opti_t = [";
-  // for (auto pos : opti_t) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "opti_qy = [";
+  for (auto pos : opti_qy) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
+
+  std::cout << "opti_qz = [";
+  for (auto pos : opti_qz) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
+
+  std::cout << "opti_t = [";
+  for (auto pos : opti_t) {
+    std::cout << pos << " ";
+  }
+  std::cout << "]" << std::endl;
 
   std::cout << std::endl;
 

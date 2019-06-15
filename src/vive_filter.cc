@@ -433,6 +433,7 @@ bool ViveFilter::Initialize() {
   ceres::Problem problem;
   ceres::Solver::Options options;
   ceres::Solver::Summary summary;
+  double light_samples = 0;
 
   for (auto sample : light_data_) {
     geometry_msgs::Transform lhTF;
@@ -471,6 +472,7 @@ bool ViveFilter::Initialize() {
       vcost->SetNumResiduals(sample.samples.size());
       problem.AddResidualBlock(vcost, NULL, pose);
     }
+    light_samples += sample.samples.size();
   }
 
   options.minimizer_progress_to_stdout = false;
@@ -478,7 +480,7 @@ bool ViveFilter::Initialize() {
   options.max_solver_time_in_seconds = 0.5;
   ceres::Solve(options, &problem, &summary);
 
-  if (summary.final_cost > 1e-4) return false;
+  if (summary.final_cost > 1e-5 * light_samples) return false;
 
   std::cout << "init ";
   ROS_FATAL("INIT");
@@ -508,7 +510,7 @@ bool ViveFilter::Initialize() {
 
 void ViveFilter::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
   if (msg == NULL) return;
-  if (!valid_) return;
+  // if (!valid_) return;
 
   switch(filter_type_) {
     case filter::ekf:
@@ -529,6 +531,9 @@ void ViveFilter::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
     if (outlier_counter_ >= MAX_OUTLIERS) {
       initialized_ = false;
     }
+    // if (outlier_counter_ == MAX_OUTLIERS) {
+    //   light_data_.clear();
+    // }
     valid_ = false;
   } else {
     outlier_counter_ = 0;
@@ -542,6 +547,8 @@ void ViveFilter::ProcessImu(const sensor_msgs::Imu::ConstPtr& msg) {
 
 void ViveFilter::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   if (msg == NULL) return;
+
+  // std::cout << "NEW " << msg->lighthouse << " - " << (int)msg->axis << std::endl;
 
   hive::ViveLight * clone_msg = new hive::ViveLight(*msg);
   // Erase outliers
@@ -559,12 +566,17 @@ void ViveFilter::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
   // Save the copy
   light_data_.push_back(*clone_msg);
 
-  // std::cout << LIGHT_DATA_BUFFER << " - " << light_data_.size() << std::endl;
-  while (light_data_.size() > LIGHT_DATA_BUFFER) {
+  while (abs(light_data_.back().header.stamp.toNSec() -
+    light_data_.front().header.stamp.toNSec()) > 40e6) {
     light_data_.erase(light_data_.begin());
   }
+  // while (light_data_.size() > LIGHT_DATA_BUFFER) {
+  //   light_data_.erase(light_data_.begin());
+  // }
+  if (light_data_.size() <= 1) {
+    initialized_ = false;
+  }
 
-  // std::cout << outlier_counter_ << " - " << light_data_.size() << std::endl;
   if (!initialized_ && light_data_.size() >= LIGHT_DATA_BUFFER) {
   // Solve rapidly
     Initialize();
@@ -589,9 +601,16 @@ void ViveFilter::ProcessLight(const hive::ViveLight::ConstPtr& msg) {
 
   if (!Valid(STATE_THRESHOLD)) {
     outlier_counter_++;
+    // std::cout << "outlier_counter: " << outlier_counter_ << " - "
+    //   << light_data_.size() << " - "
+    //   << abs(light_data_.back().header.stamp.toNSec() -
+    //     light_data_.front().header.stamp.toNSec()) << std::endl;
     if (outlier_counter_ >= MAX_OUTLIERS) {
       initialized_ = false;
     }
+    // if (outlier_counter_ == MAX_OUTLIERS) {
+    //   light_data_.clear();
+    // }
     valid_ = false;
   } else {
     outlier_counter_ = 0;
@@ -1123,20 +1142,25 @@ bool ViveFilter::Valid(double cost_factor) {
 
   if (light_data_.size() < 2) return false;
 
+  // Pose of the imu in the vive frame
+  Eigen::Vector3d vPi = position_;
+  Eigen::Matrix3d vRi = rotation_.toRotationMatrix();
+  // std::cout << "vPi: " << vPi.transpose() << std::endl;
+  // std::cout << "vRi: " << vRi << std::endl;
+  // Pose of the imu in the light frame
+  Eigen::Vector3d tPi(tracker_.imu_transform.translation.x,
+    tracker_.imu_transform.translation.y,
+    tracker_.imu_transform.translation.z);
+  Eigen::Matrix3d tRi = Eigen::Quaterniond(tracker_.imu_transform.rotation.w,
+    tracker_.imu_transform.rotation.x,
+    tracker_.imu_transform.rotation.y,
+    tracker_.imu_transform.rotation.z).toRotationMatrix();
+  // std::cout << "tPi: " << tPi.transpose() << std::endl;
+  // std::cout << "tRi: " << tRi << std::endl;
+
   double cost = 0;
   double light_counter = 0;
   for (auto light_msg : light_data_) {
-    // Pose of the imu in the vive frame
-    Eigen::Vector3d vPi = position_;
-    Eigen::Matrix3d vRi = rotation_.toRotationMatrix();
-    // Pose of the imu in the light frame
-    Eigen::Vector3d tPi(tracker_.imu_transform.translation.x,
-      tracker_.imu_transform.translation.y,
-      tracker_.imu_transform.translation.z);
-    Eigen::Matrix3d tRi = Eigen::Quaterniond(tracker_.imu_transform.rotation.w,
-      tracker_.imu_transform.rotation.x,
-      tracker_.imu_transform.rotation.y,
-      tracker_.imu_transform.rotation.z).toRotationMatrix();
     // Pose of the lighthouse in the vive frame
     Eigen::Vector3d vPl(
       environment_.lighthouses[light_msg.lighthouse].translation.x,
@@ -1151,6 +1175,8 @@ bool ViveFilter::Valid(double cost_factor) {
     Eigen::Vector3d lPt = vRl.transpose() * (
       vRi * ( - tRi.transpose() * tPi) + vPi) + (- vRl.transpose() * vPl);
     Eigen::Matrix3d lRt = vRl.transpose() * vRi * tRi.transpose();
+  // std::cout << "lPt: " << lPt.transpose() << std::endl;
+  // std::cout << "lRt: " << lRt << std::endl;
 
     // Mahalanobis distance
     // USed sensors
@@ -1240,7 +1266,7 @@ bool ViveFilter::Valid(double cost_factor) {
         total_sensors * VERTICAL, total_sensors, total_sensors), sensors);
     }
     // Mahalanobis cost right here
-    Eigen::MatrixXd V = R + H * covariance_ * H.transpose();
+    // Eigen::MatrixXd V = R + H * covariance_ * H.transpose();
     // std::cout << "R: " << R << std::endl;
     // std::cout << "Cov: " << covariance_ << std::endl;
     // std::cout << "H: " << H << std::endl;
@@ -1256,16 +1282,21 @@ bool ViveFilter::Valid(double cost_factor) {
     // std::cout << "Cost: " << (msEigenAngle - prEigenAngle).transpose() * (msEigenAngle - prEigenAngle) << std::endl;
     // std::cout << "msEigenAngle: " << msEigenAngle.transpose() << std::endl;
     // std::cout << "prEigenAngle: " << prEigenAngle.transpose() << std::endl;
+    // std::cout << light_msg.lighthouse << " - " << (int)light_msg.axis << std::endl;
     // std::cout << "thisCost: " << (msEigenAngle - prEigenAngle).transpose() * V.inverse() * (msEigenAngle - prEigenAngle) << std::endl;
   }
 
-  // std::cout << "COST: " << cost << " - " << light_counter << " - " << light_data_.size() << std::endl;
+  // std::cout << light_data_.back().header.stamp << 
+  // std::cout << "COST: " << cost << " - " << std::endl;
   // if (cost > pow(MAHALANOBIS_MAX_DIST,2) * light_counter) {
+  // std::cout << light_data_.size() << " " << std::endl;
   if (cost >= cost_factor * light_counter) {
     // std::cout << "Not valid ";
     // TODO Change this
     return false;
   }
+
+  // if (light_data_.back().header.stamp.toSec() >= 1559054449.309255324) exit(0);
 
   // std::cout << "Valid ";
   return true;
@@ -1360,6 +1391,31 @@ bool ViveFilter::PredictEKF(const sensor_msgs::Imu & msg) {
     gravity_ = oldX.segment<3>(13);
     covariance_ = oldP;
     return false;
+  }
+
+  if (DEBUG) {
+    std::cout << "Light" << std::endl;
+    std::cout << "Position: "
+      << position_(0) << ", "
+      << position_(1) << ", "
+      << position_(2) << std::endl;
+    std::cout << "Velocity: "
+      << velocity_(0) << ", "
+      << velocity_(1) << ", "
+      << velocity_(2) << std::endl;
+    std::cout << "Orientation: "
+      << rotation_.w() << ", "
+      << rotation_.x() << ", "
+      << rotation_.y() << ", "
+      << rotation_.z() << std::endl;
+    std::cout << "Bias: "
+      << bias_(0) << ", "
+      << bias_(1) << ", "
+      << bias_(2) << std::endl;
+    std::cout << "Gravity: "
+      << gravity_(0) << ", "
+      << gravity_(1) << ", "
+      << gravity_(2) << std::endl;
   }
 
   time_ = msg.header.stamp;
@@ -1508,6 +1564,31 @@ bool ViveFilter::UpdateEKF(const hive::ViveLight & msg) {
   gravity_ = newX.segment<3>(13);
   covariance_ = newP;
 
+  if (DEBUG) {
+    std::cout << "Light" << std::endl;
+    std::cout << "Position: "
+      << position_(0) << ", "
+      << position_(1) << ", "
+      << position_(2) << std::endl;
+    std::cout << "Velocity: "
+      << velocity_(0) << ", "
+      << velocity_(1) << ", "
+      << velocity_(2) << std::endl;
+    std::cout << "Orientation: "
+      << rotation_.w() << ", "
+      << rotation_.x() << ", "
+      << rotation_.y() << ", "
+      << rotation_.z() << std::endl;
+    std::cout << "Bias: "
+      << bias_(0) << ", "
+      << bias_(1) << ", "
+      << bias_(2) << std::endl;
+    std::cout << "Gravity: "
+      << gravity_(0) << ", "
+      << gravity_(1) << ", "
+      << gravity_(2) << std::endl;
+  }
+
   // Eigen::MatrixXd tmpMeasureCov = Y*Y.transpose();
   // // std::cout << tmpMeasureCov << std::endl;
   // // std::cout << measure_covariance_ << std::endl;
@@ -1535,7 +1616,7 @@ bool ViveFilter::UpdateEKF(const hive::ViveLight & msg) {
     bias_ = oldX.segment<3>(10);
     gravity_ = oldX.segment<3>(13);
     covariance_ = oldP;
-    light_data_.pop_back();
+    // light_data_.pop_back();
     return false;
   }
 
@@ -1638,7 +1719,7 @@ bool ViveFilter::UpdateIEKF(const hive::ViveLight & msg) {
 
     prev_tmpX = next_tmpX;
     counter++;
-    if (counter >= 1000) break;
+    if (counter >= IEKF_STEPS) break;
   }
 
   newX = oldX + K * Y;
@@ -1656,6 +1737,31 @@ bool ViveFilter::UpdateIEKF(const hive::ViveLight & msg) {
   gravity_ = newX.segment<3>(13);
   covariance_ = newP;
 
+  if (DEBUG) {
+    std::cout << "Light" << std::endl;
+    std::cout << "Position: "
+      << position_(0) << ", "
+      << position_(1) << ", "
+      << position_(2) << std::endl;
+    std::cout << "Velocity: "
+      << velocity_(0) << ", "
+      << velocity_(1) << ", "
+      << velocity_(2) << std::endl;
+    std::cout << "Orientation: "
+      << rotation_.w() << ", "
+      << rotation_.x() << ", "
+      << rotation_.y() << ", "
+      << rotation_.z() << std::endl;
+    std::cout << "Bias: "
+      << bias_(0) << ", "
+      << bias_(1) << ", "
+      << bias_(2) << std::endl;
+    std::cout << "Gravity: "
+      << gravity_(0) << ", "
+      << gravity_(1) << ", "
+      << gravity_(2) << std::endl;
+  }
+
   if (!Valid(MEASUREMENT_THRESHOLD)) {
     position_ = oldX.segment<3>(0);
     velocity_ = oldX.segment<3>(3);
@@ -1664,7 +1770,7 @@ bool ViveFilter::UpdateIEKF(const hive::ViveLight & msg) {
     bias_ = oldX.segment<3>(10);
     gravity_ = oldX.segment<3>(13);
     covariance_ = oldP;
-    light_data_.pop_back();
+    // light_data_.pop_back();
     return false;
   }
 
@@ -2012,12 +2118,15 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
   // std::cout << "MC: " << MeasurementCov << std::endl;
   // std::cout << "MV: " << MeasurementVar << std::endl;
   Eigen::MatrixXd KalmanGain = MeasurementCov * MeasurementVar.inverse();
-  // std::cout << "ES: " << ExtendedState.transpose() << std::endl;
-  // std::cout << "Z: " << Z.transpose() << std::endl;
+
   // std::cout << "MM: " << MeasurementMean.transpose() << std::endl;
   // std::cout << "KG: " << KalmanGain << std::endl;
   Eigen::VectorXd NextExtendedState = ExtendedState + KalmanGain * (Z - MeasurementMean);
   Eigen::MatrixXd NextExtendedCovariance = ExtendedCovariance - KalmanGain * MeasurementVar * KalmanGain.transpose();
+  // std::cout << "PES: " << ExtendedState.transpose() << std::endl;
+  // std::cout << "Z: " << Z.transpose() << std::endl;
+  // std::cout << "DES: " << (KalmanGain * (Z - MeasurementMean)).transpose() << std::endl;
+  // std::cout << "NES: " << NextExtendedState.transpose() << std::endl;
 
   // Save new state
   position_ = NextExtendedState.segment<3>(0);
@@ -2079,7 +2188,7 @@ bool ViveFilter::UpdateUKF(const hive::ViveLight & msg) {
     bias_ = ExtendedState.segment<3>(10);
     gravity_ = ExtendedState.segment<3>(13);
     covariance_ = ExtendedCovariance.block<STATE_SIZE, STATE_SIZE>(0,0);
-    light_data_.pop_back();
+    // light_data_.pop_back();
     return false;
   }
 

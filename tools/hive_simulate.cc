@@ -797,7 +797,7 @@ int main(int argc, char ** argv) {
   // Tracking
   // double Tl = 1.0e0/120.0;
 
-  Trajectory tr(&trajectory2,
+  Trajectory tr(&trajectory4,
     tracker,
     calibration.environment.lighthouses,
     calibration.lighthouses,
@@ -814,6 +814,7 @@ int main(int argc, char ** argv) {
   std::vector<Eigen::Vector3d> ape1_attitudes;
   std::vector<double> ape1_distances;
   std::vector<double> ape1_angles;
+  std::vector<double> ape1_times;
   Solver * solver_ape2 = new HiveSolver(tracker,
     calibration.lighthouses,
     calibration.environment,
@@ -822,6 +823,7 @@ int main(int argc, char ** argv) {
   std::vector<Eigen::Vector3d> ape2_attitudes;
   std::vector<double> ape2_distances;
   std::vector<double> ape2_angles;
+  std::vector<double> ape2_times;
   Solver * solver_ekf = new ViveFilter(tracker,
     calibration.lighthouses,
     calibration.environment,
@@ -830,6 +832,7 @@ int main(int argc, char ** argv) {
   std::vector<Eigen::Vector3d> ekf_attitudes;
   std::vector<double> ekf_distances;
   std::vector<double> ekf_angles;
+  std::vector<double> ekf_times;
   Solver * solver_iekf = new ViveFilter(tracker,
     calibration.lighthouses,
     calibration.environment,
@@ -838,6 +841,7 @@ int main(int argc, char ** argv) {
   std::vector<Eigen::Vector3d> iekf_attitudes;
   std::vector<double> iekf_distances;
   std::vector<double> iekf_angles;
+  std::vector<double> iekf_times;
   Solver * solver_ukf = new ViveFilter(tracker,
     calibration.lighthouses,
     calibration.environment,
@@ -846,6 +850,7 @@ int main(int argc, char ** argv) {
   std::vector<Eigen::Vector3d> ukf_attitudes;
   std::vector<double> ukf_distances;
   std::vector<double> ukf_angles;
+  std::vector<double> ukf_times;
   Solver * solver_pgo = new PoseGraph(calibration.environment,
     tracker,
     calibration.lighthouses,
@@ -854,12 +859,14 @@ int main(int argc, char ** argv) {
   std::vector<Eigen::Vector3d> pgo_attitudes;
   std::vector<double> pgo_distances;
   std::vector<double> pgo_angles;
+  std::vector<double> pgo_times;
 
 
   // 2400 for trajectory3
+  // 1200 for trajectory2
   // 800
   geometry_msgs::TransformStamped msg, gt_msg;
-  for (size_t i = 0; i <= 2400; i++) {
+  for (size_t i = 0; i <= 1200; i++) {
     hive::ViveLight::ConstPtr vl = tr.GetLight();
     solver_ape1->ProcessLight(vl);
     solver_ape2->ProcessLight(vl);
@@ -904,6 +911,7 @@ int main(int argc, char ** argv) {
       Eigen::Matrix3d ape1_R = ape1_AA.toRotationMatrix();
       ape1_angles.push_back(
         Eigen::AngleAxisd(ape1_R.transpose() * gt_R).angle());
+      ape1_times.push_back((double)i * Tl);
       std::cout << "APE1" << " - "
         << msg.child_frame_id << " : "
         << msg.transform.translation.x << ", "
@@ -929,6 +937,7 @@ int main(int argc, char ** argv) {
       Eigen::Matrix3d ape2_R = ape2_AA.toRotationMatrix();
       ape2_angles.push_back(
         Eigen::AngleAxisd(ape2_R.transpose() * gt_R).angle());
+      ape2_times.push_back((double)i * Tl);
       std::cout << "APE2" << " - "
         << msg.child_frame_id << " : "
         << msg.transform.translation.x << ", "
@@ -955,6 +964,7 @@ int main(int argc, char ** argv) {
       Eigen::Matrix3d ekf_R = ekf_AA.toRotationMatrix();
       ekf_angles.push_back(
         Eigen::AngleAxisd(ekf_R.transpose() * gt_R).angle());
+      ekf_times.push_back((double)i * Tl);
       std::cout << "EKF" << " - "
         << msg.child_frame_id << " : "
         << msg.transform.translation.x << ", "
@@ -981,6 +991,7 @@ int main(int argc, char ** argv) {
       Eigen::Matrix3d iekf_R = iekf_AA.toRotationMatrix();
       iekf_angles.push_back(
         Eigen::AngleAxisd(iekf_R.transpose() * gt_R).angle());
+      iekf_times.push_back((double)i * Tl);
       std::cout << "IEKF" << " - "
         << msg.child_frame_id << " : "
         << msg.transform.translation.x << ", "
@@ -1007,6 +1018,7 @@ int main(int argc, char ** argv) {
       Eigen::Matrix3d ukf_R = ukf_AA.toRotationMatrix();
       ukf_angles.push_back(
         Eigen::AngleAxisd(ukf_R.transpose() * gt_R).angle());
+      ukf_times.push_back((double)i * Tl);
       std::cout << "UKF" << " - "
         << msg.child_frame_id << " : "
         << msg.transform.translation.x << ", "
@@ -1033,6 +1045,7 @@ int main(int argc, char ** argv) {
       Eigen::Matrix3d pgo_R = pgo_AA.toRotationMatrix();
       pgo_angles.push_back(
         Eigen::AngleAxisd(pgo_R.transpose() * gt_R).angle());
+      pgo_times.push_back((double)i * Tl);
       std::cout << "PGO" << " - "
         << msg.child_frame_id << " : "
         << msg.transform.translation.x << ", "
@@ -1081,202 +1094,284 @@ int main(int argc, char ** argv) {
     std::cout << std::endl;
   }
 
-
-  {
-    std::cout << "GT" << std::endl;
-    for (auto position : gt_positions) {
-      std::cout << position[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : gt_positions) {
-      std::cout << position[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : gt_positions) {
-      std::cout << position[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : gt_attitudes) {
-      std::cout << attitude[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : gt_attitudes) {
-      std::cout << attitude[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : gt_attitudes) {
-      std::cout << attitude[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
+  std::cout << "ape2_dist = [";
+  for (auto x : ape2_distances) {
+    std::cout << x << " ";
   }
-
-  {
-    std::cout << "APE1" << std::endl;
-    for (auto position : ape1_positions) {
-      std::cout << position[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : ape1_positions) {
-      std::cout << position[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : ape1_positions) {
-      std::cout << position[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : ape1_attitudes) {
-      std::cout << attitude[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : ape1_attitudes) {
-      std::cout << attitude[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : ape1_attitudes) {
-      std::cout << attitude[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
+  std::cout << "]" << std::endl;
+  std::cout << "ape2_ang = [";
+  for (auto x : ape2_angles) {
+    std::cout << x << " ";
   }
-
-  {
-    std::cout << "APE2" << std::endl;
-    for (auto position : ape2_positions) {
-      std::cout << position[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : ape2_positions) {
-      std::cout << position[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : ape2_positions) {
-      std::cout << position[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : ape2_attitudes) {
-      std::cout << attitude[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : ape2_attitudes) {
-      std::cout << attitude[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : ape2_attitudes) {
-      std::cout << attitude[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
+  std::cout << "]" << std::endl;
+  std::cout << "ape2_t = [";
+  for (auto x : ape2_times) {
+    std::cout << x << " ";
   }
+  std::cout << "]" << std::endl;
 
-  {
-    std::cout << "EKF" << std::endl;
-    for (auto position : ekf_positions) {
-      std::cout << position[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : ekf_positions) {
-      std::cout << position[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : ekf_positions) {
-      std::cout << position[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : ekf_attitudes) {
-      std::cout << attitude[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : ekf_attitudes) {
-      std::cout << attitude[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : ekf_attitudes) {
-      std::cout << attitude[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
+  std::cout << "ekf_dist = [";
+  for (auto x : ekf_distances) {
+    std::cout << x << " ";
   }
+  std::cout << "]" << std::endl;
+  std::cout << "ekf_ang = [";
+  for (auto x : ekf_angles) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "ekf_t = [";
+  for (auto x : ekf_times) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  {
-    std::cout << "IEKF" << std::endl;
-    for (auto position : iekf_positions) {
-      std::cout << position[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : iekf_positions) {
-      std::cout << position[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : iekf_positions) {
-      std::cout << position[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : iekf_attitudes) {
-      std::cout << attitude[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : iekf_attitudes) {
-      std::cout << attitude[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : iekf_attitudes) {
-      std::cout << attitude[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
+  std::cout << "iekf_dist = [";
+  for (auto x : iekf_distances) {
+    std::cout << x << " ";
   }
+  std::cout << "]" << std::endl;
+  std::cout << "iekf_ang = [";
+  for (auto x : iekf_angles) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "iekf_t = [";
+  for (auto x : iekf_times) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  {
-    std::cout << "UKF" << std::endl;
-    for (auto position : ukf_positions) {
-      std::cout << position[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : ukf_positions) {
-      std::cout << position[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : ukf_positions) {
-      std::cout << position[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : ukf_attitudes) {
-      std::cout << attitude[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : ukf_attitudes) {
-      std::cout << attitude[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : ukf_attitudes) {
-      std::cout << attitude[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
+  std::cout << "ukf_dist = [";
+  for (auto x : ukf_distances) {
+    std::cout << x << " ";
   }
+  std::cout << "]" << std::endl;
+  std::cout << "ukf_ang = [";
+  for (auto x : ukf_angles) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "ukf_t = [";
+  for (auto x : ukf_times) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  {
-    std::cout << "PGOW" << std::endl;
-    for (auto position : pgo_positions) {
-      std::cout << position[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : pgo_positions) {
-      std::cout << position[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto position : pgo_positions) {
-      std::cout << position[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : pgo_attitudes) {
-      std::cout << attitude[0] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : pgo_attitudes) {
-      std::cout << attitude[1] << " ";
-    }
-    std::cout << std::endl << std::endl;
-    for (auto attitude : pgo_attitudes) {
-      std::cout << attitude[2] << " ";
-    }
-    std::cout << std::endl << std::endl;
+  std::cout << "pgo_dist = [";
+  for (auto x : pgo_distances) {
+    std::cout << x << " ";
   }
+  std::cout << "]" << std::endl;
+  std::cout << "pgo_ang = [";
+  for (auto x : pgo_angles) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "pgo_t = [";
+  for (auto x : pgo_times) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+
+
+  // {
+    // std::cout << "GT" << std::endl;
+    // for (auto position : gt_positions) {
+    //   std::cout << position[0] << " ";
+    // }
+    // std::cout << std::endl << std::endl;
+    // for (auto position : gt_positions) {
+    //   std::cout << position[1] << " ";
+    // }
+    // std::cout << std::endl << std::endl;
+    // for (auto position : gt_positions) {
+    //   std::cout << position[2] << " ";
+    // }
+    // std::cout << std::endl << std::endl;
+    // for (auto attitude : gt_attitudes) {
+    //   std::cout << attitude[0] << " ";
+    // }
+    // std::cout << std::endl << std::endl;
+    // for (auto attitude : gt_attitudes) {
+    //   std::cout << attitude[1] << " ";
+    // }
+    // std::cout << std::endl << std::endl;
+    // for (auto attitude : gt_attitudes) {
+    //   std::cout << attitude[2] << " ";
+    // }
+    // std::cout << std::endl << std::endl;
+
+  // }
+
+  // {
+    // std::cout << "APE1" << std::endl;
+    // for (auto position : ape1_positions) {
+    //   std::cout << position[0] << " ";
+    // }
+    // std::cout << std::endl << std::endl;
+    // for (auto position : ape1_positions) {
+    //   std::cout << position[1] << " ";
+    // }
+    // std::cout << std::endl << std::endl;
+    // for (auto position : ape1_positions) {
+    //   std::cout << position[2] << " ";
+    // }
+    // std::cout << std::endl << std::endl;
+    // for (auto attitude : ape1_attitudes) {
+    //   std::cout << attitude[0] << " ";
+    // }
+    // std::cout << std::endl << std::endl;
+    // for (auto attitude : ape1_attitudes) {
+    //   std::cout << attitude[1] << " ";
+    // }
+    // std::cout << std::endl << std::endl;
+    // for (auto attitude : ape1_attitudes) {
+    //   std::cout << attitude[2] << " ";
+    // }
+    // std::cout << std::endl << std::endl;
+
+  // }
+
+  // {
+  //   std::cout << "APE2" << std::endl;
+  //   for (auto position : ape2_positions) {
+  //     std::cout << position[0] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto position : ape2_positions) {
+  //     std::cout << position[1] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto position : ape2_positions) {
+  //     std::cout << position[2] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : ape2_attitudes) {
+  //     std::cout << attitude[0] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : ape2_attitudes) {
+  //     std::cout << attitude[1] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : ape2_attitudes) {
+  //     std::cout << attitude[2] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  // }
+
+  // {
+  //   std::cout << "EKF" << std::endl;
+  //   for (auto position : ekf_positions) {
+  //     std::cout << position[0] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto position : ekf_positions) {
+  //     std::cout << position[1] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto position : ekf_positions) {
+  //     std::cout << position[2] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : ekf_attitudes) {
+  //     std::cout << attitude[0] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : ekf_attitudes) {
+  //     std::cout << attitude[1] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : ekf_attitudes) {
+  //     std::cout << attitude[2] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  // }
+
+  // {
+  //   std::cout << "IEKF" << std::endl;
+  //   for (auto position : iekf_positions) {
+  //     std::cout << position[0] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto position : iekf_positions) {
+  //     std::cout << position[1] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto position : iekf_positions) {
+  //     std::cout << position[2] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : iekf_attitudes) {
+  //     std::cout << attitude[0] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : iekf_attitudes) {
+  //     std::cout << attitude[1] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : iekf_attitudes) {
+  //     std::cout << attitude[2] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  // }
+
+  // {
+  //   std::cout << "UKF" << std::endl;
+  //   for (auto position : ukf_positions) {
+  //     std::cout << position[0] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto position : ukf_positions) {
+  //     std::cout << position[1] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto position : ukf_positions) {
+  //     std::cout << position[2] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : ukf_attitudes) {
+  //     std::cout << attitude[0] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : ukf_attitudes) {
+  //     std::cout << attitude[1] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : ukf_attitudes) {
+  //     std::cout << attitude[2] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  // }
+
+  // {
+  //   std::cout << "PGOW" << std::endl;
+  //   for (auto position : pgo_positions) {
+  //     std::cout << position[0] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto position : pgo_positions) {
+  //     std::cout << position[1] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto position : pgo_positions) {
+  //     std::cout << position[2] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : pgo_attitudes) {
+  //     std::cout << attitude[0] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : pgo_attitudes) {
+  //     std::cout << attitude[1] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  //   for (auto attitude : pgo_attitudes) {
+  //     std::cout << attitude[2] << " ";
+  //   }
+  //   std::cout << std::endl << std::endl;
+  // }
 
   // Moving results
   {

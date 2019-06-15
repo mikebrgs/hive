@@ -42,16 +42,17 @@
 // #define MAHALANOBIS_MAX_DIST 3
 // Outlier thresholds
 #define MEASUREMENT_THRESHOLD 1e-4
-#define STATE_THRESHOLD 4e-5
+#define STATE_THRESHOLD 1e-4
 // IEKF tuning
 #define IEFK_THRESHOLD 1e-5
+#define IEKF_STEPS 100
 // UKF tuning
 #define UKF_FACTOR 0.0 // Kappa
 #define ALPHA 1e-3
 #define BETA 2
 // #define VALID_THRESHOLD 1e-3
 #define HIVE_APE_ACC 1e-4
-#define MAX_OUTLIERS 100
+#define MAX_OUTLIERS 200
 #define DEBUG false
 
 namespace filter {
