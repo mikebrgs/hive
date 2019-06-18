@@ -991,8 +991,8 @@ Eigen::VectorXd GetDState(Eigen::Vector3d velocity,
   double sample_time) {
   Eigen::VectorXd dotX(STATE_SIZE);
   // Position
-  dotX.segment<3>(0) = sample_time * velocity;// + 0.5 * sample_time * sample_time *
-    // (-rotation.toRotationMatrix() * (linear_acceleration - acc_bias) + gravity);
+  dotX.segment<3>(0) = sample_time * velocity + 0.5 * sample_time * sample_time *
+    (-rotation.toRotationMatrix() * (linear_acceleration - acc_bias) + gravity);
   // Velocity - assumed constant
   dotX.segment<3>(3) = sample_time * (
     - rotation.toRotationMatrix() * (linear_acceleration - acc_bias) + gravity);
@@ -1793,10 +1793,10 @@ Eigen::VectorXd GetExtendedDState(Eigen::Vector3d velocity,
   double sample_time) {
   Eigen::VectorXd dotX(STATE_SIZE + NOISE_SIZE);
   // Position
-  dotX.segment<3>(0) = sample_time * velocity;// +
-    // 0.5 * sample_time * sample_time * (
-    // - rotation.toRotationMatrix() * (linear_acceleration
-    // - acc_bias + acc_noise) + gravity);
+  dotX.segment<3>(0) = sample_time * velocity +
+    0.5 * sample_time * sample_time * (
+    - rotation.toRotationMatrix() * (linear_acceleration
+    - acc_bias + acc_noise) + gravity);
   // Velocity - assumed constant
   dotX.segment<3>(3) = sample_time * (
     -rotation.toRotationMatrix() * (linear_acceleration

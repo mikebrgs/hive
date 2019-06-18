@@ -84,20 +84,20 @@ int main(int argc, char ** argv) {
     //   calibration.environment,
     //   true);
     // EKF
-    solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
-      calibration.lighthouses,
-      calibration.environment,
-      1e0, 1e-6, true, filter::ekf);
+    // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
+    //   calibration.lighthouses,
+    //   calibration.environment,
+    //   1e0, 1e-6, true, filter::ekf);
     // IEKF
     // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
     //   calibration.lighthouses,
     //   calibration.environment,
     //   1e0, 1e-6, true, filter::iekf);
     // UKF
-    // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
-    //   calibration.lighthouses,
-    //   calibration.environment,
-    //   1.0e0, 1e-6, true, filter::ukf);
+    solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
+      calibration.lighthouses,
+      calibration.environment,
+      1.0e0, 1e-6, true, filter::ukf);
     // PGO
     // solver[tracker.first] = new PoseGraph(calibration.environment,
     //   calibration.trackers[tracker.first],
@@ -140,15 +140,17 @@ int main(int argc, char ** argv) {
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
     if (vl != NULL) {
+      // if (vl->header.stamp.toSec() > 1559054399.0) exit(0);
       // counter++;
       // if (counter < 1400) continue;
       // if (counter == 1701) break;
       // ROS_INFO("LIGHT");
+      aux_solver[vl->header.frame_id]->ProcessLight(vl);
       solver[vl->header.frame_id]->ProcessLight(vl);
-      // aux_solver[vl->header.frame_id]->ProcessLight(vl);
       geometry_msgs::TransformStamped msg;
       if (solver[vl->header.frame_id]->GetTransform(msg)) {
         std::cout << "Vive: " <<
+          msg.header.stamp << " - " <<
           msg.transform.translation.x << ", " <<
           msg.transform.translation.y << ", " <<
           msg.transform.translation.z << ", " <<
@@ -160,6 +162,7 @@ int main(int argc, char ** argv) {
       }
       if (aux_solver[vl->header.frame_id]->GetTransform(msg)) {
         std::cout << "ViveAux: " <<
+          msg.header.stamp << " - " <<
           msg.transform.translation.x << ", " <<
           msg.transform.translation.y << ", " <<
           msg.transform.translation.z << ", " <<

@@ -87,6 +87,188 @@ bool OrientationAverageCost::operator()(const T* const average,
   return true;
 }
 
+bool isOutlier(std::string filename, double time) {
+  // // Data10.9
+  if (filename.find("data10.9") != std::string::npos) {
+    if ((time > 8.803)
+      && (time < 9.789) ) {
+      return true;
+    }
+
+    if ((time > 10.58)
+      && (time < 11.21) ) {
+      return true;
+    }
+
+    if ((time > 14.75)
+      && (time < 15.67) ) {
+      return true;
+    }
+
+    if ((time > 16.72)
+      && (time < 17.95) ) {
+      return true;
+    }
+
+    if ((time > 21.96)
+      && (time < 22.53) ) {
+      return true;
+    }
+
+    if ((time > 22.99)
+      && (time < 23.25) ) {
+      return true;
+    }
+
+    if ((time > 7.345)
+      && (time < 7.855) ) {
+      return true;
+    }
+
+    if ((time > 18.35)
+      && (time < 19.91) ) {
+      return true;
+    }
+  }
+
+
+  // // Data10.10
+  if (filename.find("data10.10") != std::string::npos) {
+    if ((time > 6.797)
+      && (time < 8.317) ) {
+      return true;
+    }
+
+    if ((time > 11.7)
+      && (time < 11.98) ) {
+      return true;
+    }
+
+    if ((time > 12.85)
+      && (time < 13.1) ) {
+      return true;
+    }
+
+    if ((time > 14.4)
+      && (time < 14.65) ) {
+      return true;
+    }
+
+    if ((time > 19.5)
+      && (time < 20.2) ) {
+      return true;
+    }
+
+    if ((time > 23.31)
+      && (time < 23.54) ) {
+      return true;
+    }
+
+    if ((time > 25.46)
+      && (time < 25.75) ) {
+      return true;
+    }
+
+    if ((time > 29.06)
+      && (time < 29.65) ) {
+      return true;
+    }
+  }
+
+
+  // // Data10.11
+  if (filename.find("data10.11") != std::string::npos) {
+    if ((time > 1.068)
+      && (time < 1.586) ) {
+      return true;
+    }
+
+    if ((time > 5.33)
+      && (time < 5.546) ) {
+      return true;
+    }
+
+    if ((time > 9.096)
+      && (time < 9.676) ) {
+      return true;
+    }
+
+    if ((time > 11.73)
+      && (time < 12.2) ) {
+      return true;
+    }
+
+    if ((time > 13.27)
+      && (time < 13.64) ) {
+      return true;
+    }
+
+    if ((time > 16.06)
+      && (time < 16.46) ) {
+      return true;
+    }
+
+    if ((time > 17.7)
+      && (time < 18.08) ) {
+      return true;
+    }
+  }
+
+
+  // // Data10.12
+  if (filename.find("data10.12") != std::string::npos) {
+    if ((time > 7.413)
+      && (time < 11.21) ) {
+      return true;
+    }
+
+    if ((time > 11.63)
+      && (time < 12.25) ) {
+      return true;
+    }
+
+    if ((time > 16.2)
+      && (time < 16.31) ) {
+      return true;
+    }
+
+    if ((time > 19.68)
+      && (time < 20.28) ) {
+      return true;
+    }
+
+    if ((time > 13.2)
+      && (time < 13.45) ) {
+      return true;
+    }
+
+    if ((time > 13.84)
+      && (time < 14.06) ) {
+      return true;
+    }
+  }
+
+
+  // Data10.13
+  if (filename.find("data10.13") != std::string::npos) {
+    if ((time > 10.22)
+      && (time < 10.82) ) {
+      return true;
+    }
+
+    if ((time > 18.91)
+      && (time < 19.62) ) {
+      return true;
+    }
+
+    if ((time > 23.8)
+      && (time < 24.12) ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 int main(int argc, char ** argv) {
 
   if (argc < 3) {
@@ -95,16 +277,11 @@ int main(int argc, char ** argv) {
       return -1;
   }
 
-  rosbag::View view;
-  rosbag::Bag data_bag, offset_bag;
-
-  std::string offset_filename(argv[1]);
-  std::string data_filename(argv[2]);
-
-  offset_bag.open(argv[1], rosbag::bagmode::Read);
-  data_bag.open(argv[2], rosbag::bagmode::Read);
 
   // Read Offset poses
+  std::string offset_filename(argv[1]);
+  rosbag::Bag offset_bag;
+  offset_bag.open(argv[1], rosbag::bagmode::Read);
   geometry_msgs::TransformStamped aMt, oMv;
   Eigen::Matrix3d aRt, oRv;
   Eigen::Vector3d aPt, oPv;
@@ -150,39 +327,11 @@ int main(int argc, char ** argv) {
   Eigen::Vector3d prev_oPa, next_oPa;
   ros::Time prev_opti_time, next_opti_time;
 
-  // Position data
-  std::vector<double> vive_px;
-  std::vector<double> vive_py;
-  std::vector<double> vive_pz;
-
-  std::vector<double> vive_qw;
-  std::vector<double> vive_qx;
-  std::vector<double> vive_qy;
-  std::vector<double> vive_qz;
-
-  std::vector<double> vive_t;
-
-  std::vector<double> opti_px;
-  std::vector<double> opti_py;
-  std::vector<double> opti_pz;
-
-  std::vector<double> opti_qw;
-  std::vector<double> opti_qx;
-  std::vector<double> opti_qy;
-  std::vector<double> opti_qz;
-
-  std::vector<double> opti_t;
-
-  // Light data
-  std::vector<std::string> topics;
-  topics.push_back("/loc/vive/light");
-  // topics.push_back("/loc/vive/imu");
-  topics.push_back("/tf");
-  topics.push_back("tf");
   // Position
   Eigen::Vector3d sP = Eigen::Vector3d::Zero();
   double sD = 0.0;
   double mD = 0.0;
+  ros::Time mDtime;
   // Attitude
   ceres::Problem problem;
   ceres::Solver::Options options;
@@ -193,6 +342,7 @@ int main(int argc, char ** argv) {
   dA[2] = 0.0;
   double sA = 0.0;
   double mA = 0.0;
+  ros::Time mAtime;
   // Counter
   double pose_counter = 0;
   // Initializations
@@ -200,9 +350,15 @@ int main(int argc, char ** argv) {
   bool prev_opti = false, next_opti = false;
   // Cut the bag
   double time0 = -1;
-  // Scan bag
-  rosbag::View view_li(data_bag, rosbag::TopicQuery(topics));
 
+  // Scan bag
+  rosbag::Bag data_bag;
+  std::string data_filename(argv[2]);
+  data_bag.open(argv[2], rosbag::bagmode::Read);
+  std::vector<std::string> topics;
+  topics.push_back("/tf");
+  topics.push_back("tf");
+  rosbag::View view_li(data_bag, rosbag::TopicQuery(topics));
   for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
     // Regular TF data
     {
@@ -223,17 +379,11 @@ int main(int argc, char ** argv) {
         // Save pose
         // Eigen::Vector3d est_oPa = oRv * ( vRt * ( - aRt.transpose() * aPt) + vPt) + oPv;
         // Eigen::Matrix3d est_oRa = oRv * vRt * aRt.transpose();
-        if (time0 != -1) {
-          vive_px.push_back(vPt(0));
-          vive_py.push_back(vPt(1));
-          vive_pz.push_back(vPt(2));
-          Eigen::Quaterniond vQt(vRt);
-          vive_qw.push_back(vQt.w());
-          vive_qx.push_back(vQt.x());
-          vive_qy.push_back(vQt.y());
-          vive_qz.push_back(vQt.z());
-          vive_t.push_back(vive_time.toSec() - time0);
-        }
+
+        // std::cout << "VIVE " << vive_time << " - "
+        //   << vPt(0) << ", "
+        //   << vPt(1) << ", "
+        //   << vPt(2) << std::endl;
 
         continue;
       // Optitrack transform
@@ -249,11 +399,19 @@ int main(int argc, char ** argv) {
           vt->transform.rotation.z).toRotationMatrix();
         opti_time = vt->header.stamp;
         opti_init = true;
-        // vive_init = false;
+
+        Eigen::Vector3d est_vPt = oRv.transpose() * (oRa * aPt + oPa) -
+          oRv.transpose() * oPv;
+        Eigen::Matrix3d est_vRt = oRv.transpose() * oRa * aRt;
+
+        // std::cout << "OPTI " << prev_opti_time << " - "
+        //   << est_vPt(0) << ", "
+        //   << est_vPt(1) << ", "
+        //   << est_vPt(2) << std::endl;
+
         // Interpolation
         prev_opti_time = next_opti_time;
         next_opti_time = vt->header.stamp;
-        if (prev_opti_time > vive_time) continue;
 
         prev_oPa = next_oPa;
         prev_oRa = next_oRa;
@@ -267,361 +425,17 @@ int main(int argc, char ** argv) {
         prev_opti = next_opti;
         next_opti = true;
 
+        if (prev_opti_time > vive_time) continue;
+
         if (true) {
-          // // Data10.9
-          if (data_filename.find("data10.9") != std::string::npos) {
-            if ((prev_opti_time.toSec() - time0 > 8.803)
-              && (prev_opti_time.toSec() - time0 < 9.789) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 10.58)
-              && (prev_opti_time.toSec() - time0 < 11.21) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 14.75)
-              && (prev_opti_time.toSec() - time0 < 15.67) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 16.72)
-              && (prev_opti_time.toSec() - time0 < 17.95) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 21.96)
-              && (prev_opti_time.toSec() - time0 < 22.53) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 22.99)
-              && (prev_opti_time.toSec() - time0 < 23.25) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 7.345)
-              && (prev_opti_time.toSec() - time0 < 7.855) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 18.35)
-              && (prev_opti_time.toSec() - time0 < 19.91) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 8.803)
-              && (next_opti_time.toSec() - time0 < 9.789) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 10.58)
-              && (next_opti_time.toSec() - time0 < 11.21) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 14.75)
-              && (next_opti_time.toSec() - time0 < 15.67) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 16.72)
-              && (next_opti_time.toSec() - time0 < 17.95) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 21.96)
-              && (next_opti_time.toSec() - time0 < 22.53) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 22.99)
-              && (next_opti_time.toSec() - time0 < 23.25) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 7.345)
-              && (next_opti_time.toSec() - time0 < 7.855) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 18.35)
-              && (next_opti_time.toSec() - time0 < 19.91) ) {
-              continue;
-            }
+          if (isOutlier(data_filename, prev_opti_time.toSec() - time0)) {
+            continue;
           }
-
-
-
-
-
-
-          // // Data10.10
-          if (data_filename.find("data10.10") != std::string::npos) {
-            if ((prev_opti_time.toSec() - time0 > 6.797)
-              && (prev_opti_time.toSec() - time0 < 8.317) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 11.7)
-              && (prev_opti_time.toSec() - time0 < 11.98) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 12.85)
-              && (prev_opti_time.toSec() - time0 < 13.1) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 14.4)
-              && (prev_opti_time.toSec() - time0 < 14.65) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 19.5)
-              && (prev_opti_time.toSec() - time0 < 20.2) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 23.31)
-              && (prev_opti_time.toSec() - time0 < 23.54) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 25.46)
-              && (prev_opti_time.toSec() - time0 < 25.75) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 29.06)
-              && (prev_opti_time.toSec() - time0 < 29.65) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 6.797)
-              && (next_opti_time.toSec() - time0 < 8.317) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 11.7)
-              && (next_opti_time.toSec() - time0 < 11.98) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 12.85)
-              && (next_opti_time.toSec() - time0 < 13.1) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 14.4)
-              && (next_opti_time.toSec() - time0 < 14.65) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 19.5)
-              && (next_opti_time.toSec() - time0 < 20.2) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 23.31)
-              && (next_opti_time.toSec() - time0 < 23.54) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 25.46)
-              && (next_opti_time.toSec() - time0 < 25.75) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 29.06)
-              && (next_opti_time.toSec() - time0 < 29.65) ) {
-              continue;
-            }
-          }
-
-
-
-
-
-          // // Data10.11
-          if (data_filename.find("data10.11") != std::string::npos) {
-            if ((prev_opti_time.toSec() - time0 > 1.068)
-              && (prev_opti_time.toSec() - time0 < 1.586) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 5.33)
-              && (prev_opti_time.toSec() - time0 < 5.546) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 9.096)
-              && (prev_opti_time.toSec() - time0 < 9.676) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 11.73)
-              && (prev_opti_time.toSec() - time0 < 12.2) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 13.27)
-              && (prev_opti_time.toSec() - time0 < 13.64) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 16.06)
-              && (prev_opti_time.toSec() - time0 < 16.46) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 17.7)
-              && (prev_opti_time.toSec() - time0 < 18.08) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 1.068)
-              && (next_opti_time.toSec() - time0 < 1.586) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 5.33)
-              && (next_opti_time.toSec() - time0 < 5.546) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 9.096)
-              && (next_opti_time.toSec() - time0 < 9.676) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 11.73)
-              && (next_opti_time.toSec() - time0 < 12.2) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 13.27)
-              && (next_opti_time.toSec() - time0 < 13.64) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 16.06)
-              && (next_opti_time.toSec() - time0 < 16.46) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 17.7)
-              && (next_opti_time.toSec() - time0 < 18.08) ) {
-              continue;
-            }
-          }
-
-
-
-
-
-          
-          // // Data10.12
-          if (data_filename.find("data10.12") != std::string::npos) {
-            if ((prev_opti_time.toSec() - time0 > 7.413)
-              && (prev_opti_time.toSec() - time0 < 11.21) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 11.63)
-              && (prev_opti_time.toSec() - time0 < 12.25) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 16.2)
-              && (prev_opti_time.toSec() - time0 < 16.31) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 19.68)
-              && (prev_opti_time.toSec() - time0 < 20.28) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 13.2)
-              && (prev_opti_time.toSec() - time0 < 13.45) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 13.84)
-              && (prev_opti_time.toSec() - time0 < 14.06) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 7.413)
-              && (next_opti_time.toSec() - time0 < 11.21) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 11.63)
-              && (next_opti_time.toSec() - time0 < 12.25) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 16.2)
-              && (next_opti_time.toSec() - time0 < 16.31) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 19.68)
-              && (next_opti_time.toSec() - time0 < 20.28) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 13.2)
-              && (next_opti_time.toSec() - time0 < 13.45) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 13.84)
-              && (next_opti_time.toSec() - time0 < 14.06) ) {
-              continue;
-            }
-          }
-
-
-
-
-          // Data10.13
-          if (data_filename.find("data10.13") != std::string::npos) {
-            if ((prev_opti_time.toSec() - time0 > 10.22)
-              && (prev_opti_time.toSec() - time0 < 10.82) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 18.91)
-              && (prev_opti_time.toSec() - time0 < 19.62) ) {
-              continue;
-            }
-
-            if ((prev_opti_time.toSec() - time0 > 23.8)
-              && (prev_opti_time.toSec() - time0 < 24.12) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 10.22)
-              && (next_opti_time.toSec() - time0 < 10.82) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 18.91)
-              && (next_opti_time.toSec() - time0 < 19.62) ) {
-              continue;
-            }
-
-            if ((next_opti_time.toSec() - time0 > 23.8)
-              && (next_opti_time.toSec() - time0 < 24.12) ) {
-              continue;
-            }
+          if (isOutlier(data_filename, next_opti_time.toSec() - time0)) {
+            continue;
           }
         }
 
-        // std::cout << "dT: " << (next_opti_time - prev_opti_time).toSec() << std::endl;
         if ((next_opti_time - prev_opti_time).toSec() > 0.025) continue;
 
         if (!next_opti || !prev_opti ) continue;
@@ -630,13 +444,7 @@ int main(int argc, char ** argv) {
         oPa = (prev_dt/(prev_dt + next_dt)) * prev_oPa +
           (next_dt/(prev_dt + next_dt)) * next_oPa;
 
-        // std::cout << next_opti_time.toSec() - time0 << " ";
-        // std::cout << oPa(0) << " ";
 
-        // std::cout << "prev_dt " << prev_dt << std::endl;
-        // std::cout << "next_dt " << next_dt << std::endl;
-        // std::cout << "oPa: " << oPa.transpose() << std::endl;
-        //
         Eigen::Quaterniond prev_oQa(prev_oRa);
         Eigen::Quaterniond next_oQa(next_oRa);
         geometry_msgs::Quaternion prev_msg_oQa;
@@ -665,39 +473,24 @@ int main(int argc, char ** argv) {
         iproblem.AddResidualBlock(next_cost, NULL, iA);
         ceres::Solve(options, &iproblem, &summary);
         Eigen::Vector3d iV(iA[0], iA[1], iA[2]);
-        // std::cout << "next_auxAA: " << (next_auxAA.axis() * next_auxAA.angle()).transpose() << std::endl;
-        // Eigen::AngleAxisd prev_auxAA(prev_oRa);
-        // std::cout << "prev_auxAA: " << (prev_auxAA.axis() * prev_auxAA.angle()).transpose() << std::endl;
-        // std::cout << "iV: " << iV.transpose() << std::endl;
+
         Eigen::AngleAxisd iAA(iV.norm(), iV.normalized());
         oRa = iAA.toRotationMatrix();
-        // Eigen::Quaterniond auxQ(oRa);
-        // std::cout << next_opti_time.toSec() - time0 << " ";
-        // std::cout << auxQ.w() << " ";
 
-        // Save pose
-        if (vive_init) {
-          Eigen::Vector3d tmp_vPt = oRv.transpose() * (oRa * aPt + oPa) -
-            oRv.transpose() * oPv;
-          Eigen::Matrix3d tmp_vRt = oRv.transpose() * oRa * aRt;
-          opti_px.push_back(tmp_vPt(0));
-          opti_py.push_back(tmp_vPt(1));
-          opti_pz.push_back(tmp_vPt(2));
-          Eigen::Quaterniond tmp_vQt(tmp_vRt);
-          opti_qw.push_back(tmp_vQt.w());
-          opti_qx.push_back(tmp_vQt.x());
-          opti_qy.push_back(tmp_vQt.y());
-          opti_qz.push_back(tmp_vQt.z());
-          // std::cout << vive_time.toSec() << std::endl;
-          // std::cout << time0 << std::endl;
-          // std::cout << vive_time.toSec() - time0 << std::endl;
-          opti_t.push_back(vive_time.toSec() - time0);
-        }
+
+        Eigen::Vector3d tmp_vPt = oRv.transpose() * (oRa * aPt + oPa) -
+          oRv.transpose() * oPv;
+        Eigen::Matrix3d tmp_vRt = oRv.transpose() * oRa * aRt;
+
+        // std::cout << "PRED OPTI " << vive_time << " - "
+        //   << tmp_vPt(0) << ", "
+        //   << tmp_vPt(1) << ", "
+        //   << tmp_vPt(2) << std::endl;
       }
     }
     if (!vive_init || !opti_init || !next_opti || !prev_opti) continue;
     // Transform
-    if (((opti_time - vive_time).toSec()) < 0.05) {
+    if (((opti_time - vive_time).toSec()) < 0.02) {
       // Calibration
       Eigen::Matrix3d est_aRt = oRa.transpose() * oRv * vRt;
       Eigen::Vector3d est_aPt = oRa.transpose() * (
@@ -724,26 +517,25 @@ int main(int argc, char ** argv) {
       problem.AddResidualBlock(cost, NULL, dA);
 
       // Tracking
-      // Eigen::Vector3d est_oPa = oRv * ( vRt * ( - aRt.transpose() * aPt) + vPt) + oPv;
-      // Eigen::Matrix3d est_oRa = oRv * vRt * aRt.transpose();
       Eigen::Vector3d est_vPt = oRv.transpose() * (oRa * aPt + oPa) -
         oRv.transpose() * oPv;
       Eigen::Matrix3d est_vRt = oRv.transpose() * oRa * aRt;
-      // Eigen::Vector3d d_oPa = est_oPa - oPa;
-      // Eigen::AngleAxisd d_oAa(est_oRa.transpose() * oRa);
       Eigen::Vector3d d_vPt = est_vPt - vPt;
       Eigen::AngleAxisd d_vAt(est_vRt.transpose() * vRt);
       // Average Error
       sD += d_vPt.norm();
-      // std::cout << "P: " << d_vPt.norm() << std::endl;
       // Maximum Error
-      if (d_vPt.norm() > mD) mD = d_vPt.norm();
+      if (d_vPt.norm() > mD) {
+        mD = d_vPt.norm();
+        mDtime = vive_time;
+      }
       // Average Error
       sA += d_vAt.angle();
-      // std::cout << "A: " << 180 / M_PI * d_vAt.angle() << std::endl;
       // Maximum Error
-      if (d_vAt.angle() > mA) mA = d_vAt.angle();
-
+      if (d_vAt.angle() > mA) {
+        mA = d_vAt.angle();
+        mAtime = vive_time;
+      }
 
       pose_counter++;
      }
@@ -752,105 +544,6 @@ int main(int argc, char ** argv) {
   ceres::Solve(options, &problem, &summary);
 
   data_bag.close();
-
-  // std::cout << "vive_px = [";
-  // for (auto pos : vive_px) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "vive_py = [";
-  // for (auto pos : vive_py) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "vive_pz = [";
-  // for (auto pos : vive_pz) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "vive_qw = [";
-  // for (auto pos : vive_qw) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "vive_qx = [";
-  // for (auto pos : vive_qx) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "vive_qy = [";
-  // for (auto pos : vive_qy) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "vive_qz = [";
-  // for (auto pos : vive_qz) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "vive_t = [";
-  // for (auto pos : vive_t) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-
-
-
-  // std::cout << "opti_px = [";
-  // for (auto pos : opti_px) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "opti_py = [";
-  // for (auto pos : opti_py) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "opti_pz = [";
-  // for (auto pos : opti_pz) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "opti_qw = [";
-  // for (auto pos : opti_qw) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "opti_qx = [";
-  // for (auto pos : opti_qx) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "opti_qy = [";
-  // for (auto pos : opti_qy) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "opti_qz = [";
-  // for (auto pos : opti_qz) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
-
-  // std::cout << "opti_t = [";
-  // for (auto pos : opti_t) {
-  //   std::cout << pos << " ";
-  // }
-  // std::cout << "]" << std::endl;
 
   std::cout << "\nCalibration Quality:\n";
   std::cout << "Average Position Offset: " << (sP / pose_counter).transpose() << std::endl;
@@ -866,8 +559,10 @@ int main(int argc, char ** argv) {
   std::cout << "\nTracking Quality:\n";
   std::cout << "Average Distance: " << sD / pose_counter << std::endl;
   std::cout << "Max Distance: " << mD << std::endl;
+  std::cout << "Distance Time: " << mDtime << std::endl;
   std::cout << "Average Angle: " << (180.0 / M_PI) * sA / pose_counter << std::endl;
   std::cout << "Max Angle: " << (180.0 / M_PI) * mA << std::endl;
+  std::cout << "Angle Time: " << mAtime << std::endl;
 
   return 0;
 }
