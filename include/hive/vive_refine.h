@@ -32,6 +32,8 @@
 #include <mutex>
 #include <string>
 
+#define REFINE_ITERATIONS 500
+
 // Internal datatypes
 namespace refine {
   typedef std::vector<hive::ViveLight> SweepVec;

@@ -203,7 +203,7 @@ hive::ViveLight::ConstPtr Trajectory::GetLight() {
       sensor.second.normal.z);
     Eigen::Vector3d lPs = lRt * tPs + lPt;
 
-    double dproduct = lPs.normalized().transpose() * tNs.normalized();
+    double dproduct = lPs.normalized().transpose() * (lRt * tNs.normalized());
 
     double angle;
     double x = (lPs(0)/lPs(2)); // Horizontal angle
@@ -227,11 +227,12 @@ hive::ViveLight::ConstPtr Trajectory::GetLight() {
   std::sort(data.begin(), data.end(), comparator);
 
   for (size_t i = 0; i < 24; i++) {
-    if (std::get<2>(data[i]) > 0) break;
-    hive::ViveLightSample * sample_msg = new hive::ViveLightSample();
-    sample_msg->sensor = std::get<0>(data[i]);
-    sample_msg->angle = std::get<1>(data[i]);
-    msg->samples.push_back(*sample_msg);
+    if (std::get<2>(data[i]) < 0) {
+      hive::ViveLightSample * sample_msg = new hive::ViveLightSample();
+      sample_msg->sensor = std::get<0>(data[i]);
+      sample_msg->angle = std::get<1>(data[i]);
+      msg->samples.push_back(*sample_msg);
+    }
   }
 
   msg->lighthouse = lh_pointer_->first;
@@ -1094,85 +1095,85 @@ int main(int argc, char ** argv) {
     std::cout << std::endl;
   }
 
-  std::cout << "ape2_dist = [";
-  for (auto x : ape2_distances) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
-  std::cout << "ape2_ang = [";
-  for (auto x : ape2_angles) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
-  std::cout << "ape2_t = [";
-  for (auto x : ape2_times) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "ape2_dist = [";
+  // for (auto x : ape2_distances) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
+  // std::cout << "ape2_ang = [";
+  // for (auto x : ape2_angles) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
+  // std::cout << "ape2_t = [";
+  // for (auto x : ape2_times) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "ekf_dist = [";
-  for (auto x : ekf_distances) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
-  std::cout << "ekf_ang = [";
-  for (auto x : ekf_angles) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
-  std::cout << "ekf_t = [";
-  for (auto x : ekf_times) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "ekf_dist = [";
+  // for (auto x : ekf_distances) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
+  // std::cout << "ekf_ang = [";
+  // for (auto x : ekf_angles) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
+  // std::cout << "ekf_t = [";
+  // for (auto x : ekf_times) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "iekf_dist = [";
-  for (auto x : iekf_distances) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
-  std::cout << "iekf_ang = [";
-  for (auto x : iekf_angles) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
-  std::cout << "iekf_t = [";
-  for (auto x : iekf_times) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "iekf_dist = [";
+  // for (auto x : iekf_distances) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
+  // std::cout << "iekf_ang = [";
+  // for (auto x : iekf_angles) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
+  // std::cout << "iekf_t = [";
+  // for (auto x : iekf_times) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "ukf_dist = [";
-  for (auto x : ukf_distances) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
-  std::cout << "ukf_ang = [";
-  for (auto x : ukf_angles) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
-  std::cout << "ukf_t = [";
-  for (auto x : ukf_times) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "ukf_dist = [";
+  // for (auto x : ukf_distances) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
+  // std::cout << "ukf_ang = [";
+  // for (auto x : ukf_angles) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
+  // std::cout << "ukf_t = [";
+  // for (auto x : ukf_times) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
-  std::cout << "pgo_dist = [";
-  for (auto x : pgo_distances) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
-  std::cout << "pgo_ang = [";
-  for (auto x : pgo_angles) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
-  std::cout << "pgo_t = [";
-  for (auto x : pgo_times) {
-    std::cout << x << " ";
-  }
-  std::cout << "]" << std::endl;
+  // std::cout << "pgo_dist = [";
+  // for (auto x : pgo_distances) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
+  // std::cout << "pgo_ang = [";
+  // for (auto x : pgo_angles) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
+  // std::cout << "pgo_t = [";
+  // for (auto x : pgo_times) {
+  //   std::cout << x << " ";
+  // }
+  // std::cout << "]" << std::endl;
 
 
   // {
@@ -1373,455 +1374,376 @@ int main(int argc, char ** argv) {
   //   std::cout << std::endl << std::endl;
   // }
 
-  // Moving results
-  {
-    double ape1_mean_distance = 0;
-    double ape1_max_distance = 0;
-    for (auto distance : ape1_distances) {
-      ape1_mean_distance += distance;
-      if (distance > ape1_max_distance)
-        ape1_max_distance = distance;
-    }
-    ape1_mean_distance = ape1_mean_distance / (double) ape1_distances.size();
-    std::cout << "APE1 mean distance " << ape1_mean_distance << std::endl;
-    std::cout << "APE1 max distance " << ape1_max_distance << std::endl;
+  // // Moving results
+  // {
+  //   double ape1_mean_distance = 0;
+  //   double ape1_max_distance = 0;
+  //   for (auto distance : ape1_distances) {
+  //     ape1_mean_distance += distance;
+  //     if (distance > ape1_max_distance)
+  //       ape1_max_distance = distance;
+  //   }
+  //   ape1_mean_distance = ape1_mean_distance / (double) ape1_distances.size();
+  //   std::cout << "APE1 mean distance " << ape1_mean_distance << std::endl;
+  //   std::cout << "APE1 max distance " << ape1_max_distance << std::endl;
 
-    double ape1_mean_angle = 0;
-    double ape1_max_angle = 0;
-    for (auto angle : ape1_angles) {
-      ape1_mean_angle += angle;
-      if (angle > ape1_max_angle)
-        ape1_max_angle = angle;
-    }
-    ape1_mean_angle = ape1_mean_angle / (double) ape1_angles.size();
-    std::cout << "APE1 mean angle " << 180.0 / M_PI * ape1_mean_angle << std::endl;
-    std::cout << "APE1 max angle " << 180.0 / M_PI * ape1_max_angle << std::endl;
-  }
+  //   double ape1_mean_angle = 0;
+  //   double ape1_max_angle = 0;
+  //   for (auto angle : ape1_angles) {
+  //     ape1_mean_angle += angle;
+  //     if (angle > ape1_max_angle)
+  //       ape1_max_angle = angle;
+  //   }
+  //   ape1_mean_angle = ape1_mean_angle / (double) ape1_angles.size();
+  //   std::cout << "APE1 mean angle " << 180.0 / M_PI * ape1_mean_angle << std::endl;
+  //   std::cout << "APE1 max angle " << 180.0 / M_PI * ape1_max_angle << std::endl;
+  // }
 
-  {
-    double ape2_mean_distance = 0;
-    double ape2_max_distance = 0;
-    for (auto distance : ape2_distances) {
-      ape2_mean_distance += distance;
-      if (distance > ape2_max_distance)
-        ape2_max_distance = distance;
-    }
-    ape2_mean_distance = ape2_mean_distance / (double) ape2_distances.size();
-    std::cout << "APE2 mean distance " << ape2_mean_distance << std::endl;
-    std::cout << "APE2 max distance " << ape2_max_distance << std::endl;
+  // {
+  //   double ape2_mean_distance = 0;
+  //   double ape2_max_distance = 0;
+  //   for (auto distance : ape2_distances) {
+  //     ape2_mean_distance += distance;
+  //     if (distance > ape2_max_distance)
+  //       ape2_max_distance = distance;
+  //   }
+  //   ape2_mean_distance = ape2_mean_distance / (double) ape2_distances.size();
+  //   std::cout << "APE2 mean distance " << ape2_mean_distance << std::endl;
+  //   std::cout << "APE2 max distance " << ape2_max_distance << std::endl;
 
-    double ape2_mean_angle = 0;
-    double ape2_max_angle = 0;
-    for (auto angle : ape2_angles) {
-      ape2_mean_angle += angle;
-      if (angle > ape2_max_angle)
-        ape2_max_angle = angle;
-    }
-    ape2_mean_angle = ape2_mean_angle / (double) ape2_angles.size();
-    std::cout << "APE2 mean angle " << 180.0 / M_PI * ape2_mean_angle << std::endl;
-    std::cout << "APE2 max angle " << 180.0 / M_PI * ape2_max_angle << std::endl;
-  }
+  //   double ape2_mean_angle = 0;
+  //   double ape2_max_angle = 0;
+  //   for (auto angle : ape2_angles) {
+  //     ape2_mean_angle += angle;
+  //     if (angle > ape2_max_angle)
+  //       ape2_max_angle = angle;
+  //   }
+  //   ape2_mean_angle = ape2_mean_angle / (double) ape2_angles.size();
+  //   std::cout << "APE2 mean angle " << 180.0 / M_PI * ape2_mean_angle << std::endl;
+  //   std::cout << "APE2 max angle " << 180.0 / M_PI * ape2_max_angle << std::endl;
+  // }
 
-  {
-    double ekf_mean_distance = 0;
-    double ekf_max_distance = 0;
-    for (auto distance : ekf_distances) {
-      ekf_mean_distance += distance;
-      if (distance > ekf_max_distance)
-        ekf_max_distance = distance;
-    }
-    ekf_mean_distance = ekf_mean_distance / (double) ekf_distances.size();
-    std::cout << "EKF mean distance " << ekf_mean_distance << std::endl;
-    std::cout << "EKF max distance " << ekf_max_distance << std::endl;
+  // {
+  //   double ekf_mean_distance = 0;
+  //   double ekf_max_distance = 0;
+  //   for (auto distance : ekf_distances) {
+  //     ekf_mean_distance += distance;
+  //     if (distance > ekf_max_distance)
+  //       ekf_max_distance = distance;
+  //   }
+  //   ekf_mean_distance = ekf_mean_distance / (double) ekf_distances.size();
+  //   std::cout << "EKF mean distance " << ekf_mean_distance << std::endl;
+  //   std::cout << "EKF max distance " << ekf_max_distance << std::endl;
 
-    double ekf_mean_angle = 0;
-    double ekf_max_angle = 0;
-    for (auto angle : ekf_angles) {
-      ekf_mean_angle += angle;
-      if (angle > ekf_max_angle)
-        ekf_max_angle = angle;
-    }
-    ekf_mean_angle = ekf_mean_angle / (double) ekf_angles.size();
-    std::cout << "EKF mean angle " << 180.0 / M_PI * ekf_mean_angle << std::endl;
-    std::cout << "EKF max angle " << 180.0 / M_PI * ekf_max_angle << std::endl;
-  }
+  //   double ekf_mean_angle = 0;
+  //   double ekf_max_angle = 0;
+  //   for (auto angle : ekf_angles) {
+  //     ekf_mean_angle += angle;
+  //     if (angle > ekf_max_angle)
+  //       ekf_max_angle = angle;
+  //   }
+  //   ekf_mean_angle = ekf_mean_angle / (double) ekf_angles.size();
+  //   std::cout << "EKF mean angle " << 180.0 / M_PI * ekf_mean_angle << std::endl;
+  //   std::cout << "EKF max angle " << 180.0 / M_PI * ekf_max_angle << std::endl;
+  // }
 
-  {
-    double iekf_mean_distance = 0;
-    double iekf_max_distance = 0;
-    for (auto distance : iekf_distances) {
-      iekf_mean_distance += distance;
-      if (distance > iekf_max_distance)
-        iekf_max_distance = distance;
-    }
-    iekf_mean_distance = iekf_mean_distance / (double) iekf_distances.size();
-    std::cout << "IEKF mean distance " << iekf_mean_distance << std::endl;
-    std::cout << "IEKF max distance " << iekf_max_distance << std::endl;
+  // {
+  //   double iekf_mean_distance = 0;
+  //   double iekf_max_distance = 0;
+  //   for (auto distance : iekf_distances) {
+  //     iekf_mean_distance += distance;
+  //     if (distance > iekf_max_distance)
+  //       iekf_max_distance = distance;
+  //   }
+  //   iekf_mean_distance = iekf_mean_distance / (double) iekf_distances.size();
+  //   std::cout << "IEKF mean distance " << iekf_mean_distance << std::endl;
+  //   std::cout << "IEKF max distance " << iekf_max_distance << std::endl;
 
-    double iekf_mean_angle = 0;
-    double iekf_max_angle = 0;
-    for (auto angle : iekf_angles) {
-      iekf_mean_angle += angle;
-      if (angle > iekf_max_angle)
-        iekf_max_angle = angle;
-    }
-    iekf_mean_angle = iekf_mean_angle / (double) iekf_angles.size();
-    std::cout << "IEKF mean angle " << 180.0 / M_PI * iekf_mean_angle << std::endl;
-    std::cout << "IEKF max angle " << 180.0 / M_PI * iekf_max_angle << std::endl;
-  }
+  //   double iekf_mean_angle = 0;
+  //   double iekf_max_angle = 0;
+  //   for (auto angle : iekf_angles) {
+  //     iekf_mean_angle += angle;
+  //     if (angle > iekf_max_angle)
+  //       iekf_max_angle = angle;
+  //   }
+  //   iekf_mean_angle = iekf_mean_angle / (double) iekf_angles.size();
+  //   std::cout << "IEKF mean angle " << 180.0 / M_PI * iekf_mean_angle << std::endl;
+  //   std::cout << "IEKF max angle " << 180.0 / M_PI * iekf_max_angle << std::endl;
+  // }
 
-  {
-    double ukf_mean_distance = 0;
-    double ukf_max_distance = 0;
-    for (auto distance : ukf_distances) {
-      ukf_mean_distance += distance;
-      if (distance > ukf_max_distance)
-        ukf_max_distance = distance;
-    }
-    ukf_mean_distance = ukf_mean_distance / (double) ukf_distances.size();
-    std::cout << "UKF mean distance " << ukf_mean_distance << std::endl;
-    std::cout << "UKF max distance " << ukf_max_distance << std::endl;
+  // {
+  //   double ukf_mean_distance = 0;
+  //   double ukf_max_distance = 0;
+  //   for (auto distance : ukf_distances) {
+  //     ukf_mean_distance += distance;
+  //     if (distance > ukf_max_distance)
+  //       ukf_max_distance = distance;
+  //   }
+  //   ukf_mean_distance = ukf_mean_distance / (double) ukf_distances.size();
+  //   std::cout << "UKF mean distance " << ukf_mean_distance << std::endl;
+  //   std::cout << "UKF max distance " << ukf_max_distance << std::endl;
 
-    double ukf_mean_angle = 0;
-    double ukf_max_angle = 0;
-    for (auto angle : ukf_angles) {
-      ukf_mean_angle += angle;
-      if (angle > ukf_max_angle)
-        ukf_max_angle = angle;
-    }
-    ukf_mean_angle = ukf_mean_angle / (double) ukf_angles.size();
-    std::cout << "UKF mean angle " << 180.0 / M_PI * ukf_mean_angle << std::endl;
-    std::cout << "UKF max angle " << 180.0 / M_PI * ukf_max_angle << std::endl;
-  }
+  //   double ukf_mean_angle = 0;
+  //   double ukf_max_angle = 0;
+  //   for (auto angle : ukf_angles) {
+  //     ukf_mean_angle += angle;
+  //     if (angle > ukf_max_angle)
+  //       ukf_max_angle = angle;
+  //   }
+  //   ukf_mean_angle = ukf_mean_angle / (double) ukf_angles.size();
+  //   std::cout << "UKF mean angle " << 180.0 / M_PI * ukf_mean_angle << std::endl;
+  //   std::cout << "UKF max angle " << 180.0 / M_PI * ukf_max_angle << std::endl;
+  // }
 
-  {
-    double pgo_mean_distance = 0;
-    double pgo_max_distance = 0;
-    for (auto distance : pgo_distances) {
-      pgo_mean_distance += distance;
-      if (distance > pgo_max_distance)
-        pgo_max_distance = distance;
-    }
-    pgo_mean_distance = pgo_mean_distance / (double) pgo_distances.size();
-    std::cout << "PGO mean distance " << pgo_mean_distance << std::endl;
-    std::cout << "PGO max distance " << pgo_max_distance << std::endl;
+  // {
+  //   double pgo_mean_distance = 0;
+  //   double pgo_max_distance = 0;
+  //   for (auto distance : pgo_distances) {
+  //     pgo_mean_distance += distance;
+  //     if (distance > pgo_max_distance)
+  //       pgo_max_distance = distance;
+  //   }
+  //   pgo_mean_distance = pgo_mean_distance / (double) pgo_distances.size();
+  //   std::cout << "PGO mean distance " << pgo_mean_distance << std::endl;
+  //   std::cout << "PGO max distance " << pgo_max_distance << std::endl;
 
-    double pgo_mean_angle = 0;
-    double pgo_max_angle = 0;
-    for (auto angle : pgo_angles) {
-      pgo_mean_angle += angle;
-      if (angle > pgo_max_angle)
-        pgo_max_angle = angle;
-    }
-    pgo_mean_angle = pgo_mean_angle / (double) pgo_angles.size();
-    std::cout << "PGO mean angle " << 180.0 / M_PI * pgo_mean_angle << std::endl;
-    std::cout << "PGO max angle " << 180.0 / M_PI * pgo_max_angle << std::endl;
-  }
+  //   double pgo_mean_angle = 0;
+  //   double pgo_max_angle = 0;
+  //   for (auto angle : pgo_angles) {
+  //     pgo_mean_angle += angle;
+  //     if (angle > pgo_max_angle)
+  //       pgo_max_angle = angle;
+  //   }
+  //   pgo_mean_angle = pgo_mean_angle / (double) pgo_angles.size();
+  //   std::cout << "PGO mean angle " << 180.0 / M_PI * pgo_mean_angle << std::endl;
+  //   std::cout << "PGO max angle " << 180.0 / M_PI * pgo_max_angle << std::endl;
+  // }
 
 
   // Static results
-  // { // APE1
-    // {
-      // std::cout << "APE1 Position" << std::endl;
-      // Eigen::Vector3d ape1_mean_position =
-      //   Eigen::Vector3d::Zero();
-      // for (auto position : ape1_positions) {
-      //   ape1_mean_position += position;
-      // }
-      // ape1_mean_position = ape1_mean_position / (double)ape1_positions.size();
-      // std::cout << ape1_mean_position << std::endl;
-      // Eigen::Matrix3d ape1_covariance =
-      //   Eigen::Matrix3d::Zero();
-      // for (auto position : ape1_positions) {
-      //   ape1_covariance += (position - ape1_mean_position) * 
-      //     (position - ape1_mean_position).transpose();
-      // }
-      // std::cout << ape1_covariance << std::endl;
-    // }
-  //   {
-  //     std::cout << "APE1 Attitude" << std::endl;
-  //     Eigen::Vector3d ape1_mean_attitude =
-  //       Eigen::Vector3d::Zero();
-  //     for (auto attitude : ape1_attitudes) {
-  //       ape1_mean_attitude += attitude;
-  //     }
-  //     ape1_mean_attitude = ape1_mean_attitude / (double)ape1_attitudes.size();
-  //     std::cout << ape1_mean_attitude << std::endl;
-  //     Eigen::Matrix3d ape1_covariance =
-  //       Eigen::Matrix3d::Zero();
-  //     for (auto attitude : ape1_attitudes) {
-  //       ape1_covariance += (attitude - ape1_mean_attitude) * 
-  //         (attitude - ape1_mean_attitude).transpose();
-  //     }
-  //     std::cout << ape1_covariance << std::endl;
-  //   }
-  // }
+  { // APE1
+    {
+      std::cout << "APE1 Position" << std::endl;
+      Eigen::Vector3d ape1_mean_position =
+        Eigen::Vector3d::Zero();
+      for (auto position : ape1_positions) {
+        ape1_mean_position += position;
+      }
+      ape1_mean_position = ape1_mean_position / (double)ape1_positions.size();
+      std::cout << ape1_mean_position << std::endl;
+      Eigen::Matrix3d ape1_covariance =
+        Eigen::Matrix3d::Zero();
+      for (auto position : ape1_positions) {
+        ape1_covariance += (position - ape1_mean_position) * 
+          (position - ape1_mean_position).transpose();
+      }
+      std::cout << ape1_covariance << std::endl;
+    }
+    {
+      std::cout << "APE1 Attitude" << std::endl;
+      Eigen::Vector3d ape1_mean_attitude =
+        Eigen::Vector3d::Zero();
+      for (auto attitude : ape1_attitudes) {
+        ape1_mean_attitude += attitude;
+      }
+      ape1_mean_attitude = ape1_mean_attitude / (double)ape1_attitudes.size();
+      std::cout << ape1_mean_attitude << std::endl;
+      Eigen::Matrix3d ape1_covariance =
+        Eigen::Matrix3d::Zero();
+      for (auto attitude : ape1_attitudes) {
+        ape1_covariance += (attitude - ape1_mean_attitude) * 
+          (attitude - ape1_mean_attitude).transpose();
+      }
+      std::cout << ape1_covariance << std::endl;
+    }
+  }
 
-  // { // APE2
-  //   {
-  //     std::cout << "APE2 Position" << std::endl;
-  //     Eigen::Vector3d ape2_mean_position =
-  //       Eigen::Vector3d::Zero();
-  //     for (auto position : ape2_positions) {
-  //       ape2_mean_position += position;
-  //     }
-  //     ape2_mean_position = ape2_mean_position / (double)ape2_positions.size();
-  //     std::cout << ape2_mean_position << std::endl;
-  //     Eigen::Matrix3d ape2_covariance =
-  //       Eigen::Matrix3d::Zero();
-  //     for (auto position : ape2_positions) {
-  //       ape2_covariance += (position - ape2_mean_position) * 
-  //         (position - ape2_mean_position).transpose();
-  //     }
-  //     std::cout << ape2_covariance << std::endl;
-  //   }
-  //   {
-  //     std::cout << "APE2 Attitude" << std::endl;
-  //     Eigen::Vector3d ape2_mean_attitude =
-  //       Eigen::Vector3d::Zero();
-  //     for (auto attitude : ape2_attitudes) {
-  //       ape2_mean_attitude += attitude;
-  //     }
-  //     ape2_mean_attitude = ape2_mean_attitude / (double)ape2_attitudes.size();
-  //     std::cout << ape2_mean_attitude << std::endl;
-  //     Eigen::Matrix3d ape2_covariance =
-  //       Eigen::Matrix3d::Zero();
-  //     for (auto attitude : ape2_attitudes) {
-  //       ape2_covariance += (attitude - ape2_mean_attitude) * 
-  //         (attitude - ape2_mean_attitude).transpose();
-  //     }
-  //     std::cout << ape2_covariance << std::endl;
-  //   }
-  // }
+  { // APE2
+    {
+      std::cout << "APE2 Position" << std::endl;
+      Eigen::Vector3d ape2_mean_position =
+        Eigen::Vector3d::Zero();
+      for (auto position : ape2_positions) {
+        ape2_mean_position += position;
+      }
+      ape2_mean_position = ape2_mean_position / (double)ape2_positions.size();
+      std::cout << ape2_mean_position << std::endl;
+      Eigen::Matrix3d ape2_covariance =
+        Eigen::Matrix3d::Zero();
+      for (auto position : ape2_positions) {
+        ape2_covariance += (position - ape2_mean_position) * 
+          (position - ape2_mean_position).transpose();
+      }
+      std::cout << ape2_covariance << std::endl;
+    }
+    {
+      std::cout << "APE2 Attitude" << std::endl;
+      Eigen::Vector3d ape2_mean_attitude =
+        Eigen::Vector3d::Zero();
+      for (auto attitude : ape2_attitudes) {
+        ape2_mean_attitude += attitude;
+      }
+      ape2_mean_attitude = ape2_mean_attitude / (double)ape2_attitudes.size();
+      std::cout << ape2_mean_attitude << std::endl;
+      Eigen::Matrix3d ape2_covariance =
+        Eigen::Matrix3d::Zero();
+      for (auto attitude : ape2_attitudes) {
+        ape2_covariance += (attitude - ape2_mean_attitude) * 
+          (attitude - ape2_mean_attitude).transpose();
+      }
+      std::cout << ape2_covariance << std::endl;
+    }
+  }
 
-  // { // EKF
-  //   {
-  //     std::cout << "EKF Position" << std::endl;
-  //     Eigen::Vector3d ekf_mean_position =
-  //       Eigen::Vector3d::Zero();
-  //     for (auto position : ekf_positions) {
-  //       ekf_mean_position += position;
-  //     }
-  //     ekf_mean_position = ekf_mean_position / (double)ekf_positions.size();
-  //     std::cout << ekf_mean_position << std::endl;
-  //     Eigen::Matrix3d ekf_covariance =
-  //       Eigen::Matrix3d::Zero();
-  //     for (auto position : ekf_positions) {
-  //       ekf_covariance += (position - ekf_mean_position) * 
-  //         (position - ekf_mean_position).transpose();
-  //     }
-  //     std::cout << ekf_covariance << std::endl;
-  //   }
-  //   {
-  //     std::cout << "EKF Attitude" << std::endl;
-  //     Eigen::Vector3d ekf_mean_attitude =
-  //       Eigen::Vector3d::Zero();
-  //     for (auto attitude : ekf_attitudes) {
-  //       ekf_mean_attitude += attitude;
-  //     }
-  //     ekf_mean_attitude = ekf_mean_attitude / (double)ekf_attitudes.size();
-  //     std::cout << ekf_mean_attitude << std::endl;
-  //     Eigen::Matrix3d ekf_covariance =
-  //       Eigen::Matrix3d::Zero();
-  //     for (auto attitude : ekf_attitudes) {
-  //       ekf_covariance += (attitude - ekf_mean_attitude) * 
-  //         (attitude - ekf_mean_attitude).transpose();
-  //     }
-  //     std::cout << ekf_covariance << std::endl;
-  //   }
-  // }
+  { // EKF
+    {
+      std::cout << "EKF Position" << std::endl;
+      Eigen::Vector3d ekf_mean_position =
+        Eigen::Vector3d::Zero();
+      for (auto position : ekf_positions) {
+        ekf_mean_position += position;
+      }
+      ekf_mean_position = ekf_mean_position / (double)ekf_positions.size();
+      std::cout << ekf_mean_position << std::endl;
+      Eigen::Matrix3d ekf_covariance =
+        Eigen::Matrix3d::Zero();
+      for (auto position : ekf_positions) {
+        ekf_covariance += (position - ekf_mean_position) * 
+          (position - ekf_mean_position).transpose();
+      }
+      std::cout << ekf_covariance << std::endl;
+    }
+    {
+      std::cout << "EKF Attitude" << std::endl;
+      Eigen::Vector3d ekf_mean_attitude =
+        Eigen::Vector3d::Zero();
+      for (auto attitude : ekf_attitudes) {
+        ekf_mean_attitude += attitude;
+      }
+      ekf_mean_attitude = ekf_mean_attitude / (double)ekf_attitudes.size();
+      std::cout << ekf_mean_attitude << std::endl;
+      Eigen::Matrix3d ekf_covariance =
+        Eigen::Matrix3d::Zero();
+      for (auto attitude : ekf_attitudes) {
+        ekf_covariance += (attitude - ekf_mean_attitude) * 
+          (attitude - ekf_mean_attitude).transpose();
+      }
+      std::cout << ekf_covariance << std::endl;
+    }
+  }
 
-  // { // IEKF
-  //   {
-  //     std::cout << "IEKF Position" << std::endl;
-  //     Eigen::Vector3d iekf_mean_position =
-  //       Eigen::Vector3d::Zero();
-  //     for (auto position : iekf_positions) {
-  //       iekf_mean_position += position;
-  //     }
-  //     iekf_mean_position = iekf_mean_position / (double)iekf_positions.size();
-  //     std::cout << iekf_mean_position << std::endl;
-  //     Eigen::Matrix3d iekf_covariance =
-  //       Eigen::Matrix3d::Zero();
-  //     for (auto position : iekf_positions) {
-  //       iekf_covariance += (position - iekf_mean_position) * 
-  //         (position - iekf_mean_position).transpose();
-  //     }
-  //     std::cout << iekf_covariance << std::endl;
-  //   }
-  //   {
-  //     std::cout << "IEKF Attitude" << std::endl;
-  //     Eigen::Vector3d iekf_mean_attitude =
-  //       Eigen::Vector3d::Zero();
-  //     for (auto attitude : iekf_attitudes) {
-  //       iekf_mean_attitude += attitude;
-  //     }
-  //     iekf_mean_attitude = iekf_mean_attitude / (double)iekf_attitudes.size();
-  //     std::cout << iekf_mean_attitude << std::endl;
-  //     Eigen::Matrix3d iekf_covariance =
-  //       Eigen::Matrix3d::Zero();
-  //     for (auto attitude : iekf_attitudes) {
-  //       iekf_covariance += (attitude - iekf_mean_attitude) * 
-  //         (attitude - iekf_mean_attitude).transpose();
-  //     }
-  //     std::cout << iekf_covariance << std::endl;
-  //   }
-  // }
+  { // IEKF
+    {
+      std::cout << "IEKF Position" << std::endl;
+      Eigen::Vector3d iekf_mean_position =
+        Eigen::Vector3d::Zero();
+      for (auto position : iekf_positions) {
+        iekf_mean_position += position;
+      }
+      iekf_mean_position = iekf_mean_position / (double)iekf_positions.size();
+      std::cout << iekf_mean_position << std::endl;
+      Eigen::Matrix3d iekf_covariance =
+        Eigen::Matrix3d::Zero();
+      for (auto position : iekf_positions) {
+        iekf_covariance += (position - iekf_mean_position) * 
+          (position - iekf_mean_position).transpose();
+      }
+      std::cout << iekf_covariance << std::endl;
+    }
+    {
+      std::cout << "IEKF Attitude" << std::endl;
+      Eigen::Vector3d iekf_mean_attitude =
+        Eigen::Vector3d::Zero();
+      for (auto attitude : iekf_attitudes) {
+        iekf_mean_attitude += attitude;
+      }
+      iekf_mean_attitude = iekf_mean_attitude / (double)iekf_attitudes.size();
+      std::cout << iekf_mean_attitude << std::endl;
+      Eigen::Matrix3d iekf_covariance =
+        Eigen::Matrix3d::Zero();
+      for (auto attitude : iekf_attitudes) {
+        iekf_covariance += (attitude - iekf_mean_attitude) * 
+          (attitude - iekf_mean_attitude).transpose();
+      }
+      std::cout << iekf_covariance << std::endl;
+    }
+  }
 
-  // { // UKF
-  //   {
-  //     std::cout << "UKF Position" << std::endl;
-  //     Eigen::Vector3d ukf_mean_position =
-  //       Eigen::Vector3d::Zero();
-  //     for (auto position : ukf_positions) {
-  //       ukf_mean_position += position;
-  //     }
-  //     ukf_mean_position = ukf_mean_position / (double)ukf_positions.size();
-  //     std::cout << ukf_mean_position << std::endl;
-  //     Eigen::Matrix3d ukf_covariance =
-  //       Eigen::Matrix3d::Zero();
-  //     for (auto position : ukf_positions) {
-  //       ukf_covariance += (position - ukf_mean_position) * 
-  //         (position - ukf_mean_position).transpose();
-  //     }
-  //     std::cout << ukf_covariance << std::endl;
-  //   }
-  //   {
-  //     std::cout << "UKF Attitude" << std::endl;
-  //     Eigen::Vector3d ukf_mean_attitude =
-  //       Eigen::Vector3d::Zero();
-  //     for (auto attitude : ukf_attitudes) {
-  //       ukf_mean_attitude += attitude;
-  //     }
-  //     ukf_mean_attitude = ukf_mean_attitude / (double)ukf_attitudes.size();
-  //     std::cout << ukf_mean_attitude << std::endl;
-  //     Eigen::Matrix3d ukf_covariance =
-  //       Eigen::Matrix3d::Zero();
-  //     for (auto attitude : ukf_attitudes) {
-  //       ukf_covariance += (attitude - ukf_mean_attitude) * 
-  //         (attitude - ukf_mean_attitude).transpose();
-  //     }
-  //     std::cout << ukf_covariance << std::endl;
-  //   }
-  // }
+  { // UKF
+    {
+      std::cout << "UKF Position" << std::endl;
+      Eigen::Vector3d ukf_mean_position =
+        Eigen::Vector3d::Zero();
+      for (auto position : ukf_positions) {
+        ukf_mean_position += position;
+      }
+      ukf_mean_position = ukf_mean_position / (double)ukf_positions.size();
+      std::cout << ukf_mean_position << std::endl;
+      Eigen::Matrix3d ukf_covariance =
+        Eigen::Matrix3d::Zero();
+      for (auto position : ukf_positions) {
+        ukf_covariance += (position - ukf_mean_position) * 
+          (position - ukf_mean_position).transpose();
+      }
+      std::cout << ukf_covariance << std::endl;
+    }
+    {
+      std::cout << "UKF Attitude" << std::endl;
+      Eigen::Vector3d ukf_mean_attitude =
+        Eigen::Vector3d::Zero();
+      for (auto attitude : ukf_attitudes) {
+        ukf_mean_attitude += attitude;
+      }
+      ukf_mean_attitude = ukf_mean_attitude / (double)ukf_attitudes.size();
+      std::cout << ukf_mean_attitude << std::endl;
+      Eigen::Matrix3d ukf_covariance =
+        Eigen::Matrix3d::Zero();
+      for (auto attitude : ukf_attitudes) {
+        ukf_covariance += (attitude - ukf_mean_attitude) * 
+          (attitude - ukf_mean_attitude).transpose();
+      }
+      std::cout << ukf_covariance << std::endl;
+    }
+  }
 
-  // { // PGO
-  //   {
-  //     std::cout << "PGO Position" << std::endl;
-  //     Eigen::Vector3d pgo_mean_position =
-  //       Eigen::Vector3d::Zero();
-  //     for (auto position : pgo_positions) {
-  //       pgo_mean_position += position;
-  //     }
-  //     pgo_mean_position = pgo_mean_position / (double)pgo_positions.size();
-  //     std::cout << pgo_mean_position << std::endl;
-  //     Eigen::Matrix3d pgo_covariance =
-  //       Eigen::Matrix3d::Zero();
-  //     for (auto position : pgo_positions) {
-  //       pgo_covariance += (position - pgo_mean_position) * 
-  //         (position - pgo_mean_position).transpose();
-  //     }
-  //     std::cout << pgo_covariance << std::endl;
-  //   }
-  //   {
-  //     std::cout << "PGO Attitude" << std::endl;
-  //     Eigen::Vector3d pgo_mean_attitude =
-  //       Eigen::Vector3d::Zero();
-  //     for (auto attitude : pgo_attitudes) {
-  //       pgo_mean_attitude += attitude;
-  //     }
-  //     pgo_mean_attitude = pgo_mean_attitude / (double)pgo_attitudes.size();
-  //     std::cout << pgo_mean_attitude << std::endl;
-  //     Eigen::Matrix3d pgo_covariance =
-  //       Eigen::Matrix3d::Zero();
-  //     for (auto attitude : pgo_attitudes) {
-  //       pgo_covariance += (attitude - pgo_mean_attitude) * 
-  //         (attitude - pgo_mean_attitude).transpose();
-  //     }
-  //     std::cout << pgo_covariance << std::endl;
-  //   }
-  // }
-  // std::cout << trajectory1(0).translation.x << ", "
-  //   << trajectory1(0).translation.y << ", "
-  //   << trajectory1(0).translation.z << ", "
-  //   << trajectory1(0).rotation.w << ", "
-  //   << trajectory1(0).rotation.x << ", "
-  //   << trajectory1(0).rotation.y << ", "
-  //   << trajectory1(0).rotation.z << std::endl;
+  { // PGO
+    {
+      std::cout << "PGO Position" << std::endl;
+      Eigen::Vector3d pgo_mean_position =
+        Eigen::Vector3d::Zero();
+      for (auto position : pgo_positions) {
+        pgo_mean_position += position;
+      }
+      pgo_mean_position = pgo_mean_position / (double)pgo_positions.size();
+      std::cout << pgo_mean_position << std::endl;
+      Eigen::Matrix3d pgo_covariance =
+        Eigen::Matrix3d::Zero();
+      for (auto position : pgo_positions) {
+        pgo_covariance += (position - pgo_mean_position) * 
+          (position - pgo_mean_position).transpose();
+      }
+      std::cout << pgo_covariance << std::endl;
+    }
+    {
+      std::cout << "PGO Attitude" << std::endl;
+      Eigen::Vector3d pgo_mean_attitude =
+        Eigen::Vector3d::Zero();
+      for (auto attitude : pgo_attitudes) {
+        pgo_mean_attitude += attitude;
+      }
+      pgo_mean_attitude = pgo_mean_attitude / (double)pgo_attitudes.size();
+      std::cout << pgo_mean_attitude << std::endl;
+      Eigen::Matrix3d pgo_covariance =
+        Eigen::Matrix3d::Zero();
+      for (auto attitude : pgo_attitudes) {
+        pgo_covariance += (attitude - pgo_mean_attitude) * 
+          (attitude - pgo_mean_attitude).transpose();
+      }
+      std::cout << pgo_covariance << std::endl;
+    }
+  }
 
-  // Eigen::Matrix3d vRt;
-  // Eigen::Quaterniond vQt;
-  // Eigen::Vector3d P;
-  // // Read OptiTrack poses
-  // rosbag::View view_ot(rbag, rosbag::TopicQuery("/tf"));
-  // for (auto bag_it = view_ot.begin(); bag_it != view_ot.end(); bag_it++) {
-  //   const tf2_msgs::TFMessage::ConstPtr tf =
-  //     bag_it->instantiate<tf2_msgs::TFMessage>();
-  //   for (auto tf_it = tf->transforms.begin();
-  //     tf_it != tf->transforms.end(); tf_it++) {
-  //     std::cout << "OptiTrack: " <<
-  //       tf_it->transform.translation.x << ", " <<
-  //       tf_it->transform.translation.y << ", " <<
-  //       tf_it->transform.translation.z << ", " <<
-  //       tf_it->transform.rotation.w << ", " <<
-  //       tf_it->transform.rotation.x << ", " <<
-  //       tf_it->transform.rotation.y << ", " <<
-  //       tf_it->transform.rotation.z << std::endl;
-  //     wbag.write("/tf", tf_it->header.stamp, *tf_it);
-  //   }
-  // }
-  // ROS_INFO("OptiTrack' setup complete.");
 
-  // // Data
-  // std::vector<std::string> topics;
-  // topics.push_back("/loc/vive/light");
-  // topics.push_back("/loc/vive/light/");
-  // topics.push_back("/loc/vive/imu");
-  // topics.push_back("/loc/vive/imu/");
-  // size_t counter = 0;
-  // rosbag::View view_li(rbag, rosbag::TopicQuery(topics));
-  // for (auto bag_it = view_li.begin(); bag_it != view_li.end(); bag_it++) {
-  //   const hive::ViveLight::ConstPtr vl = bag_it->instantiate<hive::ViveLight>();
-  //   if (vl != NULL) {
-  //     // counter++;
-  //     // if (counter < 1400) continue;
-  //     // if (counter == 1701) break;
-  //     // ROS_INFO("LIGHT");
-  //     solver[vl->header.frame_id]->ProcessLight(vl);
-  //     // aux_solver[vl->header.frame_id]->ProcessLight(vl);
-  //     geometry_msgs::TransformStamped msg;
-  //     if (solver[vl->header.frame_id]->GetTransform(msg)) {
-  //       std::cout << "Vive: " <<
-  //         msg.transform.translation.x << ", " <<
-  //         msg.transform.translation.y << ", " <<
-  //         msg.transform.translation.z << ", " <<
-  //         msg.transform.rotation.w << ", " <<
-  //         msg.transform.rotation.x << ", " <<
-  //         msg.transform.rotation.y << ", " <<
-  //         msg.transform.rotation.z << std::endl;
-  //       wbag.write("/tf", vl->header.stamp, msg);
-  //     }
-  //     if (aux_solver[vl->header.frame_id]->GetTransform(msg)) {
-  //       std::cout << "ViveAux: " <<
-  //         msg.transform.translation.x << ", " <<
-  //         msg.transform.translation.y << ", " <<
-  //         msg.transform.translation.z << ", " <<
-  //         msg.transform.rotation.w << ", " <<
-  //         msg.transform.rotation.x << ", " <<
-  //         msg.transform.rotation.y << ", " <<
-  //         msg.transform.rotation.z << std::endl;
-  //       // wbag.write("/tf", vl->header.stamp, msg);
-  //     }
-  //     std::cout << std::endl;
-  //   }
-  //   const sensor_msgs::Imu::ConstPtr vi = bag_it->instantiate<sensor_msgs::Imu>();
-  //   if (vi != NULL) {
-  //     // if (counter < 1400) continue;
-  //     // ROS_INFO("IMU");
-  //     solver[vi->header.frame_id]->ProcessImu(vi);
-  //   }
-  // }
-  // ROS_INFO("Light read complete.");
   rbag.close();
   wbag.close();
 

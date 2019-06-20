@@ -94,15 +94,15 @@ int main(int argc, char ** argv) {
     //   calibration.environment,
     //   1e0, 1e-6, true, filter::iekf);
     // UKF
-    solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
-      calibration.lighthouses,
-      calibration.environment,
-      1.0e0, 1e-6, true, filter::ukf);
-    // PGO
-    // solver[tracker.first] = new PoseGraph(calibration.environment,
-    //   calibration.trackers[tracker.first],
+    // solver[tracker.first] = new ViveFilter(calibration.trackers[tracker.first],
     //   calibration.lighthouses,
-    //   4, 7e-4, 1e0, true);
+    //   calibration.environment,
+    //   1.0e0, 1e-6, true, filter::ukf);
+    // PGO
+    solver[tracker.first] = new PoseGraph(calibration.environment,
+      calibration.trackers[tracker.first],
+      calibration.lighthouses,
+      4, 7e-4, 1e0, true);
   }
   ROS_INFO("Trackers' setup complete.");
 
@@ -145,7 +145,7 @@ int main(int argc, char ** argv) {
       // if (counter < 1400) continue;
       // if (counter == 1701) break;
       // ROS_INFO("LIGHT");
-      aux_solver[vl->header.frame_id]->ProcessLight(vl);
+      // aux_solver[vl->header.frame_id]->ProcessLight(vl);
       solver[vl->header.frame_id]->ProcessLight(vl);
       geometry_msgs::TransformStamped msg;
       if (solver[vl->header.frame_id]->GetTransform(msg)) {

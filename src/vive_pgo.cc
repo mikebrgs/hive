@@ -683,7 +683,7 @@ bool PoseGraph::Valid() {
 
   // std::cout << "COST: " << cost << std::endl;
 
-  if (cost > 1e-4 * sample_counter)
+  if (cost > 5e-5 * sample_counter)
     return false;
 
   return true;

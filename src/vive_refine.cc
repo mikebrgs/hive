@@ -1502,7 +1502,7 @@ bool Refinery::SolveInertial() {
   options.minimizer_progress_to_stdout = true;
   // options.minimizer_type = ceres::LINE_SEARCH;
   // options.line_search_direction_type = ceres::LBFGS;
-  options.max_num_iterations = 500; // TODO change this
+  options.max_num_iterations = REFINE_ITERATIONS; // TODO change this
 
   // std::cout << "PREV Tr:" << std::endl;
   // for (auto tr_it = clone_poses.begin(); tr_it != clone_poses.end(); tr_it++) {

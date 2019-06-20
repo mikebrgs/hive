@@ -50,6 +50,7 @@ int main(int argc, char ** argv)
 
   size_t counter = 0;
   // Refinery ref = Refinery(cal, true, 1.0e-2, false); // Best static
+  // Refinery ref = Refinery(cal, true, 1.0e1, true);
   Refinery ref = Refinery(cal, true, 1.0e1, true);
   // Light data
   std::vector<std::string> topics;
