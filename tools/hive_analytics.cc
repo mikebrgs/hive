@@ -343,6 +343,10 @@ int main(int argc, char ** argv) {
   double sA = 0.0;
   double mA = 0.0;
   ros::Time mAtime;
+
+  std::vector<Eigen::Vector3d> vive_points;
+  std::vector<Eigen::Vector3d> opti_points;
+
   // Counter
   double pose_counter = 0;
   // Initializations
@@ -537,6 +541,9 @@ int main(int argc, char ** argv) {
         mAtime = vive_time;
       }
 
+      vive_points.push_back(vPt);
+      opti_points.push_back(est_vPt);
+
       pose_counter++;
      }
   }
@@ -545,9 +552,50 @@ int main(int argc, char ** argv) {
 
   data_bag.close();
 
+  ROS_INFO("HERE");
+  Eigen::Vector3d vive_mean_point(0.0, 0.0, 0.0);
+  for(auto vive_point : vive_points) {
+    vive_mean_point += vive_point;
+  }
+  ROS_INFO("HERE");
+  vive_mean_point = vive_mean_point / vive_points.size();
+  Eigen::MatrixXd P(vive_points.size(),3);
+  for (size_t i = 0; i < vive_points.size(); i++) {
+    P.block(i,0,1,3) = (vive_points[i] - vive_mean_point).transpose();
+  }
+  ROS_INFO("HERE");
+
+  Eigen::Vector3d opti_mean_point(0.0, 0.0, 0.0);
+  for(auto opti_point : opti_points) {
+    opti_mean_point += opti_point;
+  }
+  ROS_INFO("HERE");
+  opti_mean_point = opti_mean_point / opti_points.size();
+  std::vector<Eigen::Vector3d> vive_trans_points;
+  for(auto vive_point : vive_points) {
+    vive_trans_points.push_back(vive_point - vive_mean_point);
+  }
+  ROS_INFO("HERE");
+  Eigen::MatrixXd Q(opti_points.size(),3);
+  for (size_t i = 0; i < opti_points.size(); i++) {
+    Q.block(i,0,1,3) = (opti_points[i] - opti_mean_point).transpose();
+  }
+
+  ROS_INFO("HERE");
+  Eigen::MatrixXd H = P.transpose() * Q;
+  Eigen::JacobiSVD<Eigen::MatrixXd> svd(H,
+    Eigen::ComputeThinU | Eigen::ComputeThinV);
+  Eigen::Matrix3d auxR = Eigen::Matrix3d::Zero();
+  auxR(2,2) = (svd.matrixU() * svd.matrixV().transpose()).determinant();
+  Eigen::Matrix3d R = svd.matrixU() * auxR * svd.matrixV().transpose();
+  Eigen::AngleAxisd A(R);
+  ROS_INFO("HERE");
+
   std::cout << "\nCalibration Quality:\n";
   std::cout << "Average Position Offset: " << (sP / pose_counter).transpose() << std::endl;
-  std::cout << "Average Distance: " << (sP / pose_counter).norm() << std::endl;
+  // std::cout << "Kabsch Distance: " << (sP / pose_counter).norm() << std::endl;
+  std::cout << "Kabsch Distance: " << (vive_mean_point - opti_mean_point).norm() << std::endl;
+  std::cout << "Kabsch Angle: " << (180.0 / M_PI) * A.angle() << std::endl;
   std::cout << "Average Rotation Offset: " << 
     dA[0] << ", " << dA[1] << ", " << dA[2] << std::endl;
   std::cout << "Average Angle: " << (180.0 / M_PI) * sqrt(dA[0]*dA[0] +

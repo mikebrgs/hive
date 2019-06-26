@@ -1382,19 +1382,8 @@ bool ViveFilter::PredictEKF(const sensor_msgs::Imu & msg) {
   gravity_ = newX.segment<3>(13);
   covariance_ = newP;
 
-  if (!Valid(MEASUREMENT_THRESHOLD)) {
-    position_ = oldX.segment<3>(0);
-    velocity_ = oldX.segment<3>(3);
-    rotation_ = Eigen::Quaterniond(oldX(6), oldX(7), oldX(8),
-      oldX(9)).normalized();
-    bias_ = oldX.segment<3>(10);
-    gravity_ = oldX.segment<3>(13);
-    covariance_ = oldP;
-    return false;
-  }
-
   if (DEBUG) {
-    std::cout << "Light" << std::endl;
+    std::cout << "IMU" << std::endl;
     std::cout << "Position: "
       << position_(0) << ", "
       << position_(1) << ", "
@@ -1416,6 +1405,17 @@ bool ViveFilter::PredictEKF(const sensor_msgs::Imu & msg) {
       << gravity_(0) << ", "
       << gravity_(1) << ", "
       << gravity_(2) << std::endl;
+  }
+
+  if (!Valid(MEASUREMENT_THRESHOLD)) {
+    position_ = oldX.segment<3>(0);
+    velocity_ = oldX.segment<3>(3);
+    rotation_ = Eigen::Quaterniond(oldX(6), oldX(7), oldX(8),
+      oldX(9)).normalized();
+    bias_ = oldX.segment<3>(10);
+    gravity_ = oldX.segment<3>(13);
+    covariance_ = oldP;
+    return false;
   }
 
   time_ = msg.header.stamp;

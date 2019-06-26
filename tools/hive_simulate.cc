@@ -77,6 +77,7 @@ public:
   void Update(double dt);
   sensor_msgs::Imu::ConstPtr GetImu();
   hive::ViveLight::ConstPtr GetLight();
+  ros::Time GetTime();
   geometry_msgs::TransformStamped GetTransform();
   void PrintState();
 };
@@ -268,6 +269,10 @@ sensor_msgs::Imu::ConstPtr Trajectory::GetImu() {
   return sensor_msgs::Imu::ConstPtr(msg);
 }
 
+ros::Time Trajectory::GetTime() {
+  return ros::Time(time_);
+}
+
 void Trajectory::Update(double dt) {
   time_ = time_ + ros::Duration(dt);
 
@@ -370,6 +375,11 @@ void Trajectory::Update(double dt) {
   // Angular velocity
   Eigen::Vector3d Wi = (A.transpose() * A).inverse() * A.transpose() * vDQi + Bw;
 
+
+  // std::cout << "V: " << vVi_1.transpose() << std::endl;
+  // std::cout << "dV: " << ((vVi_1 - vVi_2) / precision_).transpose() << std::endl;
+  // std::cout << "G: " << (vG).transpose() << std::endl;
+  // std::cout << "G - dV: " << (vG - (vVi_1 - vVi_2) / precision_).transpose() << std::endl;
   // Accelerations
   Eigen::Vector3d Ai = vRi.transpose() * (vG - (vVi_1 - vVi_2) / precision_) + Ba;
 
@@ -543,16 +553,14 @@ int main(int argc, char ** argv) {
   // std::map<std::string, Solver*> aux_solver;
 
   // Read bag with data
-  if (argc < 3) {
-    std::cout << "Usage: ... hive_calibrator read.bag write.bag" << std::endl;
+  if (argc < 2) {
+    std::cout << "Usage: ... hive_calibrator read.bag" << std::endl;
     return -1;
   }
   rosbag::Bag rbag, wbag;
   rosbag::View view;
   std::string read_bag(argv[1]);
-  std::string write_bag(argv[2]);
   rbag.open(read_bag, rosbag::bagmode::Read);
-  wbag.open(write_bag, rosbag::bagmode::Write);
 
   // // Get current calibration
   // ViveUtils::ReadConfig(HIVE_CALIBRATION_FILE,
@@ -798,7 +806,7 @@ int main(int argc, char ** argv) {
   // Tracking
   // double Tl = 1.0e0/120.0;
 
-  Trajectory tr(&trajectory4,
+  Trajectory tr(&trajectory2,
     tracker,
     calibration.environment.lighthouses,
     calibration.lighthouses,
@@ -868,6 +876,8 @@ int main(int argc, char ** argv) {
   // 800
   geometry_msgs::TransformStamped msg, gt_msg;
   for (size_t i = 0; i <= 1200; i++) {
+    std::cout << tr.GetTime() << std::endl;
+
     hive::ViveLight::ConstPtr vl = tr.GetLight();
     solver_ape1->ProcessLight(vl);
     solver_ape2->ProcessLight(vl);
@@ -1061,14 +1071,15 @@ int main(int argc, char ** argv) {
 
     sensor_msgs::Imu::ConstPtr vi;
     tr.Update(Tl / 4.0);
+    std::cout << tr.GetTime() << std::endl;
     vi = tr.GetImu();
-    std::cout << "IMU "
-      << vi->linear_acceleration.x << ", "
-      << vi->linear_acceleration.y << ", "
-      << vi->linear_acceleration.z << ", "
-      << vi->angular_velocity.x << ", "
-      << vi->angular_velocity.y << ", "
-      << vi->angular_velocity.z << std::endl;
+    // std::cout << "IMU SAMPLE "
+    //   << vi->linear_acceleration.x << ", "
+    //   << vi->linear_acceleration.y << ", "
+    //   << vi->linear_acceleration.z << ", "
+    //   << vi->angular_velocity.x << ", "
+    //   << vi->angular_velocity.y << ", "
+    //   << vi->angular_velocity.z << std::endl;
     solver_ape1->ProcessImu(vi);
     solver_ape2->ProcessImu(vi);
     solver_ekf->ProcessImu(vi);
@@ -1076,14 +1087,15 @@ int main(int argc, char ** argv) {
     solver_ukf->ProcessImu(vi);
     solver_pgo->ProcessImu(vi);
     tr.Update(Tl / 2.0);
+    std::cout << tr.GetTime() << std::endl;
     vi = tr.GetImu();
-    std::cout << "IMU "
-      << vi->linear_acceleration.x << ", "
-      << vi->linear_acceleration.y << ", "
-      << vi->linear_acceleration.z << ", "
-      << vi->angular_velocity.x << ", "
-      << vi->angular_velocity.y << ", "
-      << vi->angular_velocity.z << std::endl;
+    // std::cout << "IMU SAMPLE "
+    //   << vi->linear_acceleration.x << ", "
+    //   << vi->linear_acceleration.y << ", "
+    //   << vi->linear_acceleration.z << ", "
+    //   << vi->angular_velocity.x << ", "
+    //   << vi->angular_velocity.y << ", "
+    //   << vi->angular_velocity.z << std::endl;
     solver_ape1->ProcessImu(vi);
     solver_ape2->ProcessImu(vi);
     solver_ekf->ProcessImu(vi);
@@ -1095,85 +1107,85 @@ int main(int argc, char ** argv) {
     std::cout << std::endl;
   }
 
-  // std::cout << "ape2_dist = [";
-  // for (auto x : ape2_distances) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
-  // std::cout << "ape2_ang = [";
-  // for (auto x : ape2_angles) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
-  // std::cout << "ape2_t = [";
-  // for (auto x : ape2_times) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "ape2_dist = [";
+  for (auto x : ape2_distances) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "ape2_ang = [";
+  for (auto x : ape2_angles) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "ape2_t = [";
+  for (auto x : ape2_times) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "ekf_dist = [";
-  // for (auto x : ekf_distances) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
-  // std::cout << "ekf_ang = [";
-  // for (auto x : ekf_angles) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
-  // std::cout << "ekf_t = [";
-  // for (auto x : ekf_times) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "ekf_dist = [";
+  for (auto x : ekf_distances) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "ekf_ang = [";
+  for (auto x : ekf_angles) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "ekf_t = [";
+  for (auto x : ekf_times) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "iekf_dist = [";
-  // for (auto x : iekf_distances) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
-  // std::cout << "iekf_ang = [";
-  // for (auto x : iekf_angles) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
-  // std::cout << "iekf_t = [";
-  // for (auto x : iekf_times) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "iekf_dist = [";
+  for (auto x : iekf_distances) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "iekf_ang = [";
+  for (auto x : iekf_angles) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "iekf_t = [";
+  for (auto x : iekf_times) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "ukf_dist = [";
-  // for (auto x : ukf_distances) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
-  // std::cout << "ukf_ang = [";
-  // for (auto x : ukf_angles) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
-  // std::cout << "ukf_t = [";
-  // for (auto x : ukf_times) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "ukf_dist = [";
+  for (auto x : ukf_distances) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "ukf_ang = [";
+  for (auto x : ukf_angles) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "ukf_t = [";
+  for (auto x : ukf_times) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
 
-  // std::cout << "pgo_dist = [";
-  // for (auto x : pgo_distances) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
-  // std::cout << "pgo_ang = [";
-  // for (auto x : pgo_angles) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
-  // std::cout << "pgo_t = [";
-  // for (auto x : pgo_times) {
-  //   std::cout << x << " ";
-  // }
-  // std::cout << "]" << std::endl;
+  std::cout << "pgo_dist = [";
+  for (auto x : pgo_distances) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "pgo_ang = [";
+  for (auto x : pgo_angles) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
+  std::cout << "pgo_t = [";
+  for (auto x : pgo_times) {
+    std::cout << x << " ";
+  }
+  std::cout << "]" << std::endl;
 
 
   // {
